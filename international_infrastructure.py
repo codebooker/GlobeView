@@ -104,6 +104,11 @@ LUXEMBOURG_TRAFFIC_SOURCE = 'https://data.public.lu/en/datasets/cita-donnees-tra
 LITHUANIA_CAMERA_TABLE_URL = 'https://eismoinfo.lt/eismoinfo-backend/camera-info-table'
 LITHUANIA_CAMERA_SOURCE = 'https://eismoinfo.lt/'
 LITHUANIA_ROAD_WEATHER_URL = 'https://eismoinfo.lt/eismoinfo-backend/osi-info-table'
+ESTONIA_RESTRICTIONS_URL = (
+    'https://tarktee.transpordiamet.ee/tarktee/rest/services/'
+    'restrictions_traffic/MapServer/0/query'
+)
+ESTONIA_RESTRICTIONS_SOURCE = 'https://tarktee.transpordiamet.ee/'
 LITHUANIA_RESTRICTIONS_URL = ('https://eismoinfo.lt/eismoinfo-backend/'
                               'layer-dynamic-features/EAL?lks=true')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -3321,6 +3326,71 @@ def _lithuania_road_weather():
     return _parse_lithuania_road_weather(_get_json(LITHUANIA_ROAD_WEATHER_URL))
 
 
+def _parse_estonia_restrictions(payload, now=None):
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(payload.get('features'), list):
+        raise ValueError('Estonia traffic restrictions feed is invalid')
+    if payload.get('exceededTransferLimit'):
+        raise ValueError('Estonia traffic restrictions result is incomplete')
+    now = time.time() if now is None else now
+    roadworks = {'CONSTRUCTION', 'UTILITY_COMS_CONSTRUCTION', 'GRAVEL_ROAD_REPAIRS',
+                 'CULVERT_REPAIRS', 'PAVING', 'ROAD_SURFACE_MARKING', 'BARRIER_WORKS',
+                 'STORAGE_OF_MATERIALS'}
+    effects = {'COMPLETE_CLOSURE': 'Road closed', 'ONE_WAY_CLOSED': 'One direction closed',
+               'LANE_CLOSED': 'Lane closed', 'SPEED_LIMITED': 'Reduced speed limit'}
+    features = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        if not isinstance(props, dict):
+            continue
+        event_id = props.get('objectid')
+        point = _point(row.get('geometry'))
+        if (not isinstance(event_id, int) or event_id < 1 or event_id in seen or not point
+                or not (21.5 <= point[0] <= 28.3 and 57.4 <= point[1] <= 59.9)):
+            continue
+        try:
+            start = float(props['date_from']) / 1000
+            end = float(props['date_to']) / 1000
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (math.isfinite(start) and math.isfinite(end) and start <= now < end):
+            continue
+        seen.add(event_id)
+        cause = str(props.get('cause') or '').upper()
+        layer = 'construction' if cause in roadworks else 'incidents'
+        road = _clean(props.get('road_name'), 90)
+        road_nr = props.get('road_nr')
+        if not road and isinstance(road_nr, int):
+            road = f'Road {road_nr}'
+        title = ('Roadworks' if layer == 'construction' else 'Road restriction')
+        if road:
+            title += f' · {road}'
+        effect = effects.get(str(props.get('effect') or '').upper(), '')
+        extra = _clean(props.get('extra_info'), 280)
+        end_label = dt.datetime.fromtimestamp(end, dt.timezone.utc).strftime('%d %b %Y')
+        features.append(_feature(point, {
+            'key': f'ee:tarktee:restriction:{event_id}', 'layer': layer,
+            'title': title,
+            'detail': ' · '.join(part for part in (effect, extra, f'Until {end_label}') if part),
+            'source': 'Estonian Transport Administration · Tark Tee',
+            'source_url': ESTONIA_RESTRICTIONS_SOURCE,
+        }))
+    return features
+
+
+def _estonia_restrictions():
+    # Request a small recent window; verify each record's actual start/end below.
+    cutoff = dt.datetime.fromtimestamp(time.time() - 86400, dt.timezone.utc)
+    where = "date_to > TIMESTAMP '" + cutoff.strftime('%Y-%m-%d %H:%M:%S') + "'"
+    query = urllib.parse.urlencode({
+        'where': where, 'outFields': 'objectid,road_nr,road_name,cause,effect,extra_info,date_from,date_to',
+        'returnGeometry': 'true', 'outSR': '4326', 'resultRecordCount': '2000', 'f': 'geojson',
+    })
+    return _parse_estonia_restrictions(_get_json(ESTONIA_RESTRICTIONS_URL + '?' + query))
+
+
 def lithuania_camera_snapshot(camera_id):
     camera_id = str(camera_id)
     if not re.fullmatch(r'\d{1,6}', camera_id):
@@ -3420,6 +3490,7 @@ _FETCHERS = {
         'lt_eismoinfo_cameras': _lithuania_cameras,
         'lt_eismoinfo_road_weather': _lithuania_road_weather,
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
+        'ee_tarktee_restrictions': _estonia_restrictions,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
         'is_road_sensors': _iceland_sensors,

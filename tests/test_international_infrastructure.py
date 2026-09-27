@@ -17,6 +17,32 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_estonia_restrictions_use_active_dated_locations_and_strip_private_contacts(self):
+        def event(event_id, cause='CONSTRUCTION', start=NOW - 3600, end=NOW + 86400,
+                  coordinates=None):
+            return {'type': 'Feature', 'geometry': {'type': 'Point',
+                    'coordinates': coordinates or [25.6, 58.9]}, 'properties': {
+                'objectid': event_id, 'road_name': 'Tallinn–Tartu', 'road_nr': 2,
+                'cause': cause, 'effect': 'LANE_CLOSED',
+                'extra_info': '<b>Bridge work</b>',
+                'traffic_ctrl_contact_phone': '+372 5555 0000',
+                'date_from': start * 1000, 'date_to': end * 1000}}
+        payload = {'type': 'FeatureCollection', 'features': [
+            event(1), event(2, cause='EVENT'), event(1),
+            event(3, start=NOW + 3600), event(4, end=NOW - 1),
+            event(5, coordinates=[8.8, 47.5])],
+        }
+        rows = feeds._parse_estonia_restrictions(payload, NOW)
+        self.assertEqual([row['properties']['key'] for row in rows],
+                         ['ee:tarktee:restriction:1', 'ee:tarktee:restriction:2'])
+        self.assertEqual([row['properties']['layer'] for row in rows],
+                         ['construction', 'incidents'])
+        self.assertIn('Lane closed · Bridge work', rows[0]['properties']['detail'])
+        self.assertNotIn('5555', str(rows))
+        self.assertNotIn('<b>', str(rows))
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_estonia_restrictions(dict(payload, exceededTransferLimit=True), NOW)
+
     def test_lithuania_cameras_require_recent_capture_and_official_image(self):
         url = 'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=72'
         row = {'id': 72, 'name': 'Vilnius A1 10,04', 'roadNr': 'A1', 'km': 10.04,
