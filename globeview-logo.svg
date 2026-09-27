@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="GlobeView logo">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0b1721"/>
+      <stop offset="1" stop-color="#17343e"/>
+    </linearGradient>
+    <radialGradient id="planet" cx="32%" cy="25%" r="82%">
+      <stop stop-color="#348f91"/>
+      <stop offset=".48" stop-color="#195a64"/>
+      <stop offset="1" stop-color="#0b2634"/>
+    </radialGradient>
+    <linearGradient id="orbit" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#75ded6"/>
+      <stop offset=".5" stop-color="#b5efe2"/>
+      <stop offset="1" stop-color="#f4c985"/>
+    </linearGradient>
+    <radialGradient id="beacon">
+      <stop stop-color="#ffe9af"/>
+      <stop offset="1" stop-color="#f0ae63"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="504" height="504" rx="104" fill="url(#background)"/>
+  <rect x="12" y="12" width="488" height="488" rx="96" fill="none" stroke="#427078" stroke-opacity=".55" stroke-width="4"/>
+  <ellipse cx="256" cy="256" rx="210" ry="101" transform="rotate(-28 256 256)" fill="none" stroke="#479e9f" stroke-opacity=".46" stroke-width="17"/>
+  <circle cx="256" cy="256" r="158" fill="url(#planet)" stroke="#8ed2ce" stroke-width="7"/>
+  <ellipse cx="256" cy="256" rx="72" ry="157" fill="none" stroke="#9dd9d2" stroke-opacity=".45" stroke-width="8"/>
+  <path d="M104 256h304M132 178h248M132 334h248" fill="none" stroke="#9bd4ce" stroke-opacity=".42" stroke-width="8" stroke-linecap="round"/>
+  <path d="M87 350c68 48 170 41 257-7 53-29 91-68 110-107" fill="none" stroke="#09212b" stroke-opacity=".9" stroke-width="27" stroke-linecap="round"/>
+  <path d="M87 350c68 48 170 41 257-7 53-29 91-68 110-107" fill="none" stroke="url(#orbit)" stroke-width="15" stroke-linecap="round"/>
+  <circle cx="427" cy="183" r="21" fill="#0d2833"/>
+  <circle cx="427" cy="183" r="13" fill="url(#beacon)"/>
+</svg>

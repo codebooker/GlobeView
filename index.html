@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14191d">
+  <meta name="application-name" content="GlobeView">
+  <meta name="description" content="A worldwide map with live aviation, maritime, natural hazard, cybersecurity, camera, road, utility, and weather layers where data is available.">
+  <title>GlobeView · Live globe</title>
+  <link rel="icon" href="/globeview-logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="stylesheet" href="/maplibre-gl.css">
+  <link rel="modulepreload" href="/maplibre-gl.mjs">
+  <script type="module" src="/globe.js"></script>
+  <link rel="stylesheet" href="/ui.css">
+</head>
+<body>
+  <div id="map" role="application" aria-label="Interactive globe"></div>
+  <div class="app-loading" id="app-loading" role="status" aria-live="polite">
+    <div class="app-loading-content">
+      <div class="app-loading-mark" aria-hidden="true"><span class="app-loading-orbit"></span><img src="/globeview-mark.svg" alt=""></div>
+      <strong>GlobeView</strong>
+      <p id="app-loading-message">Bringing the globe into focus</p>
+      <div class="app-loading-progress" aria-hidden="true"><span></span></div>
+      <button id="app-loading-retry" type="button" hidden>Retry loading</button>
+    </div>
+  </div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="GlobeView home"><img src="/globeview-logo.svg" alt=""><strong>GlobeView</strong></a>
+    <span class="product-context">Worldwide basemap</span>
+    <form class="place-search" id="place-search" role="search" autocomplete="off">
+      <label class="sr-only" for="place-query">Search places, aircraft, vessels, or coordinates</label>
+      <span class="search-mark" aria-hidden="true">⌕</span>
+      <input id="place-query" type="search" placeholder="Place, aircraft, vessel, or lat, lon" aria-controls="place-results" aria-expanded="false" aria-autocomplete="list">
+      <div id="place-results" class="place-results" role="listbox" hidden></div>
+    </form>
+    <div class="top-actions">
+      <span class="live-indicator"><span class="live-dot"></span>Live feeds</span>
+      <button class="panel-button" id="panel-toggle" type="button" aria-controls="panel" aria-expanded="true">Hide Menu</button>
+    </div>
+  </header>
+  <aside class="trip-panel" id="trip-panel" aria-label="Trip planner" hidden>
+    <div class="trip-head"><div><span class="trip-eyebrow">ROUTE PLANNER</span><h2>Plan a trip</h2></div><button type="button" id="trip-close" aria-label="Close trip planner">×</button></div>
+    <form id="trip-form" autocomplete="off">
+      <div class="trip-field"><label for="trip-from">Start</label><div class="trip-input-row"><input id="trip-from" type="text" placeholder="City, port, or lat, lon" aria-controls="trip-from-results" aria-expanded="false"><button type="button" data-trip-pick="from" aria-label="Pick start on map" title="Pick start on map">⌖</button></div><div class="trip-suggestions" id="trip-from-results" hidden></div></div>
+      <div class="trip-field"><label for="trip-to">Destination</label><div class="trip-input-row"><input id="trip-to" type="text" placeholder="City, port, or lat, lon" aria-controls="trip-to-results" aria-expanded="false"><button type="button" data-trip-pick="to" aria-label="Pick destination on map" title="Pick destination on map">⌖</button></div><div class="trip-suggestions" id="trip-to-results" hidden></div></div>
+      <div class="trip-options"><label for="trip-mode">Travel by</label><select id="trip-mode"><option value="driving">Driving</option><option value="walking">Walking</option><option value="cycling">Cycling</option></select><button type="button" id="trip-swap" title="Swap start and destination">⇅ Swap</button></div>
+      <div class="trip-actions"><button type="submit" id="trip-submit">Show route</button><button type="button" id="trip-clear">Clear</button></div>
+    </form>
+    <p class="trip-message" id="trip-message" role="status">Choose two points or use ⌖ to pick them on the map.</p>
+    <div id="trip-result" hidden><div class="trip-summary"><strong id="trip-duration"></strong><span id="trip-distance"></span></div><ol id="trip-steps"></ol></div>
+    <p class="trip-credit">Routes: <a href="https://valhalla.openstreetmap.de/" target="_blank" rel="noopener noreferrer">Valhalla</a> / <a href="https://project-osrm.org/" target="_blank" rel="noopener noreferrer">OSRM</a> / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>. Estimated travel time; no live traffic. Start and destination coordinates are sent to the public routing service.</p>
+  </aside>
+  <aside class="draw-panel" id="draw-panel" aria-label="My drawings" hidden>
+    <div class="draw-head"><div><span class="draw-eyebrow">PRIVATE MAP NOTES</span><h2>My drawings</h2></div><button type="button" id="draw-close" aria-label="Close drawings">×</button></div>
+    <p class="draw-intro">Pins, labels, lines, areas, and circles are saved in this browser. They stay private to this browser profile and are not sent to GlobeView.</p>
+    <div class="draw-tools"><button type="button" id="draw-pin">Drop pin</button><button type="button" id="draw-label">Add label</button><button type="button" id="draw-line">Draw line</button><button type="button" id="draw-polygon">Draw area</button><button type="button" id="draw-circle">Draw circle</button></div>
+    <div class="draw-progress" id="draw-progress" hidden><p id="draw-progress-text"></p><div class="draw-progress-actions"><button type="button" id="draw-undo">Undo point</button><button type="button" id="draw-finish">Finish drawing</button><button type="button" id="draw-cancel">Cancel</button></div></div>
+    <p class="draw-message" id="draw-message" role="status">Choose a tool, then click the map.</p>
+    <div class="draw-selected" id="draw-selected" hidden><label for="draw-name" id="draw-name-label">Name</label><input id="draw-name" maxlength="80" type="text"><label for="draw-color">Color</label><input id="draw-color" type="color" value="#e8b86d"><label for="draw-radius" id="draw-radius-label" hidden>Radius</label><div class="draw-radius-control" id="draw-radius-control" hidden><input id="draw-radius" type="number" min="0.01" max="5000" step="0.1" inputmode="decimal"><select id="draw-radius-unit" aria-label="Radius unit"><option value="km">km</option><option value="mi">mi</option></select></div><div class="draw-selected-actions"><button type="button" id="draw-save">Save changes</button><button type="button" id="draw-delete">Delete</button></div></div>
+    <div class="draw-list-head"><h3>Saved drawings</h3><span id="draw-count">0</span></div><div class="draw-list" id="draw-list"></div>
+  </aside>
+  <aside class="panel" id="panel" aria-label="Menu">
+    <div class="panel-intro"><h1>Menu</h1><p>Select a feed, then zoom in to see available coverage.</p></div>
+    <section class="panel-section" aria-label="Region shortcuts">
+      <div class="section-head"><h2>Go to region</h2></div>
+      <div class="destinations"><button type="button" data-destination="north-america">N. America</button><button type="button" data-destination="europe">Europe</button><button type="button" data-destination="asia">Asia</button><button type="button" data-destination="south-america">S. America</button><button type="button" data-destination="africa">Africa</button><button type="button" data-destination="oceania">Oceania</button></div>
+    </section>
+    <section class="panel-section" aria-label="Map projection">
+      <div class="section-head"><h2>Projection</h2></div>
+      <button id="projection-toggle" class="switch-row projection-row" type="button" aria-pressed="true"><span class="row-label">Spherical globe</span><span class="switch"></span></button>
+      <button id="rotation-toggle" class="switch-row projection-row" type="button" aria-pressed="false"><span class="row-label">Auto-rotate globe</span><span class="switch"></span></button>
+      <button id="terrain-toggle" class="switch-row projection-row" type="button" aria-pressed="false"><span class="row-label">3D terrain and buildings</span><span class="switch"></span></button>
+      <button class="switch-row projection-row" type="button" data-layer="daynight" aria-pressed="false"><span class="row-label">Day / night boundary</span><span class="switch"></span></button>
+      <button id="terrain-demo" class="terrain-demo" type="button" hidden>Explore 3D terrain · Alps ↗</button>
+    </section>
+    <section class="panel-section" aria-label="World radio">
+      <div class="section-head"><h2>Listen around the world</h2></div>
+      <button class="switch-row" type="button" data-layer="radio" aria-pressed="false"><span class="row-icon" aria-hidden="true">♫</span><span class="row-label">Radio stations</span><span class="row-count" data-count="radio"></span><span class="switch"></span></button>
+      <button class="switch-row radio-target-switch" id="radio-target-toggle" type="button" aria-pressed="true"><span class="row-label">Tune target</span><span class="switch"></span></button>
+      <p class="radio-note">Drag the globe to place the target over a station dot. It will tune the nearest station when you release.</p>
+    </section>
+    <section class="panel-section" aria-label="Live data layers">
+      <div class="section-head"><h2>Live data</h2><span>Availability varies</span></div>
+      <div class="layer-group" data-layer-group="weather"><span>Weather</span><button class="group-toggle" type="button" role="checkbox" aria-label="All weather layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="imagery" aria-pressed="false" aria-controls="imagery-options"><span class="row-icon"></span><span class="row-label">Satellite imagery</span><span class="row-count" data-count="imagery"></span><span class="switch"></span></button>
+      <div class="imagery-options" id="imagery-options" hidden>
+        <div class="imagery-choices" role="group" aria-label="Satellite imagery view">
+          <button type="button" data-imagery-mode="detail" aria-pressed="true">Free detailed imagery</button>
+          <button type="button" data-imagery-mode="esri" aria-pressed="false">Esri World Imagery</button>
+          <button type="button" data-imagery-mode="today" aria-pressed="false">Today · latest passes</button>
+          <button type="button" data-imagery-mode="previous" aria-pressed="false">Previous day</button>
+        </div>
+        <p id="imagery-note"></p>
+      </div>
+      <button class="switch-row" type="button" data-layer="goes" aria-pressed="false" aria-controls="goes-options"><span class="row-icon" aria-hidden="true">☁</span><span class="row-label">GOES cloud imagery</span><span class="row-count" data-count="goes"></span><span class="switch"></span></button>
+      <div class="goes-options" id="goes-options" hidden>
+        <div class="goes-controls"><button id="goes-play" type="button" aria-label="Play GOES cloud frames" disabled>▶ Play</button><input id="goes-frame" type="range" min="0" max="5" value="5" aria-label="GOES imagery frame" disabled></div>
+        <p id="goes-time" role="status" aria-live="polite">Loading recent GOES frames…</p>
+        <p>GOES-East and GOES-West · Americas and Pacific. Recent GeoColor frames show cloud motion; imagery is not a forecast.</p>
+      </div>
+      <button class="switch-row" type="button" data-layer="radar" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Weather radar</span><span class="row-count" data-count="radar"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="temperature" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Temperature</span><span class="row-count" data-count="temperature"></span><span class="switch"></span></button>
+      <div class="layer-group" data-layer-group="aviation"><span>Aviation</span><button class="group-toggle" type="button" role="checkbox" aria-label="All aviation layers" aria-checked="mixed"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="govair" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Government aircraft</span><span class="row-count" data-count="govair"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="civair" data-default-on aria-pressed="true"><span class="row-icon"></span><span class="row-label">Civil aircraft</span><span class="row-count" data-count="civair"></span><span class="switch"></span></button>
+      <div class="layer-group" data-layer-group="maritime"><span>Maritime</span><button class="group-toggle" type="button" role="checkbox" aria-label="All maritime layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="vessels" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Live vessels</span><span class="row-count" data-count="vessels"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="ports" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Ports</span><span class="row-count" data-count="ports"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="marine" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Sea conditions · click map</span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="shipping_routes" aria-pressed="false"><span class="row-icon">≋</span><span class="row-label">Shipping routes · worldwide</span><span class="switch"></span></button>
+      <div class="shipping-route-legend" aria-label="Shipping route classes"><span class="route-major">Major</span><span class="route-middle">Middle</span><span class="route-minor">Minor</span></div>
+      <details class="source-details"><summary>Shipping route source</summary><p><a href="https://zenodo.org/records/6361763" target="_blank" rel="noopener noreferrer">Global Shipping Lanes by Paul Benden</a>, published 2022 from a CIA map dated October 2012. CC BY 4.0. Major, middle, and minor indicate mapped importance, not live traffic volume or exact navigable tracks.</p></details>
+      <div class="layer-group" data-layer-group="cameras"><span>Cameras</span><button class="group-toggle" type="button" role="checkbox" aria-label="All camera layers" aria-checked="mixed"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="webcams" data-default-on aria-pressed="true"><span class="row-icon"></span><span class="row-label">Public webcams</span><span class="row-count" data-count="webcams"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="cameras" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Road cameras</span><span class="row-count" data-count="cameras"></span><span class="switch"></span></button>
+      <div class="layer-group" data-layer-group="hazards"><span>Natural hazards</span><button class="group-toggle" type="button" role="checkbox" aria-label="All natural hazard layers" aria-checked="mixed"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="cyclones" data-default-on aria-pressed="true"><span class="row-icon"></span><span class="row-label">Tropical cyclones</span><span class="row-count" data-count="cyclones"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="earthquakes" data-default-on aria-pressed="true"><span class="row-icon"></span><span class="row-label">Earthquakes · M2.5+ · 7d</span><span class="row-count" data-count="earthquakes"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="nws_alerts" aria-pressed="false"><span class="row-icon"></span><span class="row-label">NWS alerts · U.S.</span><span class="row-count" data-count="nws_alerts"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="world_alerts" data-default-on aria-pressed="true"><span class="row-icon"></span><span class="row-label">Weather alerts · Canada &amp; NZ</span><span class="row-count" data-count="world_alerts"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="fires" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Major wildfires</span><span class="row-count" data-count="fires"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="fire_hotspots" aria-pressed="false"><span class="row-icon"></span><span class="row-label">NASA FIRMS fire hotspots</span><span class="row-count" data-count="fire_hotspots"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="floods" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Flood alerts</span><span class="row-count" data-count="floods"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="volcanoes" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Volcanic events · 30d</span><span class="row-count" data-count="volcanoes"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="gdelt_events" aria-pressed="false"><span class="row-icon"></span><span class="row-label">GDELT conflict &amp; protest reports</span><span class="row-count" data-count="gdelt_events"></span><span class="switch"></span></button>
+      <div class="layer-group" data-layer-group="arcgis"><span>ArcGIS explorer</span><button class="group-toggle" type="button" role="checkbox" aria-label="All ArcGIS explorer layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="power_plants" aria-pressed="false"><span class="row-icon">◆</span><span class="row-label">Power plants · worldwide</span><span class="row-count" data-count="power_plants"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="active_faults" aria-pressed="false"><span class="row-icon">╱</span><span class="row-label">Active faults · worldwide</span><span class="row-count" data-count="active_faults"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="impact_sites" aria-pressed="false"><span class="row-icon">✦</span><span class="row-label">Impact structures · worldwide</span><span class="row-count" data-count="impact_sites"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="rail_world" aria-pressed="false"><span class="row-icon">═</span><span class="row-label">Rail corridors · worldwide</span><span class="row-count" data-count="rail_world"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="rail_narn" aria-pressed="false"><span class="row-icon">╫</span><span class="row-label">Rail lines · N. America</span><span class="row-count" data-count="rail_narn"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="transmission" aria-pressed="false"><span class="row-icon">ϟ</span><span class="row-label">Transmission lines · U.S.</span><span class="row-count" data-count="transmission"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="gas_pipelines" aria-pressed="false"><span class="row-icon">━</span><span class="row-label">Gas pipelines · U.S.</span><span class="row-count" data-count="gas_pipelines"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="wind_turbines" aria-pressed="false"><span class="row-icon">✣</span><span class="row-label">Wind turbines · U.S.</span><span class="row-count" data-count="wind_turbines"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="solar_sites" aria-pressed="false"><span class="row-icon">▧</span><span class="row-label">Solar sites · U.S.</span><span class="row-count" data-count="solar_sites"></span><span class="switch"></span></button>
+      <p class="source-note">Mapped inventories, not live operations. Zoom in for detail; dense views ask for a closer zoom.</p>
+      <p class="source-note">Rail sources: <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/railroads/" target="_blank" rel="noopener noreferrer">Natural Earth</a> provides a generalized worldwide overview with uneven coverage; <a href="https://railroads.dot.gov/rail-network-development/maps-and-data/maps-geographic-information-system/maps-geographic" target="_blank" rel="noopener noreferrer">FRA / BTS</a> provides detailed U.S., Canada, and Mexico rail lines (updated July 2026). These show infrastructure, not live trains.</p>
+      <details class="source-details"><summary>Sources, dates &amp; licensing</summary><p>U.S. grid and pipelines: <a href="https://arcgis.netl.doe.gov/server/rest/services/Hosted/Energy_Transition_Atlas_493d6/FeatureServer/18" target="_blank" rel="noopener noreferrer">DOE / HIFLD transmission (2022)</a> and <a href="https://arcgis.netl.doe.gov/server/rest/services/Hosted/Natural_Gas_Pipelines/FeatureServer/10" target="_blank" rel="noopener noreferrer">gas pipelines (2019)</a>. Renewable sites: <a href="https://energy.usgs.gov/uswtdb/" target="_blank" rel="noopener noreferrer">USGS wind</a> and <a href="https://energy.usgs.gov/uspvdb/" target="_blank" rel="noopener noreferrer">solar</a>. Worldwide plants: <a href="https://www.wri.org/research/global-database-power-plants" target="_blank" rel="noopener noreferrer">WRI</a> (historical catalog). Faults: <a href="https://www.globalquakemodel.org/product/active-faults-database" target="_blank" rel="noopener noreferrer">GEM</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>; hosted copy last edited 2024). <a href="https://services.arcgis.com/e8gGAYmR5kxEFApE/ArcGIS/rest/services/Meteorites/FeatureServer/0" target="_blank" rel="noopener noreferrer">Impact structures</a> are an older ArcGIS archive including probable sites; it is not a current scientific census.</p></details>
+      <div class="layer-group" data-layer-group="cyber"><span>Cybersecurity</span><button class="group-toggle" type="button" role="checkbox" aria-label="All cybersecurity map layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="scans" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Observed scan sources</span><span class="row-count" data-count="scans"></span><span class="switch"></span></button>
+      <button class="intel-button" id="cyber-toggle" type="button" aria-expanded="false" aria-controls="cyber-panel"><span>Cyber briefing</span><span aria-hidden="true">⌄</span></button>
+      <div class="intel-panel" id="cyber-panel" hidden>
+        <p class="intel-intro">Public signals with different meanings. Network locations are approximate. These feeds do not show every attack or confirm a compromise.</p>
+        <h3>Observed scan sources</h3>
+        <p class="cyber-caption" id="scan-summary">Loading source list…</p>
+        <div id="scan-country-list" aria-live="polite"></div>
+        <h3>FortiGuard outbreak alerts</h3>
+        <p class="cyber-caption">Published reports about broader threats; they are not map locations.</p>
+        <div id="outbreak-list" aria-live="polite">Loading alerts…</div>
+        <h3>Known exploited vulnerabilities</h3>
+        <p class="cyber-caption">Recent additions to CISA’s catalog, with evidence of exploitation in the wild.</p>
+        <div id="kev-list" aria-live="polite">Loading catalog…</div>
+        <div class="cyber-links"><a href="https://fortiguard.fortinet.com/threat-map" target="_blank" rel="noopener noreferrer">Explore FortiGuard threat map ↗</a><a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank" rel="noopener noreferrer">Full CISA catalog ↗</a></div>
+      </div>
+      <div class="layer-group" data-layer-group="roads"><span>Roads</span><button class="group-toggle" type="button" role="checkbox" aria-label="All road layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="signs" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Road signs &amp; messages</span><span class="row-count" data-count="signs"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="incidents" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Road incidents</span><span class="row-count" data-count="incidents"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="construction" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Construction</span><span class="row-count" data-count="construction"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="sensors" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Road sensors</span><span class="row-count" data-count="sensors"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="lpr" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Plate readers</span><span class="row-count" data-count="lpr"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="traffic" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Traffic flow</span><span class="row-count" data-count="traffic"></span><span class="switch"></span></button>
+      <p class="source-note">Road incidents, works, and signs: North America, Finland, and London where feeds are available. Finnish records are adapted from <a href="https://www.digitraffic.fi/en/" target="_blank" rel="noopener noreferrer">Fintraffic / Digitraffic</a> under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>; London disruptions come from <a href="https://tfl.gov.uk/info-for/open-data-users/" target="_blank" rel="noopener noreferrer">TfL</a>. Plate-reader locations come from the worldwide <a href="https://deflock.me/" target="_blank" rel="noopener noreferrer">DeFlock</a> / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> catalog where mapped; live camera status is unavailable. Road sensors remain regional.</p>
+      <div class="layer-group" data-layer-group="safety"><span>Public safety &amp; utilities</span><button class="group-toggle" type="button" role="checkbox" aria-label="All public safety and utility layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
+      <button class="switch-row" type="button" data-layer="emergency" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Emergency calls · N. America</span><span class="row-count" data-count="emergency"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="international" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Emergency reports · abroad</span><span class="row-count" data-count="international"></span><span class="switch"></span></button>
+      <button class="switch-row" type="button" data-layer="power" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Power outages</span><span class="row-count" data-count="power"></span><span class="switch"></span></button>
+      <p class="coverage">Weather alerts: U.S. NWS, Canada ECCC, and New Zealand MetService. Boundaries appear when the source provides polygons; some NWS markers are forecast-zone or county centroids. Open an alert for official details.</p>
+      <p class="coverage"><strong>Coverage</strong><br>Aircraft, ports, hazards, and scan sources are global. Emergency data abroad is limited to parts of Australia, New Zealand, and England. FIRMS shows satellite heat detections; GDELT locations are approximate. Hazard markers are events, not full footprints. GOES covers the Americas and Pacific. Satellite imagery is not live and may be incomplete or low resolution. Sea conditions are forecasts, not for navigation. Scan locations are approximate, not confirmed hacks. Aircraft are thinned at globe scale; vessels need an AISStream key and zoom 5+. Outage feeds cover participating North American utilities and parts of Great Britain (<a href="https://ukpowernetworks.opendatasoft.com/explore/dataset/ukpn-live-faults/" target="_blank" rel="noopener noreferrer">UK Power Networks</a>, <a href="https://northernpowergrid.opendatasoft.com/explore/dataset/live-power-cuts-data/" target="_blank" rel="noopener noreferrer">Northern Powergrid</a>), not every outage.</p>
+    </section>
+  </aside>
+  <section class="cyclone-guidance-panel" id="cyclone-guidance-panel" aria-label="Tropical cyclone model guidance" hidden>
+    <div class="cyclone-guidance-head"><span>FORECAST MODEL TRACKS</span><button id="cyclone-guidance-close" type="button" aria-label="Hide cyclone model tracks">×</button></div>
+    <h2 id="cyclone-guidance-title"></h2>
+    <p id="cyclone-guidance-summary" role="status" aria-live="polite"></p>
+    <div id="cyclone-guidance-legend" class="cyclone-guidance-legend"></div>
+    <p class="cyclone-guidance-caution">Guidance tracks show possible paths, not probabilities. Follow the issuing weather authority's official forecast for safety decisions.</p>
+    <a id="cyclone-guidance-source" href="https://www.nhc.noaa.gov/" target="_blank" rel="noopener noreferrer" hidden>View source guidance ↗</a>
+  </section>
+  <div id="radio-target" class="radio-target" aria-live="polite" hidden><span class="radio-target-ring" aria-hidden="true"></span><span id="radio-target-label" class="radio-target-label">Drag globe to tune</span><button id="radio-nearby" class="radio-nearby" type="button" hidden>Nearby stations</button></div>
+  <section class="radio-list" id="radio-list" aria-label="Radio stations" hidden>
+    <div class="radio-list-head"><div><small>AT THE TARGET</small><strong id="radio-list-title">Nearby stations</strong></div><button id="radio-list-close" type="button" aria-label="Close station list">×</button></div>
+    <div id="radio-list-items" class="radio-list-items"></div>
+    <p class="radio-credit">Station directory: <a href="https://www.radio-browser.info/" target="_blank" rel="noopener noreferrer">Radio Browser ↗</a></p>
+  </section>
+  <section class="radio-player" id="radio-player" aria-label="Radio player" hidden>
+    <div class="radio-player-head"><div><small>NOW LISTENING</small><strong id="radio-player-title"></strong><span id="radio-player-location"></span></div><button id="radio-player-close" type="button" aria-label="Stop and close radio player">×</button></div>
+    <audio id="radio-audio" controls preload="none"></audio>
+    <p id="radio-player-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="aircraft-track" id="aircraft-track" aria-label="Tracked aircraft" hidden>
+    <div class="aircraft-track-head"><span>TRACKING AIRCRAFT</span><button id="aircraft-stop" type="button">Stop</button></div>
+    <strong id="aircraft-track-title"></strong>
+    <span id="aircraft-track-id"></span>
+    <p id="aircraft-track-detail"></p>
+    <p id="aircraft-track-more"></p>
+    <p id="aircraft-trail-status" class="aircraft-trail-status" aria-live="polite"></p>
+    <button id="aircraft-fit-trail" type="button" hidden>View flown trail</button>
+    <div id="aircraft-track-route" class="aircraft-track-route" aria-live="polite"></div>
+    <button id="aircraft-fit-route" type="button" hidden>View full route</button>
+    <p id="aircraft-track-status" role="status" aria-live="polite"></p>
+    <button id="aircraft-follow" type="button" aria-pressed="true">Following · pause</button>
+  </section>
+  <section id="cyber-map-key" class="cyber-map-key" aria-label="Scan-source map key" hidden>
+    <div class="cyber-key-head"><span>SCAN SOURCE MAP</span><button id="cyber-focus" type="button" aria-pressed="false">Focus</button></div>
+    <strong id="cyber-map-count">Loading mapped sources…</strong>
+    <span id="cyber-map-updated" class="cyber-map-updated"></span>
+    <div class="cyber-density-key" aria-hidden="true"><span>Fewer listed IPs</span><i></i><span>More</span></div>
+    <p class="cyber-world-note">Glow counts nearby top-listed IPs; markers identify the top ten. This is not attack volume.</p>
+    <p class="cyber-detail-note">Markers show approximate source-network locations. Select one for its rank and source record.</p>
+  </section>
+  <div class="map-actions" aria-label="Map controls">
+    <button class="map-tool" id="trip-toggle" type="button" aria-controls="trip-panel" aria-expanded="false" aria-label="Plan trip" title="Plan trip">Plan trip</button>
+    <button class="map-tool" id="draw-toggle" type="button" aria-controls="draw-panel" aria-expanded="false" aria-label="My drawings" title="My drawings">Draw</button>
+    <button id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+    <button id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+    <button id="rotate-left" class="rotate" type="button" aria-label="Rotate map counterclockwise" title="Rotate map counterclockwise">↶</button>
+    <button id="rotate-right" class="rotate" type="button" aria-label="Rotate map clockwise" title="Rotate map clockwise">↷</button>
+    <button id="reset-view" class="reset" type="button" aria-label="Show whole world" title="Show whole world">◎</button>
+  </div>
+  <a class="github-link" href="https://github.com/codebooker/GlobeView" target="_blank" rel="noopener noreferrer" aria-label="View GlobeView source on GitHub" title="View source on GitHub">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.1c-3.14.68-3.8-1.33-3.8-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.62 1.22 3.26.93.1-.73.39-1.22.71-1.5-2.51-.29-5.15-1.26-5.15-5.6 0-1.24.44-2.25 1.16-3.05-.12-.29-.5-1.44.11-3 0 0 .95-.3 3.1 1.16a10.8 10.8 0 0 1 5.64 0c2.15-1.46 3.1-1.16 3.1-1.16.61 1.56.23 2.71.11 3 .72.8 1.16 1.81 1.16 3.05 0 4.35-2.65 5.3-5.17 5.58.4.35.76 1.04.76 2.1v3.1c0 .3.2.65.78.54A11.25 11.25 0 0 0 12 .75Z"/></svg>
+    <span>GitHub</span>
+  </a>
+  <div class="map-meta"><strong id="view-name">World view</strong> · <span id="view-coordinates">20°N, 0°E</span></div>
+  <div id="status" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>404 | GlobeView</title>
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" href="/globeview-logo.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #0d1117;
+      --header: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --blue: #58a6ff;
+      --green: #69df83;
+      --amber: #f3bd48;
+      --red: #ff6a63;
+      --panel: rgba(16, 22, 31, 0.88);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --shadow: 0 24px 64px rgba(0, 0, 0, 0.38);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 18%, rgba(88, 166, 255, 0.16), transparent 26%),
+        radial-gradient(circle at 82% 24%, rgba(105, 223, 131, 0.12), transparent 28%),
+        linear-gradient(180deg, #0d1117 0%, #0b1118 100%);
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.32;
+      mask-image: radial-gradient(circle at center, black 58%, transparent 96%);
+    }
+
+    header {
+      position: relative;
+      z-index: 2;
+      background: var(--header);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    #brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      white-space: nowrap;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    #brand-mark {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+      border-radius: 12px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+    }
+
+    #brand-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    #brand-wordmark {
+      font-size: 18px;
+      font-weight: 700;
+      color: #f0f6fc;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    #brand-domain {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--blue);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      line-height: 1.1;
+    }
+
+    main {
+      min-height: calc(100vh - 61px);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 16px 18px 22px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .not-found {
+      width: min(760px, 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 10px;
+    }
+
+    .code-404 {
+      margin: 0;
+      font-size: clamp(4.6rem, 14vw, 8.2rem);
+      line-height: 0.86;
+      letter-spacing: -0.08em;
+      font-weight: 800;
+      color: #f0f6fc;
+      text-shadow: 0 14px 38px rgba(0, 0, 0, 0.34);
+    }
+
+    .radar-wrap {
+      position: relative;
+      width: min(430px, calc(100vw - 36px));
+      border-radius: 26px;
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      padding: 14px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+
+    .radar-stage {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      border-radius: 28px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background:
+        radial-gradient(circle at center, rgba(36, 75, 113, 0.42), rgba(10, 15, 22, 0.98) 58%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+        inset 0 16px 90px rgba(0, 0, 0, 0.42);
+    }
+
+    .radar-stage::before,
+    .radar-stage::after {
+      content: "";
+      position: absolute;
+      inset: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .radar-stage::before {
+      width: 94%;
+      height: 94%;
+      border: 1px solid rgba(105, 223, 131, 0.16);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.03),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    }
+
+    .radar-stage::after {
+      width: 66%;
+      height: 66%;
+      border: 1px solid rgba(105, 223, 131, 0.1);
+    }
+
+    .grid-lines,
+    .sweep,
+    .scan-noise,
+    .trail-layer,
+    .signal-beam,
+    .cursor-ping,
+    .lost-marker {
+      position: absolute;
+    }
+
+    .grid-lines {
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 26px 26px;
+      opacity: 0.32;
+      mask-image: radial-gradient(circle at center, black 58%, transparent 96%);
+    }
+
+    .scan-noise {
+      inset: 0;
+      background:
+        radial-gradient(circle at 50% 52%, rgba(105, 223, 131, 0.14), transparent 28%),
+        radial-gradient(circle at 35% 30%, rgba(94, 168, 255, 0.12), transparent 22%),
+        radial-gradient(circle at 66% 74%, rgba(243, 189, 72, 0.09), transparent 24%);
+      filter: blur(4px);
+      opacity: 0.72;
+      animation: breathe 5s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      0%, 100% { opacity: 0.64; transform: scale(1); }
+      50% { opacity: 0.84; transform: scale(1.03); }
+    }
+
+    .sweep {
+      inset: -12%;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        transparent 300deg,
+        rgba(105, 223, 131, 0.02) 320deg,
+        rgba(105, 223, 131, 0.22) 344deg,
+        rgba(105, 223, 131, 0.58) 354deg,
+        rgba(188, 255, 203, 0.9) 359deg,
+        transparent 360deg
+      );
+      filter: blur(2px);
+      mix-blend-mode: screen;
+      animation: spin 4.2s linear infinite;
+      transform-origin: 50% 50%;
+      mask-image: radial-gradient(circle at center, transparent 0%, black 28%, black 58%, transparent 86%);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .trail-layer {
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    .trail-path-glow {
+      fill: none;
+      stroke: rgba(105, 223, 131, 0.18);
+      stroke-width: 26;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: blur(8px);
+      opacity: 0.95;
+    }
+
+    .trail-path-core {
+      fill: none;
+      stroke: rgba(122, 242, 142, 0.9);
+      stroke-width: 8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.9;
+    }
+
+    .signal-beam {
+      left: 0;
+      top: 0;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(94, 168, 255, 0), rgba(94, 168, 255, 0.74), rgba(105, 223, 131, 0.96));
+      box-shadow: 0 0 18px rgba(94, 168, 255, 0.32);
+      opacity: 0;
+      transform-origin: 0 50%;
+      transition: opacity 0.16s ease;
+      pointer-events: none;
+    }
+
+    .cursor-ping,
+    .lost-marker {
+      width: 30px;
+      height: 30px;
+      margin: -15px 0 0 -15px;
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate3d(0, 0, 0);
+    }
+
+    .cursor-ping {
+      display: none;
+      border: 2px solid rgba(105, 223, 131, 0.92);
+      box-shadow:
+        0 0 0 8px rgba(105, 223, 131, 0.12),
+        0 0 24px rgba(105, 223, 131, 0.4);
+      background: radial-gradient(circle, rgba(105, 223, 131, 0.26), rgba(105, 223, 131, 0.02));
+    }
+
+    .cursor-ping::before,
+    .cursor-ping::after {
+      content: "";
+      position: absolute;
+      inset: 50%;
+      background: rgba(105, 223, 131, 0.88);
+      transform: translate(-50%, -50%);
+    }
+
+    .cursor-ping::before {
+      width: 12px;
+      height: 2px;
+      border-radius: 999px;
+    }
+
+    .cursor-ping::after {
+      width: 2px;
+      height: 12px;
+      border-radius: 999px;
+    }
+
+    .cursor-ping.active {
+      display: block;
+      animation: pingPulse 1.25s ease-in-out infinite;
+    }
+
+    @keyframes pingPulse {
+      0%, 100% { box-shadow: 0 0 0 8px rgba(105, 223, 131, 0.11), 0 0 24px rgba(105, 223, 131, 0.34); }
+      50% { box-shadow: 0 0 0 16px rgba(105, 223, 131, 0.04), 0 0 34px rgba(105, 223, 131, 0.52); }
+    }
+
+    .lost-marker {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: radial-gradient(circle at 35% 35%, #ffe2ae, #f3bd48 42%, #d49517 100%);
+      box-shadow:
+        0 0 18px rgba(243, 189, 72, 0.44),
+        0 0 0 8px rgba(243, 189, 72, 0.08);
+    }
+
+    .lost-marker::before {
+      content: "";
+      position: absolute;
+      inset: 7px;
+      border-radius: 50%;
+      border: 1px solid rgba(8, 12, 18, 0.3);
+      background: radial-gradient(circle at center, rgba(255, 255, 255, 0.18), transparent 68%);
+    }
+
+    .lost-marker::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin: -5px 0 0 -5px;
+      border-radius: 50%;
+      background: #fff0d1;
+      box-shadow: 0 0 8px rgba(255, 240, 209, 0.7);
+    }
+
+    .lost-marker.locked {
+      background: radial-gradient(circle at 35% 35%, #dfffe7, #69df83 48%, #2ea04c 100%);
+      box-shadow:
+        0 0 20px rgba(105, 223, 131, 0.5),
+        0 0 0 10px rgba(105, 223, 131, 0.08);
+    }
+
+    .status-badge {
+      position: absolute;
+      top: 11px;
+      right: 11px;
+      z-index: 2;
+      min-width: 112px;
+      padding: 8px 13px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 0.71rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(12, 18, 26, 0.86);
+      color: var(--muted);
+      backdrop-filter: blur(12px);
+      transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .status-badge.searching {
+      color: #ffd38b;
+      border-color: rgba(243, 189, 72, 0.24);
+      background: rgba(40, 30, 10, 0.86);
+    }
+
+    .status-badge.broadcasting,
+    .status-badge.tracking {
+      color: #b9dcff;
+      border-color: rgba(94, 168, 255, 0.24);
+      background: rgba(16, 33, 49, 0.88);
+    }
+
+    .status-badge.locked {
+      color: #b6ffc8;
+      border-color: rgba(105, 223, 131, 0.24);
+      background: rgba(16, 39, 23, 0.88);
+    }
+
+    .copy {
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.4rem, 4vw, 2.15rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 700;
+    }
+
+    .message {
+      margin: 0;
+      max-width: 30rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.52;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .button,
+    button.button {
+      appearance: none;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 650;
+      font-size: 0.95rem;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+    }
+
+    .button:hover,
+    button.button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button-primary {
+      color: #081017;
+      background: linear-gradient(135deg, #7fe09d 0%, #53c4ff 100%);
+      box-shadow: 0 14px 32px rgba(83, 196, 255, 0.2);
+    }
+
+    .button-secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    @media (max-width: 640px) {
+      main {
+        padding-top: 12px;
+      }
+
+      .radar-wrap {
+        padding: 12px;
+        border-radius: 22px;
+      }
+
+      .radar-stage {
+        border-radius: 18px;
+      }
+
+      .actions {
+        width: 100%;
+      }
+
+      .button,
+      button.button {
+        width: 100%;
+      }
+    }
+
+    @media (max-height: 840px) {
+      main {
+        padding-top: 10px;
+        padding-bottom: 16px;
+      }
+
+      .not-found {
+        gap: 8px;
+      }
+
+      .code-404 {
+        font-size: clamp(4rem, 11vw, 6.4rem);
+      }
+
+      .radar-wrap {
+        width: min(380px, calc(100vw - 36px));
+        padding: 12px;
+      }
+
+      h1 {
+        font-size: clamp(1.2rem, 3.2vw, 1.85rem);
+      }
+
+      .message {
+        font-size: 0.86rem;
+        line-height: 1.44;
+      }
+
+      .button,
+      button.button {
+        padding: 11px 15px;
+        font-size: 0.9rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a id="brand" href="/" aria-label="GlobeView">
+      <img id="brand-mark" src="/globeview-logo.svg" alt="GlobeView logo" />
+      <div id="brand-copy">
+        <div id="brand-wordmark">GlobeView</div>
+        <div id="brand-domain">LIVE WORLD MAP</div>
+      </div>
+    </a>
+  </header>
+
+  <main>
+    <section class="not-found">
+      <h1 class="code-404">404</h1>
+
+      <div class="radar-wrap">
+        <div class="status-badge searching" id="status-badge">Searching</div>
+        <div class="radar-stage" id="radar-stage">
+          <div class="grid-lines"></div>
+          <div class="scan-noise"></div>
+          <div class="sweep"></div>
+          <svg class="trail-layer" id="trail-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+            <g id="trail-path-glow"></g>
+            <g id="trail-path-core"></g>
+          </svg>
+          <div class="signal-beam" id="signal-beam"></div>
+          <div class="cursor-ping" id="cursor-ping"></div>
+          <div class="lost-marker" id="lost-marker"></div>
+        </div>
+      </div>
+
+      <div class="copy">
+        <h1>Page Not Found</h1>
+        <p class="message">That route is off the map. Steer the marker to draw your own squiggle on the radar, or head back to the live map.</p>
+        <div class="actions">
+          <a class="button button-primary" href="/">Return To GlobeView</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const stage = document.getElementById('radar-stage');
+      const statusBadge = document.getElementById('status-badge');
+      const beam = document.getElementById('signal-beam');
+      const ping = document.getElementById('cursor-ping');
+      const marker = document.getElementById('lost-marker');
+      const trailGlow = document.getElementById('trail-path-glow');
+      const trailCore = document.getElementById('trail-path-core');
+
+      const pointer = { active: false, x: 0.5, y: 0.5 };
+      const markerState = { x: 0.67, y: 0.33, vx: 0.0012, vy: 0.0008 };
+      const origin = { x: 0.5, y: 0.5 };
+      const trailPoints = [];
+      const TRAIL_MAX_POINTS = 320;
+      const TRAIL_SOLID_MS = 1800;
+      const TRAIL_FADE_MS = 5200;
+
+      let rect = stage.getBoundingClientRect();
+      let lastTime = performance.now();
+      let wanderClock = 0;
+      let lockUntil = 0;
+      let locked = false;
+      let trailDirty = true;
+
+      function setStatus(mode) {
+        statusBadge.className = 'status-badge ' + mode;
+        if (mode === 'locked') {
+          statusBadge.textContent = 'Locked On';
+        } else if (mode === 'tracking') {
+          statusBadge.textContent = 'Tracking';
+        } else if (mode === 'broadcasting') {
+          statusBadge.textContent = 'Broadcasting';
+        } else {
+          statusBadge.textContent = 'Searching';
+        }
+      }
+
+      function clampToDeck(x, y) {
+        const dx = x - origin.x;
+        const dy = y - origin.y;
+        const radius = Math.hypot(dx, dy);
+        const maxRadius = 0.45;
+        if (radius <= maxRadius) return { x, y };
+        const scale = maxRadius / radius;
+        return {
+          x: origin.x + dx * scale,
+          y: origin.y + dy * scale
+        };
+      }
+
+      function updatePointer(event) {
+        rect = stage.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / rect.width;
+        const y = (event.clientY - rect.top) / rect.height;
+        const bounded = clampToDeck(Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y)));
+        pointer.x = bounded.x;
+        pointer.y = bounded.y;
+        pointer.active = true;
+      }
+
+      function hidePointer() {
+        pointer.active = false;
+        ping.classList.remove('active');
+        beam.style.opacity = '0';
+        if (!locked) setStatus('searching');
+      }
+
+      function setMarkerPosition(el, x, y) {
+        el.style.left = `${x * rect.width}px`;
+        el.style.top = `${y * rect.height}px`;
+      }
+
+      function rebuildTrailPath(now) {
+        if (!trailDirty) return;
+        const totalTrailMs = TRAIL_SOLID_MS + TRAIL_FADE_MS;
+        while (trailPoints.length > 1 && now - trailPoints[1].t > totalTrailMs) {
+          trailPoints.shift();
+        }
+        if (trailPoints.length < 2) {
+          trailGlow.innerHTML = '';
+          trailCore.innerHTML = '';
+          trailDirty = false;
+          return;
+        }
+        const glowPaths = [];
+        const corePaths = [];
+
+        for (let i = 1; i < trailPoints.length; i += 1) {
+          const start = trailPoints[i - 1];
+          const end = trailPoints[i];
+          const ageMs = now - end.t;
+          let opacity = 1;
+
+          if (ageMs > TRAIL_SOLID_MS) {
+            const fadeProgress = (ageMs - TRAIL_SOLID_MS) / TRAIL_FADE_MS;
+            opacity = Math.max(0, 1 - fadeProgress);
+          }
+
+          if (opacity <= 0) continue;
+
+          const d = `M ${(start.x * 1000).toFixed(1)} ${(start.y * 1000).toFixed(1)} L ${(end.x * 1000).toFixed(1)} ${(end.y * 1000).toFixed(1)}`;
+          const easedOpacity = Math.pow(opacity, 1.25);
+          glowPaths.push(`<path class="trail-path-glow" d="${d}" opacity="${(easedOpacity * 0.5).toFixed(3)}"></path>`);
+          corePaths.push(`<path class="trail-path-core" d="${d}" opacity="${(easedOpacity * 0.95).toFixed(3)}"></path>`);
+        }
+
+        trailGlow.innerHTML = glowPaths.join('');
+        trailCore.innerHTML = corePaths.join('');
+        trailDirty = false;
+      }
+
+      function appendTrailPoint(x, y) {
+        const lastPoint = trailPoints[trailPoints.length - 1];
+        if (!lastPoint || Math.hypot(x - lastPoint.x, y - lastPoint.y) >= 0.0045) {
+          trailPoints.push({ x, y, t: performance.now() });
+          if (trailPoints.length > TRAIL_MAX_POINTS) {
+            trailPoints.shift();
+          }
+          trailDirty = true;
+        }
+      }
+
+      function updateBeam(startX, startY, endX, endY, visible) {
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const distance = Math.hypot(dx, dy);
+        beam.style.opacity = visible ? String(Math.min(0.88, 0.25 + distance / 240)) : '0';
+        beam.style.width = `${distance}px`;
+        beam.style.left = `${startX}px`;
+        beam.style.top = `${startY}px`;
+        beam.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      }
+
+      function animate(now) {
+        const dt = Math.min(2.4, (now - lastTime) / 16.6667);
+        lastTime = now;
+        wanderClock += 0.018 * dt;
+        rect = stage.getBoundingClientRect();
+
+        let targetX;
+        let targetY;
+        let mode = 'searching';
+
+        if (pointer.active) {
+          targetX = pointer.x;
+          targetY = pointer.y;
+          mode = 'broadcasting';
+        } else {
+          targetX = 0.5 + Math.cos(wanderClock * 0.92) * 0.18 + Math.sin(wanderClock * 1.8) * 0.045;
+          targetY = 0.52 + Math.sin(wanderClock * 0.68) * 0.17 + Math.cos(wanderClock * 1.36) * 0.06;
+        }
+
+        const dx = targetX - markerState.x;
+        const dy = targetY - markerState.y;
+        const distanceNorm = Math.hypot(dx, dy);
+        const trackRadius = 0.3;
+        const lockRadius = 0.08;
+        const inTrackingRange = pointer.active && distanceNorm < trackRadius;
+
+        if (pointer.active && (inTrackingRange || locked)) {
+          const accel = locked ? 0.0032 : 0.00115;
+          markerState.vx += dx * accel * dt;
+          markerState.vy += dy * accel * dt;
+          mode = locked ? 'locked' : 'tracking';
+          if (distanceNorm < lockRadius) {
+            locked = true;
+            lockUntil = now + 1500;
+          }
+        } else {
+          const wanderAccel = 0.00042;
+          markerState.vx += dx * wanderAccel * dt;
+          markerState.vy += dy * wanderAccel * dt;
+          if (pointer.active) mode = 'broadcasting';
+        }
+
+        if (locked && now > lockUntil) {
+          locked = false;
+        }
+
+        markerState.vx *= Math.pow(0.955, dt);
+        markerState.vy *= Math.pow(0.955, dt);
+
+        markerState.x += markerState.vx * dt;
+        markerState.y += markerState.vy * dt;
+
+        const boundedMarker = clampToDeck(markerState.x, markerState.y);
+        if (boundedMarker.x !== markerState.x) markerState.vx *= -0.68;
+        if (boundedMarker.y !== markerState.y) markerState.vy *= -0.68;
+        markerState.x = boundedMarker.x;
+        markerState.y = boundedMarker.y;
+
+        appendTrailPoint(markerState.x, markerState.y);
+        if (trailPoints.length) trailDirty = true;
+        rebuildTrailPath(now);
+
+        setMarkerPosition(marker, markerState.x, markerState.y);
+        marker.classList.toggle('locked', locked);
+
+        if (pointer.active) {
+          ping.classList.add('active');
+          setMarkerPosition(ping, pointer.x, pointer.y);
+          updateBeam(markerState.x * rect.width, markerState.y * rect.height, pointer.x * rect.width, pointer.y * rect.height, true);
+        } else if (!locked) {
+          updateBeam(0, 0, 0, 0, false);
+        }
+
+        setStatus(mode);
+        requestAnimationFrame(animate);
+      }
+
+      stage.addEventListener('pointerenter', updatePointer);
+      stage.addEventListener('pointermove', updatePointer);
+      stage.addEventListener('pointerdown', updatePointer);
+      stage.addEventListener('pointerleave', hidePointer);
+
+      window.addEventListener('resize', () => {
+        rect = stage.getBoundingClientRect();
+      });
+
+      setStatus('searching');
+      requestAnimationFrame(animate);
+    })();
+  </script>
+</body>
+</html>

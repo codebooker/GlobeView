@@ -1,18 +1,41 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
 
-# Other files and folders
-.settings/
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
 
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
+# ── Secrets / environment ─────────────────────────────────────────────────
+# Store credentials here and never commit them.
+# Required variables: DUKE_ENERGY_AUTH, PULSEPOINT_SECRET
+.env
+.env.*
+!.env.example
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+# ── macOS ─────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── Editors / IDEs ────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Logs ─────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Runtime caches ───────────────────────────────────────────────────────
+.cache/
+
+# ── Claude Code ───────────────────────────────────────────────────────────
+.claude/
+
+# ── Sample / scratch files ────────────────────────────────────────────────
+sample_tile.bin
