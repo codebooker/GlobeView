@@ -17,6 +17,33 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_cyprus_road_events_require_fresh_feed_and_active_local_schedule(self):
+        now = dt.datetime(2026, 9, 28, 9, tzinfo=dt.timezone.utc).timestamp()
+        def record(identity, kind, start, end='', description='Road works'):
+            return (f'<s:situationRecord id="{identity}"><c:validityStatus>definedByValidityTimeSpec</c:validityStatus>'
+                    f'<c:overallStartTime>{start}</c:overallStartTime>'
+                    f'<c:overallEndTime>{end}</c:overallEndTime>'
+                    f'<l:latitude>35.17</l:latitude><l:longitude>33.38</l:longitude>'
+                    f'<eventTypeId>{kind}</eventTypeId><subtype>construction work</subtype>'
+                    f'<description>{description}</description></s:situationRecord>')
+        xml = ('<d:payload xmlns:d="http://datex2.eu/schema/3/d2Payload" '
+               'xmlns:s="http://datex2.eu/schema/3/situation" '
+               'xmlns:c="http://datex2.eu/schema/3/common" '
+               'xmlns:l="http://datex2.eu/schema/3/locationReferencing">'
+               '<c:publicationTime>2026-09-28T12:03:00+03:00</c:publicationTime>'
+               + record('active', '25', '2026-09-28T08:00:00', '2026-09-28T18:00:00')
+               + record('future', '25', '2026-09-29T08:00:00', '2026-09-29T18:00:00')
+               + record('expired', '25', '2026-09-27T08:00:00', '2026-09-27T18:00:00')
+               + '</d:payload>')
+        root = ET.fromstring(xml)
+        rows = feeds._parse_cyprus_roads(root, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [33.38, 35.17])
+        self.assertEqual(rows[0]['properties']['detail'], 'construction work · Road works')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_cyprus_roads(root, now + 3600)
+
     def test_gdynia_signs_show_text_from_each_display_page(self):
         devices = [{'id': 5, 'location': {'type': 'Point', 'coordinates': [18.48, 54.52]}}]
         messages = [{'id': 12050184, 'vmsId': 5,
