@@ -2357,10 +2357,29 @@ def _parse_dgt_cameras(root, now=None):
 
 
 _DGT_MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
+_DGT_CAMERA_PLACEHOLDER_BYTES = {'32634', '9422'}
+
+
+def _dgt_camera_headers_available(response, now):
+    if urllib.parse.urlsplit(response.url).hostname != 'etraffic.dgt.es':
+        return False
+    headers = response.headers
+    if headers.get('Content-Type', '').split(';')[0] != 'image/jpeg':
+        return False
+    if headers.get('Content-Length') in _DGT_CAMERA_PLACEHOLDER_BYTES:
+        return False
+    modified = headers.get('Last-Modified')
+    if not modified:
+        return False
+    try:
+        age = now - email.utils.parsedate_to_datetime(modified).timestamp()
+    except (TypeError, ValueError):
+        return False
+    return -300 <= age <= 30 * 60
 
 
 def _dgt_madrid_unavailable_cameras(features):
-    """DGT serves a 200 JPEG reading 'IMAGEN NO DISPONIBLE' for offline feeds."""
+    """Omit DGT's successful-looking placeholder and long-stale camera JPEGs."""
     now = time.time()
     if now < _DGT_MADRID_CAMERA_HEALTH['until']:
         return _DGT_MADRID_CAMERA_HEALTH['unavailable']
@@ -2374,10 +2393,7 @@ def _dgt_madrid_unavailable_cameras(features):
             'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
         try:
             with urllib.request.urlopen(request, timeout=6) as response:
-                if urllib.parse.urlsplit(response.url).hostname != 'etraffic.dgt.es':
-                    return False
-                return (response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg'
-                        or response.headers.get('Content-Length') == '32634')
+                return not _dgt_camera_headers_available(response, now)
         except urllib.error.HTTPError as error:
             return error.code == 404
         except (OSError, ValueError):

@@ -2,6 +2,7 @@ import unittest
 import base64
 import csv
 import datetime as dt
+import email.utils
 import io
 import threading
 import xml.etree.ElementTree as ET
@@ -337,23 +338,29 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)
 
-    def test_dgt_madrid_omits_offline_placeholder(self):
+    def test_dgt_madrid_omits_placeholders_and_stale_images(self):
         class Response:
             def __init__(self, url):
                 self.url = url
+                camera_id = url.rsplit('/', 1)[-1]
                 self.headers = {'Content-Type': 'image/jpeg',
-                                'Content-Length': '32634' if url.endswith('/923.jpg') else '125668'}
+                                'Content-Length': {'923.jpg': '32634', '1103.jpg': '9422'}.get(
+                                    camera_id, '125668'),
+                                'Last-Modified': email.utils.formatdate(
+                                    NOW - (3600 if camera_id == '1104.jpg' else 300), usegmt=True)}
             def __enter__(self): return self
             def __exit__(self, *_): return False
         items = [feeds._feature([-3.7, 40.4], {
             'key': f'es:dgt:camera:{number}', 'layer': 'cameras',
             'snapshot_url': f'https://etraffic.dgt.es/camarasEtraffic/{number}.jpg',
-        }) for number in (923, 929)]
+        }) for number in (923, 1103, 1104, 929)]
         previous = dict(feeds._DGT_MADRID_CAMERA_HEALTH)
         try:
             feeds._DGT_MADRID_CAMERA_HEALTH['until'] = 0
-            with patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
-                self.assertEqual(feeds._dgt_madrid_unavailable_cameras(items), {'es:dgt:camera:923'})
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
+                self.assertEqual(feeds._dgt_madrid_unavailable_cameras(items),
+                                 {'es:dgt:camera:923', 'es:dgt:camera:1103', 'es:dgt:camera:1104'})
         finally:
             feeds._DGT_MADRID_CAMERA_HEALTH.update(previous)
 
