@@ -1271,6 +1271,7 @@
         return;
       }
       attachCameraMedia(root, { item: { expando: { snapshotUrl: meta.snapshotUrl,
+        snapshotFallbackUrl: meta.snapshotFallbackUrl,
         snapshotRefreshMs: meta.snapshotRefreshMs } } }, null, popup);
       return;
     }
