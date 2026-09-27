@@ -16,6 +16,37 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_luxembourg_datex_maps_current_events_and_rejects_stale_feed(self):
+        now = dt.datetime(2026, 9, 27, 8, 30, tzinfo=dt.timezone.utc).timestamp()
+        document = '''<payload xmlns="http://datex2.eu/schema/3/d2Payload"
+          xmlns:sit="http://datex2.eu/schema/3/situation"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <publicationTime>2026-09-27T08:25:00Z</publicationTime>
+          <sit:situation><sit:situationRecord xsi:type="sit:MaintenanceWorks" id="work-1">
+            <sit:validity><sit:overallStartTime>2026-09-27T07:00:00Z</sit:overallStartTime></sit:validity>
+            <sit:generalPublicComment><sit:comment><sit:values><sit:value>Bridge repair</sit:value></sit:values></sit:comment></sit:generalPublicComment>
+            <sit:locationReference><sit:roadName>A1</sit:roadName><sit:roadDestination>toward Trier</sit:roadDestination>
+              <sit:pointCoordinates><sit:latitude>49.64</sit:latitude><sit:longitude>6.3</sit:longitude></sit:pointCoordinates>
+            </sit:locationReference><sit:numberOfLanesRestricted>1</sit:numberOfLanesRestricted>
+          </sit:situationRecord><sit:situationRecord xsi:type="sit:GeneralObstruction" id="obstruction-1">
+            <sit:pointCoordinates><sit:latitude>49.5</sit:latitude><sit:longitude>6.1</sit:longitude></sit:pointCoordinates>
+          </sit:situationRecord><sit:situationRecord xsi:type="sit:Accident" id="future">
+            <sit:overallStartTime>2026-09-27T09:00:00Z</sit:overallStartTime>
+            <sit:pointCoordinates><sit:latitude>49.6</sit:latitude><sit:longitude>6.1</sit:longitude></sit:pointCoordinates>
+          </sit:situationRecord><sit:situationRecord xsi:type="sit:Accident" id="ended">
+            <sit:overallEndTime>2026-09-27T08:00:00Z</sit:overallEndTime>
+            <sit:pointCoordinates><sit:latitude>49.6</sit:latitude><sit:longitude>6.1</sit:longitude></sit:pointCoordinates>
+          </sit:situationRecord><sit:situationRecord xsi:type="sit:Accident" id="no-location" />
+          </sit:situation></payload>'''
+        rows = feeds._parse_luxembourg_roads(ET.fromstring(document), now)
+        self.assertEqual([row['properties']['layer'] for row in rows], ['construction', 'incidents'])
+        self.assertEqual(rows[0]['geometry']['coordinates'], [6.3, 49.64])
+        self.assertEqual(rows[0]['properties']['key'], 'lu:cita:work-1')
+        self.assertIn('1 lane(s) restricted', rows[0]['properties']['detail'])
+        stale = ET.fromstring(document.replace('2026-09-27T08:25:00Z', '2026-09-27T08:00:00Z'))
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_luxembourg_roads(stale, now)
+
     def test_norway_roads_only_include_active_main_records(self):
         published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
         base = {'geometry': {'type': 'Point', 'coordinates': [10.7, 59.9]},

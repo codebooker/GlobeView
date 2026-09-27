@@ -57,6 +57,8 @@ ZURICH_COUNTER_CONFIG_URL = 'https://vdp.zh.ch/pws/public-service/readCollectors
 ZURICH_COUNTER_SOURCE = 'https://datenkatalog.statistik.zh.ch/datasets/692@tiefbauamt-kanton-zuerich'
 NORWAY_WFS_URL = 'https://ogckart-sn1.atlas.vegvesen.no/datex_3_1/ows'
 NORWAY_SOURCE = 'https://www.vegvesen.no/trafikk/kart'
+LUXEMBOURG_ROADS_URL = 'https://cita.lu/info_trafic/datex/situationrecord36'
+LUXEMBOURG_ROADS_SOURCE = 'https://data.public.lu/en/datasets/cita-evenements-trafic-en-datex-ii-v3-6/'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -826,6 +828,59 @@ def _france_roads():
     return _parse_france_roads(_get_xml(FRANCE_ROADS_URL, max_bytes=8 * 1024 * 1024))
 
 
+def _parse_luxembourg_roads(root, now=None):
+    now = time.time() if now is None else now
+    published_text = root.findtext('.//{*}publicationTime')
+    published = _timestamp(published_text)
+    if published is None or not -600 <= now - published <= 20 * 60:
+        raise ValueError('Luxembourg road publication is stale or invalid')
+    categories = {
+        'MaintenanceWorks': ('construction', 'Road maintenance'),
+        'ConstructionWorks': ('construction', 'Roadworks'),
+        'Accident': ('incidents', 'Crash'),
+        'GeneralObstruction': ('incidents', 'Road obstruction'),
+        'VehicleObstruction': ('incidents', 'Vehicle obstruction'),
+        'AbnormalTraffic': ('incidents', 'Traffic delay'),
+        'WeatherRelatedRoadConditions': ('incidents', 'Weather road hazard'),
+        'EquipmentOrSystemFault': ('incidents', 'Road equipment fault'),
+    }
+    features = []
+    for record in root.findall('.//{*}situationRecord'):
+        category = categories.get(record.get(_DATEX_TYPE, '').split(':')[-1])
+        if category is None or not record.get('id'):
+            continue
+        start = _timestamp(record.findtext('.//{*}overallStartTime'))
+        end = _timestamp(record.findtext('.//{*}overallEndTime'))
+        status = record.findtext('.//{*}validityStatus')
+        if status in {'suspended', 'cancelled', 'inactive'} or (start is not None and start > now) or (end is not None and end < now):
+            continue
+        lat = record.findtext('.//{*}pointCoordinates/{*}latitude')
+        lon = record.findtext('.//{*}pointCoordinates/{*}longitude')
+        point = _point({'coordinates': [lon, lat]})
+        if not point or not (5.5 <= point[0] <= 6.6 and 49.35 <= point[1] <= 50.2):
+            continue
+        road = _clean(record.findtext('.//{*}roadName'), 24)
+        direction = _clean(record.findtext('.//{*}roadDestination'), 100)
+        comments = [_clean(node.text, 160) for node in record.findall(
+            './/{*}generalPublicComment/{*}comment/{*}values/{*}value')]
+        comments = [comment for comment in comments if comment]
+        restricted = record.findtext('.//{*}numberOfLanesRestricted')
+        lanes = f'{restricted} lane(s) restricted' if restricted and restricted.isdigit() and int(restricted) > 0 else ''
+        layer, label = category
+        features.append(_feature(point, {
+            'key': f'lu:cita:{record.get("id")}', 'layer': layer,
+            'title': f'{label} · {road}' if road else label,
+            'detail': _clean(' · '.join(filter(None, [direction, *comments[:2], lanes])), 280),
+            'source': 'Luxembourg CITA · CC0', 'source_url': LUXEMBOURG_ROADS_SOURCE,
+            'updated_at': published_text,
+        }))
+    return features
+
+
+def _luxembourg_roads():
+    return _parse_luxembourg_roads(_get_xml(LUXEMBOURG_ROADS_URL))
+
+
 def _lambert93_to_lonlat(x, y):
     """Convert the sensor reference's RGF93 / Lambert-93 metres to map coordinates."""
     a, flattening = 6378137.0, 1 / 298.257222101
@@ -1399,6 +1454,7 @@ _FETCHERS = {
         'uk_wales_construction': lambda: _wales_feed('construction'),
         'uk_scotland_construction': _scotland_roadworks,
         'fr_national_roads': _france_roads,
+        'lu_cita_roads': _luxembourg_roads,
         'fr_traffic_sensors': _france_sensors,
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
