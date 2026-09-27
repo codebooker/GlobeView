@@ -16,6 +16,35 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_sct_roadworks_and_incidents_are_separate(self):
+        root = ET.fromstring('''<FeatureCollection><featureMember><event>
+          <geom><Point><coordinates>2.16,41.67</coordinates></Point></geom>
+          <identificador>151362101</identificador><carretera>C-59</carretera>
+          <descripcio_tipus>Retenció</descripcio_tipus><descripcio>Traffic delay</descripcio>
+          </event></featureMember><featureMember><event>
+          <geom><Point><coordinates>1.42,41.36</coordinates></Point></geom>
+          <identificador>151360903</identificador><carretera>C-51</carretera>
+          <descripcio_tipus>Obres</descripcio_tipus><causa>Maintenance</causa>
+          </event></featureMember></FeatureCollection>''')
+        rows = feeds._parse_sct_incidents(root)
+        self.assertEqual([row['properties']['layer'] for row in rows], ['incidents', 'construction'])
+        self.assertEqual(rows[0]['properties']['key'], 'es:sct:incident:151362101')
+
+    def test_sct_cameras_proxy_only_authority_images_and_deduplicate(self):
+        root = ET.fromstring('''<FeatureCollection><featureMember><camera>
+          <geom><Point><coordinates>2.18,41.46</coordinates></Point></geom>
+          <carretera>C-58</carretera><link>http://mct.gencat.cat/mct2bo/RenderService?sctidcam=nc87.gif</link>
+          </camera></featureMember><featureMember><camera>
+          <geom><Point><coordinates>2.18,41.46</coordinates></Point></geom>
+          <link>http://mct.gencat.cat/mct2bo/RenderService?sctidcam=nc87.gif</link>
+          </camera></featureMember><featureMember><camera>
+          <geom><Point><coordinates>2.20,41.47</coordinates></Point></geom>
+          <link>https://example.com/camera.jpg</link>
+          </camera></featureMember></FeatureCollection>''')
+        rows = feeds._parse_sct_cameras(root)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/catalonia-camera/nc87')
+
     def test_dgt_cameras_require_current_catalog_and_official_image(self):
         now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()
         root = ET.fromstring('''<payload><publicationTime>2026-09-27T09:00:00Z</publicationTime>

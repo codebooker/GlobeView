@@ -4,6 +4,7 @@ import concurrent.futures
 import base64
 import csv
 import datetime as dt
+import email.utils
 import gzip
 import html
 import io
@@ -47,6 +48,9 @@ DGT_BASE = 'https://nap.dgt.es/datex2/v3/dgt/'
 DGT_CAMERAS_SOURCE = 'https://nap.dgt.es/es/dataset/camaras-dgt-datex2-v3-7'
 DGT_INCIDENTS_SOURCE = 'https://nap.dgt.es/es/dataset/incidencias-dgt-datex2-v3-7'
 DGT_SIGNS_SOURCE = 'https://nap.dgt.es/es/dataset/paneles-dgt-tiempo-real-datex2-v3-7'
+SCT_BASE = 'https://www.gencat.cat/transit/opendata/'
+SCT_INCIDENTS_SOURCE = 'https://analisi.transparenciacatalunya.cat/Transport/Incid-ncies-vi-ries-en-temps-real-a-Catalunya/uyam-bs37'
+SCT_CAMERAS_SOURCE = 'https://analisi.transparenciacatalunya.cat/Transport/C-meres-de-tr-nsit-a-les-carreteres-de-Catalunya/3tzz-6b9y'
 AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
@@ -109,6 +113,24 @@ def _get_xml(url, max_bytes=2 * 1024 * 1024):
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
         raise ValueError('Road feed exceeded size limit')
+    return ET.fromstring(body)
+
+
+def _sct_xml(filename, now=None):
+    """Read SCT's current publication and reject an old cached copy."""
+    now = time.time() if now is None else now
+    request = urllib.request.Request(SCT_BASE + filename, headers={
+        'User-Agent': 'GlobeView/1.0 (public map feed reader)', 'Accept': 'application/xml'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        modified = response.headers.get('Last-Modified')
+        body = response.read(2 * 1024 * 1024 + 1)
+    if len(body) > 2 * 1024 * 1024:
+        raise ValueError('SCT publication exceeded size limit')
+    if not modified:
+        raise ValueError('SCT publication has no freshness date')
+    published = email.utils.parsedate_to_datetime(modified).timestamp()
+    if not -300 <= now - published <= 20 * 60:
+        raise ValueError('SCT publication is stale')
     return ET.fromstring(body)
 
 
@@ -1922,6 +1944,77 @@ def _dgt_signs():
     return _parse_dgt_signs(locations, statuses)
 
 
+def _sct_point(member):
+    raw = member.findtext('.//{*}Point/{*}coordinates') or ''
+    parts = raw.strip().split(',')
+    try:
+        lon, lat = float(parts[0]), float(parts[1])
+    except (IndexError, ValueError):
+        return None
+    return [lon, lat] if -0.1 <= lon <= 3.5 and 40.3 <= lat <= 42.9 else None
+
+
+def _parse_sct_incidents(root):
+    features = []
+    seen = set()
+    for member in root.findall('.//{*}featureMember'):
+        incident_id = member.findtext('.//{*}identificador') or ''
+        point = _sct_point(member)
+        if not re.fullmatch(r'\d{1,16}', incident_id) or incident_id in seen or not point:
+            continue
+        seen.add(incident_id)
+        kind_text = _clean(member.findtext('.//{*}descripcio_tipus'), 50)
+        layer = 'construction' if kind_text.casefold() == 'obres' else 'incidents'
+        road = _clean(member.findtext('.//{*}carretera'), 32)
+        cause = _clean(member.findtext('.//{*}causa'), 90)
+        description = _clean(member.findtext('.//{*}descripcio'), 170)
+        direction = _clean(member.findtext('.//{*}sentit'), 40)
+        kilometer = _clean(member.findtext('.//{*}pk_inici'), 16)
+        detail = ' · '.join(part for part in (description, cause if cause != description else '',
+                                            direction, f'km {kilometer}' if kilometer else '') if part)
+        features.append(_feature(point, {
+            'key': f'es:sct:incident:{incident_id}', 'layer': layer,
+            'title': ' · '.join(part for part in (road, kind_text or 'Road event') if part),
+            'detail': detail, 'source': 'Catalonia SCT', 'source_url': SCT_INCIDENTS_SOURCE,
+        }))
+    return features
+
+
+def _sct_incidents():
+    return _parse_sct_incidents(_sct_xml('incidenciesGML.xml'))
+
+
+def _parse_sct_cameras(root):
+    features = []
+    seen = set()
+    for member in root.findall('.//{*}featureMember'):
+        point = _sct_point(member)
+        link = (member.findtext('.//{*}link') or '').strip()
+        match = re.fullmatch(r'http://mct\.gencat\.cat/mct2bo/RenderService\?sctidcam=([A-Za-z0-9_-]{1,24})\.gif', link)
+        if not point or not match:
+            continue
+        camera_id = match.group(1)
+        if camera_id in seen:
+            continue
+        seen.add(camera_id)
+        road = _clean(member.findtext('.//{*}carretera'), 32)
+        town = _clean(member.findtext('.//{*}municipi'), 70)
+        kilometer = _clean(member.findtext('.//{*}pk'), 16)
+        features.append(_feature(point, {
+            'key': f'es:sct:camera:{camera_id}', 'layer': 'cameras',
+            'title': f'Traffic camera · {road}' if road else 'Traffic camera',
+            'detail': ' · '.join(part for part in (town, f'km {kilometer}' if kilometer else '',
+                                               'Latest available still') if part),
+            'snapshot_url': f'/catalonia-camera/{camera_id}', 'snapshot_refresh_ms': 180000,
+            'source': 'Catalonia SCT', 'source_url': SCT_CAMERAS_SOURCE,
+        }))
+    return features
+
+
+def _sct_cameras():
+    return _parse_sct_cameras(_sct_xml('cameres.xml'))
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -1931,6 +2024,8 @@ _FETCHERS = {
         'es_dgt_cameras': _dgt_cameras,
         'es_dgt_incidents': _dgt_incidents,
         'es_dgt_signs': _dgt_signs,
+        'es_sct_incidents': _sct_incidents,
+        'es_sct_cameras': _sct_cameras,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,

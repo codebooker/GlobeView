@@ -19124,6 +19124,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_video_token(parsed)
         elif parsed.path.startswith('/camera-snapshot/'):
             self._handle_camera_snapshot(parsed)
+        elif parsed.path.startswith('/catalonia-camera/'):
+            self._handle_catalonia_camera(parsed)
         elif parsed.path.startswith('/stream/'):
             self._handle_stream_proxy(parsed)
         elif parsed.path == '/tile':
@@ -19461,6 +19463,43 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(502, 'Snapshot unavailable')
         except Exception as exc:
             self._log_exception('camera-snapshot', exc)
+            self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_catalonia_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/catalonia-camera/')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,24}', camera_id):
+            self.send_error(400, 'Invalid camera id'); return
+
+        def load_snapshot():
+            url = ('https://mct.gencat.cat/mct2bo/TransitCamera?'
+                   f'nom={camera_id}.gif&visualitzacio=imatge')
+            request = urllib.request.Request(url, headers={
+                'User-Agent': 'GlobeView/1.0 (+https://github.com/codebooker/GlobeView)'})
+            with urllib.request.urlopen(request, timeout=15) as response:
+                if urllib.parse.urlsplit(response.url).hostname != 'mct.gencat.cat':
+                    raise ValueError('Unexpected camera redirect')
+                content = response.read(2 * 1024 * 1024 + 1)
+            if len(content) > 2 * 1024 * 1024:
+                raise ValueError('Camera image exceeded size limit')
+            if content.startswith(b'GIF87a') or content.startswith(b'GIF89a'):
+                content_type = 'image/gif'
+            elif content.startswith(b'\xff\xd8\xff'):
+                content_type = 'image/jpeg'
+            elif content.startswith(b'\x89PNG\r\n\x1a\n'):
+                content_type = 'image/png'
+            else:
+                raise ValueError('Camera returned no supported image')
+            return content, content_type
+
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'catalonia-camera:v1:{camera_id}', load_snapshot,
+                ttl=180, stale_ttl=300, persist=False, wait_timeout=20)
+            self._write_bytes(200, content, content_type,
+                              cache_control='public, max-age=60, stale-while-revalidate=120',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except Exception as exc:
+            self._log_exception('catalonia-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
 
     def _handle_registry(self, parsed):
