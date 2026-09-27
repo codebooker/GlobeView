@@ -2468,7 +2468,7 @@
       setPoints('international', features, records);
       if (data.sourceErrors?.length) {
         console.warn('Some international emergency feeds are unavailable:', data.sourceErrors);
-        const names = { nsw_rfs: 'NSW', victoria: 'Victoria', queensland: 'Queensland', nz_alerts: 'New Zealand', england_floods: 'England floods', burgenland_fire: 'Burgenland', iceland_imo: 'Iceland', portugal_anepc: 'Portugal' };
+        const names = { nsw_rfs: 'NSW', victoria: 'Victoria', queensland: 'Queensland', nz_alerts: 'New Zealand', england_floods: 'England floods', burgenland_fire: 'Burgenland', iceland_imo: 'Iceland', portugal_anepc: 'Portugal', sweden_vma: 'Sweden warnings' };
         const failed = data.sourceErrors.map(error => names[String(error).split(':')[0]]).filter(Boolean);
         showStatus(`${failed.join(', ') || 'Some regional feeds'} temporarily unavailable; other reports loaded.`, true, 6000);
       }
