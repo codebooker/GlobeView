@@ -1,6 +1,9 @@
 import unittest
+import csv
 import datetime as dt
+import io
 import xml.etree.ElementTree as ET
+import zipfile
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -119,6 +122,55 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual([x['properties']['key'] for x in result], ['uk:ssen:UA123'])
         self.assertEqual(result[0]['properties']['customers_affected'], 29)
         self.assertEqual(result[0]['properties']['source_updated'], '2026-09-27T12:00:00Z')
+
+    def test_nged_power_cuts_exclude_stale_restored_and_future_rows(self):
+        now = dt.datetime(2026, 9, 27, 12, tzinfo=dt.timezone.utc)
+        base = {'Upload Date': '2026-09-27T12:30:00', 'Status': 'In Progress',
+                'Planned': 'false', 'Region': 'South Wales', 'Category': 'HV OVERHEAD',
+                'Confirmed Off': '7', 'Predicted Off': '3', 'Location Latitude': '51.5',
+                'Location Longitude': '-3.2', 'ETR': '2026-09-27T14:00:00'}
+        rows = [
+            dict(base, **{'Incident ID': 'live'}),
+            dict(base, **{'Incident ID': 'live', 'Location Latitude': '52.0'}),
+            dict(base, **{'Incident ID': 'old', 'Upload Date': '2026-09-27T08:00:00'}),
+            dict(base, **{'Incident ID': 'done', 'Status': 'Completed'}),
+            dict(base, **{'Incident ID': 'future', 'Planned': 'true', 'Start Time': '2026-09-27T15:00:00'}),
+            dict(base, **{'Incident ID': 'invalid', 'Location Latitude': ''}),
+        ]
+        with patch.object(feeds, '_get_csv', return_value=rows):
+            result = feeds._nged_outages(now)
+        self.assertEqual([item['properties']['key'] for item in result], ['uk:nged:live'])
+        self.assertEqual(result[0]['properties']['customers_affected'], 10)
+        self.assertEqual(result[0]['properties']['source_updated'], '2026-09-27T11:30:00Z')
+        self.assertEqual(result[0]['properties']['etr'], '2026-09-27T13:00:00Z')
+        self.assertEqual(result[0]['properties']['source_label'], 'Supported by NGED Open Data')
+
+    def test_scottish_archive_maps_current_work_and_bounds_response(self):
+        fields = ['ActivityStatus', 'Category', 'Longitude', 'Latitude', 'StartDateTimeUTC',
+                  'EndDateTimeUTC', 'ActivityReference', 'Street', 'Town', 'TrafficManagement',
+                  'TrafficImpact', 'Description', 'LastUpdatedDateTimeUTC']
+        csv_buffer = io.StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=fields)
+        writer.writeheader()
+        base = dict(ActivityStatus='In Progress', Category='Major', Longitude='-3.19', Latitude='55.95',
+                    StartDateTimeUTC='2026-09-26T00:00:00Z', EndDateTimeUTC='2026-09-28T00:00:00Z',
+                    ActivityReference='work-1', Street='North Bridge', Town='Edinburgh',
+                    TrafficManagement='Lane Closure', TrafficImpact='High', Description='Bridge repairs',
+                    LastUpdatedDateTimeUTC='2026-09-26T12:00:00Z')
+        writer.writerow(base)
+        writer.writerow(dict(base, ActivityReference='event', Category='Event'))
+        writer.writerow(dict(base, ActivityReference='planned', ActivityStatus='Proposed'))
+        writer.writerow(dict(base, ActivityReference='invalid', Latitude=''))
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, 'w') as zipped:
+            zipped.writestr('CurrentActivities.csv', csv_buffer.getvalue())
+        activities = feeds._parse_scotland_archive(archive.getvalue())
+        self.assertEqual(len(activities), 1)
+        self.assertEqual(activities[0][2]['properties']['title'], 'North Bridge')
+        self.assertEqual(activities[0][2]['geometry']['coordinates'], [-3.19, 55.95])
+        with patch.object(feeds, '_snapshot', return_value={'sources': {'scotland': [activities[0][2]]}, 'errors': []}):
+            self.assertEqual(len(feeds.road_snapshot('construction', (-3.3, 55.9, -3.1, 56.0))['features']), 1)
+            self.assertEqual(len(feeds.road_snapshot('construction', (-2, 55, -1, 56))['features']), 0)
 
 
 if __name__ == '__main__':

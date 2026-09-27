@@ -1149,15 +1149,11 @@
     return items;
   }
 
-  async function fetchInternationalRoad(type, signal) {
-    const key = `international:${type}`;
-    const cached = roadCache.get(key);
-    if (cached && Date.now() - cached.at < 180000) return cached.data;
-    const response = await fetch(`/international-roads?layer=${encodeURIComponent(type)}`, { signal });
+  async function fetchInternationalRoad(type, bounds, signal) {
+    const bbox = [bounds.west, bounds.south, bounds.east, bounds.north].map(value => Number(value.toFixed(4))).join(',');
+    const response = await fetch(`/international-roads?${new URLSearchParams({ layer: type, bbox })}`, { signal });
     if (!response.ok) throw new Error(`International ${type}: ${response.status}`);
-    const data = await response.json();
-    roadCache.set(key, { at: Date.now(), data });
-    return data;
+    return response.json();
   }
 
   async function loadRoad(type) {
@@ -1168,10 +1164,10 @@
     const bounds = currentBounds();
     const internationalVisible = ['signs', 'incidents', 'construction'].includes(type) && [
       { bounds: { minLon: 19, maxLon: 32, minLat: 59, maxLat: 71 } },
-      { bounds: { minLon: -0.7, maxLon: 0.4, minLat: 51.2, maxLat: 51.8 } }
+      { bounds: { minLon: -9, maxLon: 3, minLat: 49, maxLat: 61.5 } }
     ].some(region => regionVisible(region, bounds));
     const internationalPromise = internationalVisible
-      ? fetchInternationalRoad(type, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
+      ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
       : Promise.resolve(null);
     const regions = roadRegions.filter(region => regionVisible(region, bounds)).slice(0, 18);
     const jobs = regions.flatMap(region => type === 'incidents'

@@ -1,9 +1,11 @@
 """Public road and electricity feeds outside North America, normalized for the map."""
 
 import concurrent.futures
+import csv
 import datetime as dt
 import gzip
 import html
+import io
 import json
 import re
 import threading
@@ -11,6 +13,7 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 from zoneinfo import ZoneInfo
 
 
@@ -18,8 +21,12 @@ FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
 NPG_BASE = 'https://northernpowergrid.opendatasoft.com'
+NGED_OUTAGES_URL = ('https://connecteddata.nationalgrid.co.uk/dataset/'
+                    'd6672e1e-c684-4cea-bb78-c7e5248b62a2/resource/'
+                    '292f788f-4339-455b-8cc0-153e14509d4d/download/power_outage_ext.csv')
 SSEN_OUTAGES_URL = 'https://external.distribution.prd.ssen.co.uk/opendataportal-prd/v4/api/getallfaults'
 WALES_RSS_BASE = 'https://traffic.wales/feeds'
+SRWR_BASE = 'https://downloads.srwr.scot/disruptions-export/api/v1'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -28,6 +35,7 @@ _CACHE = {
     'power': {'until': 0, 'sources': {}, 'source_times': {}, 'errors': []},
 }
 _STALE_SECONDS = 900
+_SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
 
 
 def _get_json(url, fintraffic=False):
@@ -53,6 +61,15 @@ def _get_xml(url):
     if len(body) > 2 * 1024 * 1024:
         raise ValueError('Road feed exceeded 2 MB')
     return ET.fromstring(body)
+
+
+def _get_csv(url):
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public outage feed reader)', 'Accept': 'text/csv'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        body = response.read(2 * 1024 * 1024 + 1)
+    if len(body) > 2 * 1024 * 1024:
+        raise ValueError('Outage feed exceeded 2 MB')
+    return list(csv.DictReader(io.StringIO(body.decode('utf-8-sig'))))
 
 
 def _clean(value, limit=280):
@@ -210,6 +227,66 @@ def _wales_feed(layer):
     return features
 
 
+def _parse_scotland_archive(body):
+    activities = []
+    with zipfile.ZipFile(io.BytesIO(body)) as zipped:
+        member = zipped.getinfo('CurrentActivities.csv')
+        if member.file_size > 50 * 1024 * 1024:
+            raise ValueError('Scottish roadworks CSV exceeded 50 MB')
+        csv.field_size_limit(8 * 1024 * 1024)
+        with zipped.open(member) as raw:
+            for row in csv.DictReader(io.TextIOWrapper(raw, encoding='utf-8-sig')):
+                if row.get('ActivityStatus') not in {'In Progress', 'Commenced'} or row.get('Category') == 'Event':
+                    continue
+                point = _point({'coordinates': [row.get('Longitude'), row.get('Latitude')]})
+                if not point:
+                    continue
+                start = _timestamp(row.get('StartDateTimeUTC'))
+                end = _timestamp(row.get('EndDateTimeUTC'))
+                if start is None or end is None or end < start:
+                    continue
+                reference = _clean(row.get('ActivityReference'), 100)
+                if not reference:
+                    continue
+                activities.append((start, end, _feature(point, {
+                    'key': f'uk:scotland:construction:{reference}', 'layer': 'construction',
+                    'title': _clean(row.get('Street') or row.get('Location') or 'Roadworks', 120),
+                    'detail': _clean(' · '.join(filter(None, [row.get('Town'), row.get('TrafficManagement'),
+                                  row.get('TrafficImpact'), row.get('Description')])), 280),
+                    'source': 'Scottish Road Works Register · OGL v3',
+                    'source_url': 'https://roadworks.scot/opendata',
+                    'updated_at': row.get('LastUpdatedDateTimeUTC') or '',
+                })))
+    return activities
+
+
+def _scotland_roadworks():
+    now = time.time()
+    if now >= _SRWR_CACHE['until']:
+        listing = _get_json(f'{SRWR_BASE}/files')
+        archives = sorted((entry.get('name', '') for entry in listing.get('files', [])
+                           if re.fullmatch(r'SRWRDisruptionsExport\d{8}\.zip', entry.get('name', ''))), reverse=True)
+        if not archives:
+            raise ValueError('Scottish roadworks archive is unavailable')
+        archive = archives[0]
+        archive_date = dt.datetime.strptime(archive[-12:-4], '%Y%m%d').date()
+        if abs((dt.datetime.now(dt.timezone.utc).date() - archive_date).days) > 1:
+            raise ValueError('Scottish roadworks archive is stale')
+        if archive != _SRWR_CACHE['archive']:
+            url = _get_json(f'{SRWR_BASE}/file/{archive}').get('url', '')
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme != 'https' or parsed.hostname != 'srwrexport.blob.core.windows.net':
+                raise ValueError('Unexpected Scottish roadworks download host')
+            request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = response.read(10 * 1024 * 1024 + 1)
+            if len(body) > 10 * 1024 * 1024:
+                raise ValueError('Scottish roadworks archive exceeded 10 MB')
+            _SRWR_CACHE.update({'archive': archive, 'activities': _parse_scotland_archive(body)})
+        _SRWR_CACHE['until'] = now + 3600
+    return [item for start, end, item in _SRWR_CACHE['activities'] if start <= now <= end]
+
+
 def _ods(base, dataset, where):
     rows = []
     while True:
@@ -306,6 +383,56 @@ def _ssen_outages():
     return features
 
 
+def _nged_outages(now=None):
+    rows = _get_csv(NGED_OUTAGES_URL)
+    if not rows or 'Upload Date' not in rows[0] or 'Incident ID' not in rows[0]:
+        raise ValueError('NGED returned an invalid outage file')
+    now = now or dt.datetime.now(dt.timezone.utc)
+    zone = ZoneInfo('Europe/London')
+    features = []
+    seen = set()
+    for row in rows:
+        try:
+            uploaded = dt.datetime.fromisoformat(row['Upload Date']).replace(tzinfo=zone).astimezone(dt.timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if not dt.timedelta(minutes=-5) <= now - uploaded <= dt.timedelta(hours=2):
+            continue
+        reference = (row.get('Incident ID') or '').strip()
+        status = (row.get('Status') or '').strip()
+        point = _point({'coordinates': [row.get('Location Longitude'), row.get('Location Latitude')]})
+        if not reference or reference in seen or not point or status.lower() not in {'in progress', 'awaiting'}:
+            continue
+        if (row.get('Planned') or '').lower() == 'true':
+            try:
+                start = dt.datetime.fromisoformat(row.get('Start Time') or '').replace(tzinfo=zone).astimezone(dt.timezone.utc)
+                if start > now:
+                    continue
+            except ValueError:
+                continue
+        seen.add(reference)
+        try:
+            count = max(0, int(row.get('Confirmed Off') or 0)) + max(0, int(row.get('Predicted Off') or 0))
+        except ValueError:
+            count = 0
+        etr = ''
+        if row.get('ETR'):
+            try:
+                etr = dt.datetime.fromisoformat(row['ETR']).replace(tzinfo=zone).astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+            except ValueError:
+                pass
+        features.append(_feature(point, {
+            'key': f'uk:nged:{reference}', 'provider': 'National Grid Electricity Distribution',
+            'area_name': _clean(row.get('Region') or 'Power cut'),
+            'customers_affected': count, 'status': status,
+            'reason': _clean(row.get('Category'), 100), 'etr': etr,
+            'source_label': 'Supported by NGED Open Data',
+            'source_url': 'https://connecteddata.nationalgrid.co.uk/dataset/live-power-cuts',
+            'source_updated': uploaded.isoformat().replace('+00:00', 'Z'),
+        }))
+    return features
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -314,8 +441,10 @@ _FETCHERS = {
         'uk_london': _tfl_disruptions,
         'uk_wales_incidents': lambda: _wales_feed('incidents'),
         'uk_wales_construction': lambda: _wales_feed('construction'),
+        'uk_scotland_construction': _scotland_roadworks,
     },
-    'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages},
+    'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
+              'nged': _nged_outages},
 }
 
 
@@ -344,11 +473,17 @@ def _snapshot(kind):
         return cache
 
 
-def road_snapshot(layer):
+def road_snapshot(layer, bbox=None):
     if layer not in {'signs', 'incidents', 'construction'}:
         raise ValueError('Unknown road layer')
     snapshot = _snapshot('roads')
     features = [item for rows in snapshot['sources'].values() for item in rows if item['properties']['layer'] == layer]
+    if bbox is not None:
+        west, south, east, north = bbox
+        if not (-180 <= west <= east <= 180 and -90 <= south <= north <= 90):
+            raise ValueError('Invalid road bounds')
+        features = [item for item in features if west <= item['geometry']['coordinates'][0] <= east
+                    and south <= item['geometry']['coordinates'][1] <= north]
     return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': snapshot['errors'],
             'sources': list(snapshot['sources'])}
 

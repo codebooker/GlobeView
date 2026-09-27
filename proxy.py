@@ -20199,8 +20199,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_international_roads(self, parsed):
         try:
-            layer = urllib.parse.parse_qs(parsed.query).get('layer', [''])[0]
-            self._write_bytes(200, json.dumps(international_road_snapshot(layer)).encode(), 'application/json')
+            params = urllib.parse.parse_qs(parsed.query)
+            layer = params.get('layer', [''])[0]
+            bbox = params.get('bbox', [None])[0]
+            if bbox is not None:
+                bbox = tuple(float(value) for value in bbox.split(','))
+                if len(bbox) != 4:
+                    raise ValueError('Invalid road bounds')
+            self._write_bytes(200, json.dumps(international_road_snapshot(layer, bbox)).encode(), 'application/json')
         except ValueError:
             self.send_error(400, 'Invalid road layer')
         except Exception as error:
