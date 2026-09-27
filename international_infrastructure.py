@@ -115,6 +115,8 @@ ESTONIA_RESTRICTIONS_URL = (
     'restrictions_traffic/MapServer/0/query'
 )
 ESTONIA_RESTRICTIONS_SOURCE = 'https://tarktee.transpordiamet.ee/'
+CZ_NDIC_ROADS_URL = 'https://gis.brno.cz/ags3/rest/services/PUBLIC/uzavirky_ndic/MapServer/0/query'
+CZ_NDIC_ROADS_SOURCE = 'https://gis.brno.cz/ost/edas/public/3c5ff253-35f3-4ac0-86ab-db9e06586552'
 LITHUANIA_RESTRICTIONS_URL = ('https://eismoinfo.lt/eismoinfo-backend/'
                               'layer-dynamic-features/EAL?lks=true')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -3538,6 +3540,84 @@ def _estonia_restrictions():
     return _parse_estonia_restrictions(_get_json(ESTONIA_RESTRICTIONS_URL + '?' + query))
 
 
+def _cz_ndic_time(value):
+    try:
+        return dt.datetime.strptime(str(value), '%d.%m.%Y %H:%M').replace(
+            tzinfo=ZoneInfo('Europe/Prague')).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_cz_ndic_roads(pages, now=None):
+    now = time.time() if now is None else now
+    if not pages or any(not isinstance(page, dict) or page.get('type') != 'FeatureCollection'
+                        or not isinstance(page.get('features'), list) for page in pages):
+        raise ValueError('Czech road restriction feed is invalid')
+    if pages[-1].get('exceededTransferLimit'):
+        raise ValueError('Czech road restriction feed is incomplete')
+    rows = [row for page in pages for row in page['features']]
+    if not rows:
+        raise ValueError('Czech road restriction feed is empty')
+    try:
+        published_times = {_cz_ndic_time(row['properties']['datum_aktualizace']) for row in rows}
+    except (KeyError, TypeError):
+        raise ValueError('Czech road restriction publication is invalid') from None
+    if len(published_times) != 1 or None in published_times:
+        raise ValueError('Czech road restriction publication changed during fetch')
+    published = published_times.pop()
+    if not -300 <= now - published <= 3600:
+        raise ValueError('Czech road restriction feed is stale')
+    features = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        if not isinstance(props, dict):
+            continue
+        event_id = str(props.get('msgid') or '')
+        point = _point(row.get('geometry'))
+        if (not re.fullmatch(r'[a-fA-F0-9-]{36}', event_id) or event_id in seen
+                or not point or not (12 <= point[0] <= 19 and 48.4 <= point[1] <= 51.2)):
+            continue
+        start = _cz_ndic_time(props.get('zacatek'))
+        end = _cz_ndic_time(props.get('konec'))
+        if start is None or end is None or not start <= now < end:
+            continue
+        seen.add(event_id)
+        categories = {props.get(f'trida_popis{index}') for index in (1, 2, 3)}
+        layer = 'construction' if 'Práce na silnici' in categories else 'incidents'
+        road = _clean(props.get('cislo_silnice') or props.get('mesto'), 75)
+        event = _clean(props.get('txtmce') or props.get('event_popis1'), 100)
+        place = _clean(props.get('txpl_text'), 125)
+        until = dt.datetime.fromtimestamp(end, ZoneInfo('Europe/Prague')).strftime('%d %b %Y')
+        features.append(_feature(point, {
+            'key': f'cz:ndic:road:{event_id}', 'layer': layer,
+            'title': ('Roadworks' if layer == 'construction' else 'Road restriction')
+                     + (f' · {road}' if road else ''),
+            'detail': ' · '.join(part for part in (event, place, f'Until {until}') if part),
+            'source': 'Czech NDIC · GIS Brno', 'source_url': CZ_NDIC_ROADS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(published, dt.timezone.utc).strftime('%d %b %H:%M UTC'),
+        }))
+    return features
+
+
+def _cz_ndic_roads():
+    pages = []
+    for offset in range(0, 5000, 1000):
+        query = urllib.parse.urlencode({
+            'where': '1=1', 'outFields': 'ogc_fid,msgid,zacatek,konec,datum_aktualizace,'
+            'trida_popis1,trida_popis2,trida_popis3,event_popis1,txtmce,txpl_text,cislo_silnice,mesto',
+            'returnGeometry': 'true', 'outSR': '4326', 'orderByFields': 'ogc_fid',
+            'resultOffset': offset, 'resultRecordCount': 1000, 'f': 'geojson',
+        })
+        page = _get_json(CZ_NDIC_ROADS_URL + '?' + query)
+        pages.append(page)
+        if not isinstance(page, dict) or not page.get('exceededTransferLimit'):
+            break
+    return _parse_cz_ndic_roads(pages)
+
+
 def lithuania_camera_snapshot(camera_id):
     camera_id = str(camera_id)
     if not re.fullmatch(r'\d{1,6}', camera_id):
@@ -3638,6 +3718,7 @@ _FETCHERS = {
         'lt_eismoinfo_road_weather': _lithuania_road_weather,
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
         'ee_tarktee_restrictions': _estonia_restrictions,
+        'cz_ndic_roads': _cz_ndic_roads,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
         'is_road_sensors': _iceland_sensors,

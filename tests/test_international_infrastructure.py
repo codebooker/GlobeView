@@ -87,6 +87,42 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_estonia_restrictions(dict(payload, exceededTransferLimit=True), NOW)
 
+    def test_czech_ndic_roads_use_current_records_and_complete_pages(self):
+        now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
+        def event(number, category='Práce na silnici', start='27.09.2026 19:00',
+                  end='28.09.2026 08:00', coordinates=None):
+            return {'type': 'Feature', 'geometry': {'type': 'Point',
+                    'coordinates': coordinates or [14.42, 50.08]}, 'properties': {
+                'msgid': f'00000000-0000-0000-0000-{number:012d}',
+                'datum_aktualizace': '27.09.2026 20:30', 'zacatek': start, 'konec': end,
+                'trida_popis1': category, 'event_popis1': 'uzavřeno',
+                'txtmce': '<b>uzavřeno</b>', 'txpl_text': 'D1, Praha',
+                'cislo_silnice': 'D1', 'private_contact': '+420 123 456 789'}}
+        pages = [
+            {'type': 'FeatureCollection', 'features': [event(1), event(2, category='Dopravní uzavírky a omezení'),
+                event(3, start='28.09.2026 09:00'), event(4, end='27.09.2026 20:00')],
+             'exceededTransferLimit': True},
+            {'type': 'FeatureCollection', 'features': [event(1), event(5, coordinates=[0, 0])]},
+        ]
+        rows = feeds._parse_cz_ndic_roads(pages, now)
+        self.assertEqual([row['properties']['layer'] for row in rows], ['construction', 'incidents'])
+        self.assertEqual(len({row['properties']['key'] for row in rows}), 2)
+        self.assertIn('uzavřeno · D1, Praha', rows[0]['properties']['detail'])
+        self.assertNotIn('123 456 789', str(rows))
+        with patch.object(feeds, '_snapshot', return_value={
+                'sources': {'cz_ndic_roads': rows}, 'errors': []}), \
+                patch.object(feeds, '_autobahn_service', return_value=[]):
+            self.assertEqual(len(feeds.road_snapshot('construction', (14.3, 50, 14.5, 50.2))['features']), 1)
+            self.assertEqual(len(feeds.road_snapshot('incidents', (14.3, 50, 14.5, 50.2))['features']), 1)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_cz_ndic_roads(pages[:1], now)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_cz_ndic_roads(pages, now + 7200)
+        with patch.object(feeds, '_get_json', side_effect=pages) as fetch, \
+                patch.object(feeds.time, 'time', return_value=now):
+            self.assertEqual(len(feeds._cz_ndic_roads()), 2)
+            self.assertEqual(fetch.call_count, 2)
+
     def test_lithuania_cameras_require_recent_capture_and_official_image(self):
         url = 'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=72'
         row = {'id': 72, 'name': 'Vilnius A1 10,04', 'roadNr': 'A1', 'km': 10.04,
