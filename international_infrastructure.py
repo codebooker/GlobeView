@@ -38,6 +38,10 @@ SOUTH_TYROL_ROADS_URL = ('https://datex.api.opendatahub.com/datex/2/'
                          'province-bz/situation-publication.xml')
 SOUTH_TYROL_SOURCE = 'https://docs.opendatahub.com/use-data/datexii-api/reference/'
 FINTRAFFIC_CAMERAS_SOURCE = 'https://www.digitraffic.fi/en/road-traffic/'
+ICELAND_CAMERAS_URL = 'https://gagnaveita.vegagerdin.is/api/vefmyndavelar2014_1'
+ICELAND_CAMERAS_SOURCE = 'https://www.vegagerdin.is/vegagerdin/gagnasafn/vefthjonustur/vefmyndavelar'
+ICELAND_ROADS_URL = 'https://datex.vegagerdin.is/situationpublication3_1/SituationService/pullsnapshotdata'
+ICELAND_ROADS_SOURCE = 'https://www.vegagerdin.is/vegagerdin/gagnasafn/vefthjonustur/datexii-2'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
 TRAFFICWATCH_BASE = 'https://www.trafficwatchni.com/twni/'
 TRAFFICWATCH_SOURCE = 'https://www.trafficwatchni.com/twni/cameras'
@@ -1058,6 +1062,147 @@ def _fintraffic_cameras():
     metadata = _get_json(f'{FINTRAFFIC_BASE}/api/weathercam/v1/stations', fintraffic=True)
     observations = _get_json(f'{FINTRAFFIC_BASE}/api/weathercam/v1/stations/data', fintraffic=True)
     return _parse_fintraffic_cameras(metadata, observations)
+
+
+_ICELAND_CAMERA_HEALTH = {'until': 0, 'verified': {}}
+_ICELAND_CAMERA_HEALTH_LOCK = threading.Lock()
+_ICELAND_CAMERA_URL = re.compile(
+    r'https://www\.vegagerdin\.is/vgdata/vefmyndavelar/[A-Za-z0-9_-]+\.jpg')
+
+
+def _iceland_camera_groups(rows):
+    if not isinstance(rows, list) or len(rows) > 1000:
+        raise ValueError('Iceland camera catalog is invalid or oversized')
+    groups = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        station = str(row.get('Maelist_nr') or '')
+        url = str(row.get('Slod') or '')
+        point = _point({'coordinates': [row.get('Lengd'), row.get('Breidd')]})
+        if (not re.fullmatch(r'\d{1,6}', station) or not _ICELAND_CAMERA_URL.fullmatch(url)
+                or not point or not (-25 <= point[0] <= -13 and 63 <= point[1] <= 67.5)):
+            continue
+        group = groups.setdefault(station, {
+            'point': point, 'name': _clean(row.get('Myndavel'), 90) or 'Road camera',
+            'road': _clean(row.get('Vegheiti'), 70), 'views': [],
+        })
+        if url not in {view['url'] for view in group['views']}:
+            group['views'].append({'url': url,
+                                   'label': _clean(row.get('Skyring'), 90) or f'View {len(group["views"]) + 1}'})
+    if not groups:
+        raise ValueError('Iceland camera catalog has no usable locations')
+    return groups
+
+
+def _iceland_verified_cameras(groups):
+    with _ICELAND_CAMERA_HEALTH_LOCK:
+        now = time.time()
+        if now < _ICELAND_CAMERA_HEALTH['until']:
+            return _ICELAND_CAMERA_HEALTH['verified']
+
+        def verify(entry):
+            station, group = entry
+            for view in group['views']:
+                request = urllib.request.Request(view['url'], method='HEAD', headers={
+                    'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+                try:
+                    with urllib.request.urlopen(request, timeout=8) as response:
+                        if (urllib.parse.urlsplit(response.url).hostname != 'www.vegagerdin.is'
+                                or response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg'
+                                or int(response.headers.get('Content-Length') or 0) < 1000):
+                            continue
+                        modified = email.utils.parsedate_to_datetime(
+                            response.headers['Last-Modified']).timestamp()
+                        if -300 <= now - modified <= 30 * 60:
+                            return station, (view['url'], modified)
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+            return station, None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+            verified = dict(executor.map(verify, groups.items()))
+        verified = {station: result for station, result in verified.items() if result}
+        _ICELAND_CAMERA_HEALTH.update(until=now + 900, verified=verified)
+        return verified
+
+
+def _parse_iceland_cameras(rows, verified=None):
+    groups = _iceland_camera_groups(rows)
+    features = []
+    for station, group in groups.items():
+        if verified is not None and station not in verified:
+            continue
+        primary, modified = verified[station] if verified is not None else (group['views'][0]['url'], None)
+        if primary not in {view['url'] for view in group['views']}:
+            continue
+        views = sorted(group['views'], key=lambda view: view['url'] != primary)
+        features.append(_feature(group['point'], {
+            'key': f'is:irca:camera:{station}', 'layer': 'cameras',
+            'title': group['name'],
+            'detail': ' · '.join(filter(None, [group['road'], f'{len(views)} views'])),
+            'snapshot_url': primary, 'camera_views': views, 'snapshot_refresh_ms': 600000,
+            'source': 'Vegagerðin · CC BY 4.0', 'source_url': ICELAND_CAMERAS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(modified, dt.timezone.utc).strftime('%H:%M UTC') if modified else '',
+        }))
+    return features
+
+
+def _iceland_cameras():
+    rows = _get_json(ICELAND_CAMERAS_URL)
+    groups = _iceland_camera_groups(rows)
+    return _parse_iceland_cameras(rows, _iceland_verified_cameras(groups))
+
+
+def _parse_iceland_roads(root, now=None):
+    now = time.time() if now is None else now
+    published_text = root.findtext('.//{*}publicationTime')
+    published = _timestamp(published_text)
+    if published is None or not -300 <= now - published <= 30 * 60:
+        raise ValueError('Iceland road publication is stale or invalid')
+    categories = {
+        'MaintenanceWorks': ('construction', 'Roadworks'),
+        'RoadOrCarriagewayOrLaneManagement': ('incidents', 'Road restriction'),
+        'GeneralObstruction': ('incidents', 'Road obstruction'),
+        'NonWeatherRelatedRoadConditions': ('incidents', 'Road surface hazard'),
+        'EnvironmentalObstruction': ('incidents', 'Environmental obstruction'),
+        'Accident': ('incidents', 'Crash'),
+        'AnimalPresenceObstruction': ('incidents', 'Animals on road'),
+        'PoorEnvironmentConditions': ('incidents', 'Hazardous weather'),
+    }
+    features = []
+    for record in root.findall('.//{*}situationRecord'):
+        record_id = record.get('id') or ''
+        kind = (record.get(_DATEX_TYPE) or '').split(':')[-1]
+        category = categories.get(kind)
+        if not category or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}', record_id):
+            continue
+        status = record.findtext('.//{*}validityStatus')
+        start = _timestamp(record.findtext('.//{*}overallStartTime'))
+        end = _timestamp(record.findtext('.//{*}overallEndTime'))
+        if status not in {'definedByValidityTimeSpec', 'active'} or start is None or start > now or (end and end <= now):
+            continue
+        lat = record.findtext('.//{*}coordinatesForDisplay/{*}latitude')
+        lon = record.findtext('.//{*}coordinatesForDisplay/{*}longitude')
+        point = _point({'coordinates': [lon, lat]})
+        if not point or not (-25 <= point[0] <= -13 and 63 <= point[1] <= 67.5):
+            continue
+        comments = record.findall('.//{*}generalPublicComment/{*}comment/{*}values/{*}value')
+        detail = next((_clean(node.text, 280) for node in comments if node.get('lang') == 'en' and node.text), '')
+        if not detail:
+            detail = next((_clean(node.text, 280) for node in comments if node.text), '')
+        layer, title = category
+        features.append(_feature(point, {
+            'key': f'is:irca:road:{record_id}', 'layer': layer,
+            'title': title, 'detail': detail,
+            'source': 'Vegagerðin · CC BY 4.0', 'source_url': ICELAND_ROADS_SOURCE,
+            'updated_at': _clean(record.findtext('.//{*}situationRecordVersionTime'), 40) or published_text,
+        }))
+    return features
+
+
+def _iceland_roads():
+    return _parse_iceland_roads(_get_xml(ICELAND_ROADS_URL))
 
 
 def _parse_fintraffic_sensors(kind, metadata, observations, now=None):
@@ -2861,6 +3006,8 @@ _FETCHERS = {
         'ie_tii_signs': _tii_signs,
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
+        'is_road_cameras': _iceland_cameras,
+        'is_road_events': _iceland_roads,
         'fi_traffic_sensors': lambda: _fintraffic_sensors('tms'),
         'fi_weather_sensors': lambda: _fintraffic_sensors('weather'),
         'es_dgt_cameras': _dgt_cameras,

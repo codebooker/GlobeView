@@ -1010,6 +1010,39 @@
     root.append(button);
   }
 
+  function attachCameraGallery(root, views, refreshMs, popup) {
+    const image = document.createElement('img');
+    image.className = 'popup-media camera-gallery-image';
+    image.alt = 'Latest road camera snapshot';
+    const caption = textElement('span', 'popup-media-caption', '');
+    const controls = document.createElement('div');
+    controls.className = 'popup-camera-views';
+    const previous = textElement('button', '', '← Previous');
+    const next = textElement('button', '', 'Next →');
+    previous.type = next.type = 'button';
+    let index = 0;
+    function show(position, refresh = false) {
+      index = (position + views.length) % views.length;
+      const view = views[index];
+      image.hidden = false;
+      caption.textContent = `${index + 1} / ${views.length} · ${view.label}`;
+      image.src = refresh ? `${view.url}${view.url.includes('?') ? '&' : '?'}v=${Date.now()}` : view.url;
+    }
+    image.addEventListener('error', () => {
+      image.hidden = true;
+      caption.textContent = `View ${index + 1} unavailable · try another view`;
+    });
+    previous.addEventListener('click', () => show(index - 1));
+    next.addEventListener('click', () => show(index + 1));
+    controls.append(previous, next);
+    root.append(caption, controls, image);
+    show(0);
+    if (refreshMs >= 60000) {
+      const refresh = window.setInterval(() => show(index, true), refreshMs);
+      popup.on('close', () => window.clearInterval(refresh));
+    }
+  }
+
   function webcamMedia(camera) {
     try {
       const url = new URL(camera.url);
@@ -1136,9 +1169,13 @@
     const point = map.project(coordinates);
     const visibleLeft = window.innerWidth > 900 && !document.body.classList.contains('panel-collapsed') ? 288 : 0;
     const anchor = point.x < visibleLeft + 180 ? 'left' : point.x > map.getCanvas().clientWidth - 180 ? 'right'
-      : point.y < map.getCanvas().clientHeight * (type === 'webcams' ? 0.6 : 0.5) ? 'top' : 'bottom';
+      : point.y < map.getCanvas().clientHeight * (type === 'webcams' || type === 'cameras' ? 0.6 : 0.5) ? 'top' : 'bottom';
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '315px', offset: 14, anchor })
       .setLngLat(coordinates).setDOMContent(root).addTo(map);
+    if (type === 'cameras' && (anchor === 'top' || anchor === 'bottom')) {
+      const room = anchor === 'top' ? map.getCanvas().clientHeight - point.y : point.y;
+      popup.getElement().querySelector('.maplibregl-popup-content').style.maxHeight = `${Math.max(150, Math.floor(room - 30))}px`;
+    }
     activePointPopup = popup;
     if (type === 'webcams') {
       attachWebcamMedia(root, meta, popup);
@@ -1175,6 +1212,10 @@
       root.append(button);
     }
     if (type === 'cameras' && meta.snapshotUrl) {
+      if (meta.cameraViews?.length > 1) {
+        attachCameraGallery(root, meta.cameraViews, meta.snapshotRefreshMs, popup);
+        return;
+      }
       attachCameraMedia(root, { item: { expando: { snapshotUrl: meta.snapshotUrl,
         snapshotRefreshMs: meta.snapshotRefreshMs } } }, null, popup);
       return;
@@ -1247,6 +1288,7 @@
       { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } },
       { bounds: { minLon: 19, maxLon: 32, minLat: 59, maxLat: 71 } },
       { bounds: { minLon: -9, maxLon: 3, minLat: 49, maxLat: 61.5 } },
+      { bounds: { minLon: -25, maxLon: -13, minLat: 63, maxLat: 67.5 } },
       { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } },
       { bounds: { minLon: 3, maxLon: 7.4, minLat: 50.6, maxLat: 53.8 } },
       { bounds: { minLon: 5.5, maxLon: 15.5, minLat: 47, maxLat: 55.1 } },
@@ -1307,6 +1349,7 @@
         source: p.source || 'Public road authority', sourceUrl: p.source_url,
         signImage: type === 'signs' ? p.image_data || '' : '',
         snapshotUrl: type === 'cameras' ? p.snapshot_url || '' : '',
+        cameraViews: type === 'cameras' && Array.isArray(p.camera_views) ? p.camera_views : [],
         snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0
       });
       features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && /warning/i.test(p.title || '') }));

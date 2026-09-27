@@ -17,6 +17,49 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_iceland_cameras_group_views_and_require_verified_location(self):
+        base = {'Maelist_nr': 7001, 'Myndavel': 'Hellisheiði', 'Vegheiti': 'Hringvegur',
+                'Breidd': 64.018296, 'Lengd': -21.342636}
+        rows = [
+            {**base, 'Skyring': 'West',
+             'Slod': 'https://www.vegagerdin.is/vgdata/vefmyndavelar/hellisheidi_1.jpg'},
+            {**base, 'Skyring': 'East',
+             'Slod': 'https://www.vegagerdin.is/vgdata/vefmyndavelar/hellisheidi_2.jpg'},
+            {**base, 'Maelist_nr': 7002, 'Slod': 'https://elsewhere.invalid/camera.jpg'},
+        ]
+        checked = {'7001': (rows[1]['Slod'], NOW - 300)}
+        features = feeds._parse_iceland_cameras(rows, checked)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(features[0]['geometry']['coordinates'], [-21.342636, 64.018296])
+        self.assertEqual(features[0]['properties']['snapshot_url'], rows[1]['Slod'])
+        self.assertEqual([view['label'] for view in features[0]['properties']['camera_views']],
+                         ['East', 'West'])
+        self.assertEqual(feeds._parse_iceland_cameras(rows, {}), [])
+
+    def test_iceland_roads_require_fresh_publication_and_current_event(self):
+        stamp = lambda offset: dt.datetime.fromtimestamp(NOW + offset, dt.timezone.utc).isoformat()
+        root = ET.fromstring(f'''<messageContainer xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <publicationTime>{stamp(-60)}</publicationTime>
+          <situationRecord xsi:type="MaintenanceWorks" id="IRCA_123.0_1">
+            <validityStatus>definedByValidityTimeSpec</validityStatus>
+            <overallStartTime>{stamp(-600)}</overallStartTime><overallEndTime>{stamp(3600)}</overallEndTime>
+            <coordinatesForDisplay><latitude>64.02</latitude><longitude>-21.34</longitude></coordinatesForDisplay>
+            <generalPublicComment><comment><values><value lang="is">Vegavinna</value></values></comment></generalPublicComment>
+          </situationRecord>
+          <situationRecord xsi:type="Accident" id="IRCA_124.0_1">
+            <validityStatus>definedByValidityTimeSpec</validityStatus>
+            <overallStartTime>{stamp(-3600)}</overallStartTime><overallEndTime>{stamp(-1)}</overallEndTime>
+            <coordinatesForDisplay><latitude>64.03</latitude><longitude>-21.35</longitude></coordinatesForDisplay>
+          </situationRecord>
+        </messageContainer>''')
+        rows = feeds._parse_iceland_roads(root, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertEqual(rows[0]['properties']['detail'], 'Vegavinna')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_iceland_roads(root, NOW + 3600)
+
+
     def test_tii_cameras_only_publish_active_public_stills(self):
         rows = [
             {'id': 91, 'active': True, 'public': True, 'name': 'Reaghstown',
