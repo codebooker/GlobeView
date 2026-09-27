@@ -42,6 +42,8 @@ GIPOD_SOURCE = ('https://www.vlaanderen.be/datavindplaats/catalogus/'
                 'geplande-innames-en-mobiliteitshinder-publieke-geo-informatie-uit-gipod')
 NDW_BASE = 'https://opendata.ndw.nu/'
 NDW_SOURCE = 'https://docs.ndw.nu/producten/werkzaamhedenenevenementen/'
+AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
+AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -57,6 +59,8 @@ _FRANCE_SENSOR_REFERENCES = {'until': 0, 'points': {}}
 _GIPOD_TILE_CACHE = {}
 _GIPOD_TILE_LOCKS = {}
 _GIPOD_CACHE_LOCK = threading.Lock()
+_AUTOBAHN_CACHE = {service: {'until': 0, 'roads': {}, 'lock': threading.Lock()}
+                   for service in ('roadworks', 'warning', 'closure')}
 
 
 def _get_json(url, fintraffic=False):
@@ -1015,6 +1019,81 @@ def _ndw_signs():
     return _parse_ndw_signs(_get_gzip_xml(NDW_BASE + 'dynamische_route_informatie_paneel.xml.gz'))
 
 
+def _parse_autobahn_items(service, road, payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get(service, []) if isinstance(payload, dict) else []
+    if not isinstance(rows, list):
+        raise ValueError('Autobahn road service returned an invalid list')
+    features = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get('future') is True:
+            continue
+        started = _timestamp(row.get('startTimestamp'))
+        if started is not None and started > now:
+            continue
+        location = row.get('coordinate')
+        if not isinstance(location, dict):
+            continue
+        point = _point({'coordinates': [location.get('long'), location.get('lat')]})
+        if point is None or not 5.5 <= point[0] <= 15.5 or not 47 <= point[1] <= 55.1:
+            continue
+        identifier = str(row.get('identifier') or '')[:250]
+        if not identifier:
+            continue
+        title = _clean(row.get('title'), 100) or road
+        subtitle = _clean(row.get('subtitle'), 80).replace('->', '→')
+        description = row.get('description')
+        descriptions = [_clean(part, 180) for part in description if isinstance(part, str)] if isinstance(description, list) else []
+        descriptions = [part for part in descriptions if part]
+        if service == 'warning':
+            event = _clean(row.get('abnormalTrafficType'), 50).replace('_', ' ').capitalize()
+            note = ' · '.join(part for part in descriptions if part.startswith('- '))[:180]
+            detail = ' · '.join(part for part in (event, subtitle, note or (descriptions[-1] if descriptions else '')) if part)
+            layer, label = 'incidents', 'Traffic warning'
+        else:
+            detail = ' · '.join(part for part in (subtitle, descriptions[-1] if descriptions else '') if part)
+            layer, label = ('incidents', 'Road closure') if service == 'closure' else ('construction', 'Roadworks')
+        features.append(_feature(point, {
+            'key': f'de:autobahn:{service}:{identifier}', 'layer': layer,
+            'title': f'{label} · {title}', 'detail': detail,
+            'source': 'Autobahn GmbH' + (' / INRIX' if row.get('source') == 'inrix' else ''),
+            'source_url': AUTOBAHN_SOURCE,
+        }))
+    return features
+
+
+def _autobahn_service(service):
+    if service not in _AUTOBAHN_CACHE:
+        raise ValueError('Unknown Autobahn service')
+    cache = _AUTOBAHN_CACHE[service]
+    with cache['lock']:
+        now = time.time()
+        if now < cache['until']:
+            return [feature for rows in cache['roads'].values() for feature in rows]
+        catalog = _get_json(AUTOBAHN_BASE)
+        roads = catalog.get('roads', []) if isinstance(catalog, dict) else []
+        roads = [road for road in roads if isinstance(road, str) and re.fullmatch(r'A\d{1,3}', road)]
+        if not roads or len(roads) > 150:
+            raise ValueError('Autobahn road catalog is invalid')
+        next_roads = dict(cache['roads'])
+        successes = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(_get_json, AUTOBAHN_BASE + road + '/services/' + service): road
+                       for road in roads}
+            for future in concurrent.futures.as_completed(futures):
+                road = futures[future]
+                try:
+                    next_roads[road] = _parse_autobahn_items(service, road, future.result(), now)
+                    successes += 1
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+        if successes < math.ceil(len(roads) * 0.8):
+            raise ValueError('Autobahn road service is unavailable')
+        cache['roads'] = {road: next_roads[road] for road in roads if road in next_roads}
+        cache['until'] = now + (300 if service == 'warning' else 900)
+        return [feature for rows in cache['roads'].values() for feature in rows]
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -1077,6 +1156,17 @@ def road_snapshot(layer, bbox=None):
             sources.append('be_gipod_roadworks')
         except (OSError, ValueError, KeyError, TypeError) as error:
             errors.append(f'be_gipod_roadworks: {error}')
+    if bbox is not None and layer in {'incidents', 'construction'} and west <= 15.5 and east >= 5.5 and south <= 55.1 and north >= 47:
+        services = ('warning', 'closure') if layer == 'incidents' else ('roadworks',)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(services)) as executor:
+            futures = {executor.submit(_autobahn_service, service): service for service in services}
+            for future in concurrent.futures.as_completed(futures):
+                service = futures[future]
+                try:
+                    features.extend(future.result())
+                    sources.append(f'de_autobahn_{service}')
+                except (OSError, ValueError, KeyError, TypeError) as error:
+                    errors.append(f'de_autobahn_{service}: {error}')
     if bbox is not None:
         features = [item for item in features if west <= item['geometry']['coordinates'][0] <= east
                     and south <= item['geometry']['coordinates'][1] <= north]

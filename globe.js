@@ -1211,7 +1211,8 @@
       { bounds: { minLon: 19, maxLon: 32, minLat: 59, maxLat: 71 } },
       { bounds: { minLon: -9, maxLon: 3, minLat: 49, maxLat: 61.5 } },
       { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } },
-      { bounds: { minLon: 3, maxLon: 7.4, minLat: 50.6, maxLat: 53.8 } }
+      { bounds: { minLon: 3, maxLon: 7.4, minLat: 50.6, maxLat: 53.8 } },
+      { bounds: { minLon: 5.5, maxLon: 15.5, minLat: 47, maxLat: 55.1 } }
     ].some(region => regionVisible(region, bounds));
     const internationalPromise = internationalVisible
       ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })

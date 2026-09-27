@@ -3,6 +3,7 @@ import base64
 import csv
 import datetime as dt
 import io
+import threading
 import xml.etree.ElementTree as ET
 import zipfile
 from unittest.mock import patch
@@ -15,6 +16,46 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_autobahn_excludes_future_works_and_maps_current_closure(self):
+        payload = {'closure': [
+            {'identifier': 'current', 'future': False, 'title': 'A1 | Junction',
+             'coordinate': {'lat': 51.2, 'long': 7.3}, 'description': ['Closed overnight']},
+            {'identifier': 'planned', 'future': True, 'coordinate': {'lat': 51.3, 'long': 7.4}},
+            {'identifier': 'later', 'future': False, 'startTimestamp': '2099-01-01T00:00:00Z',
+             'coordinate': {'lat': 51.4, 'long': 7.5}},
+        ]}
+        rows = feeds._parse_autobahn_items('closure', 'A1', payload, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [7.3, 51.2])
+        self.assertEqual(rows[0]['properties']['layer'], 'incidents')
+
+    def test_autobahn_service_cache_is_shared_and_bounded(self):
+        cache = {'until': 0, 'roads': {}, 'lock': threading.Lock()}
+        calls = []
+        def request(url):
+            calls.append(url)
+            if url == feeds.AUTOBAHN_BASE:
+                return {'roads': ['A1', 'A2', 'bad-road']}
+            return {'warning': [{'identifier': url.split('/')[-3], 'future': False,
+                                 'coordinate': {'lat': 51.2, 'long': 7.3}}]}
+        with patch.dict(feeds._AUTOBAHN_CACHE, {'warning': cache}), patch.object(feeds, '_get_json', side_effect=request):
+            first = feeds._autobahn_service('warning')
+            second = feeds._autobahn_service('warning')
+        self.assertEqual(len(first), 2)
+        self.assertEqual(first, second)
+        self.assertEqual(len(calls), 3)
+
+    def test_autobahn_requests_only_for_german_road_views(self):
+        feature = feeds._feature([7.3, 51.2], {'layer': 'incidents', 'key': 'de:sample'})
+        snapshot = {'sources': {}, 'errors': []}
+        with patch.object(feeds, '_snapshot', return_value=snapshot), patch.object(
+                feeds, '_autobahn_service', return_value=[feature]) as request:
+            german = feeds.road_snapshot('incidents', (7, 51, 8, 52))
+            french = feeds.road_snapshot('incidents', (-4, 44, -3, 45))
+        self.assertEqual(len(german['features']), 2)
+        self.assertEqual(len(french['features']), 0)
+        self.assertEqual([call.args[0] for call in request.call_args_list], ['warning', 'closure'])
+
     def test_ndw_current_road_situations_use_wgs84_and_validity(self):
         root = ET.fromstring('''<messageContainer xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
           <payload xsi:type="sit:SituationPublication">
