@@ -2036,7 +2036,7 @@
         const ref = String(item.id || `${lat}:${lon}`);
         const tags = item.tags || {};
         features.push(feature(type, ref, lon, lat));
-        records.set(ref, { title: 'Mapped plate reader', detail: [tags.operator || tags.manufacturer, tags.surveillance_zone || tags['surveillance:zone'], tags.direction ? `Direction ${tags.direction}` : ''].filter(Boolean).join(' · '), source: 'DeFlock / OpenStreetMap · mapped location, status unverified', sourceUrl: /^\d+$/.test(ref) ? `https://www.openstreetmap.org/node/${ref}` : 'https://deflock.me/' });
+        records.set(ref, { title: item.title || 'Mapped plate reader', detail: item.detail || [tags.operator || tags.manufacturer, tags.surveillance_zone || tags['surveillance:zone'], tags.direction ? `Direction ${tags.direction}` : ''].filter(Boolean).join(' · '), source: item.source || 'DeFlock / OpenStreetMap · mapped location, status unverified', sourceUrl: item.source_url || (/^\d+$/.test(ref) ? `https://www.openstreetmap.org/node/${ref}` : 'https://deflock.me/') });
       }
     }
     return { features, records };

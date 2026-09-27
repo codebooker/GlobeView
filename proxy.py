@@ -2295,6 +2295,14 @@ PULSEPOINT_AGENCIES = {
 }
 
 DEFLOCK_INDEX_URL = 'https://cdn.deflock.me/regions/index.json'
+LITHUANIA_TOLL_EQUIPMENT_URL = (
+    'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13/query'
+    '?where=1%3D1&outFields=objectid%2Ckelionumeris%2Ckm%2Ctipas%2Cgaliojimopradzia%2Cgaliojimopabaiga'
+    '&returnGeometry=true&outSR=4326&f=geojson'
+)
+LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
+    'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13'
+)
 GFC_WILDFIRE_URL = 'https://georgiafc.firesponse.com/public/api/Incident/geojson'
 GFC_WILDFIRE_SOURCE_URL = 'https://georgiafc.firesponse.com/public/'
 SCFC_WILDFIRE_URL = 'https://scfc.firesponse.com/public/api/Incident/geojson'
@@ -18521,11 +18529,74 @@ def deflock_tiles_for_bbox(index, bbox):
     return tile_requests
 
 
+def lithuania_toll_plate_readers(payload, bbox, now=None):
+    if not isinstance(payload, dict) or not isinstance(payload.get('features'), list):
+        raise ValueError('Lithuanian toll equipment catalog is invalid')
+    now = time.time() if now is None else now
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        geom = row.get('geometry') or {}
+        if not isinstance(props, dict) or not isinstance(geom, dict):
+            continue
+        equipment_id = props.get('objectid')
+        kind = props.get('tipas')
+        coordinates = geom.get('coordinates') or []
+        if (not isinstance(equipment_id, int) or equipment_id < 1 or equipment_id in seen
+                or kind not in {'ANAK', 'AKNAĮ'} or geom.get('type') != 'Point'
+                or not isinstance(coordinates, (list, tuple)) or len(coordinates) < 2):
+            continue
+        try:
+            lon, lat = float(coordinates[0]), float(coordinates[1])
+            start = float(props['galiojimopradzia']) / 1000
+            end = props.get('galiojimopabaiga')
+            end = float(end) / 1000 if end is not None else None
+        except (TypeError, ValueError, KeyError):
+            continue
+        if (not all(math.isfinite(value) for value in (lon, lat, start))
+                or (end is not None and not math.isfinite(end))
+                or not (20.8 <= lon <= 26.9 and 53.8 <= lat <= 56.5)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)
+                or start > now or (end is not None and end <= now)):
+            continue
+        seen.add(equipment_id)
+        road = str(props.get('kelionumeris') or '').strip()
+        km = props.get('km')
+        detail = []
+        if re.fullmatch(r'A\d{1,2}', road):
+            detail.append(road)
+        if isinstance(km, (int, float)) and math.isfinite(km) and 0 <= km <= 500:
+            detail.append(f'km {km:g}')
+        detail.append('Toll-control location · operating status unverified')
+        elements.append({
+            'type': 'node', 'id': f'lt:via:toll:{equipment_id}', 'lat': lat, 'lon': lon,
+            'title': ('Vehicle classifier and plate reader' if kind == 'AKNAĮ'
+                      else 'Plate reader · toll enforcement'),
+            'detail': ' · '.join(detail),
+            'source': 'Via Lietuva / Eismoinfo · mapped equipment',
+            'source_url': LITHUANIA_TOLL_EQUIPMENT_SOURCE,
+        })
+    return elements
+
+
 def fetch_deflock_lpr_content(bbox, limit=10000):
-    index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
-    tile_requests = deflock_tiles_for_bbox(index, bbox)
     min_lon, min_lat, max_lon, max_lat = bbox
     elements_by_id = {}
+    lithuania_visible = (min_lon <= 26.9 and max_lon >= 20.8
+                         and min_lat <= 56.5 and max_lat >= 53.8)
+    source_errors = []
+    try:
+        index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
+        tile_requests = deflock_tiles_for_bbox(index, bbox)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        if not lithuania_visible:
+            raise
+        index, tile_requests = {}, []
+        source_errors.append(f'DeFlock: {error}')
 
     def fetch_lpr_tile(request):
         tile_key, tile_url = request
@@ -18534,25 +18605,44 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         return tile_key, items
 
     tile_keys = [tile_key for tile_key, _ in tile_requests]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(tile_requests) or 1)) as executor:
-        tile_results = executor.map(fetch_lpr_tile, tile_requests)
-        for _, items in tile_results:
-            for item in items if isinstance(items, list) else []:
-                try:
-                    lat = float(item.get('lat'))
-                    lon = float(item.get('lon'))
-                except (TypeError, ValueError):
-                    continue
-                if not (min_lat <= lat <= max_lat and min_lon <= lon <= max_lon):
-                    continue
-                normalized = {
-                    'type': 'node',
-                    'id': item.get('id'),
-                    'lat': lat,
-                    'lon': lon,
-                    'tags': item.get('tags') or {},
-                }
-                elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(tile_requests) or 1)) as executor:
+            tile_results = executor.map(fetch_lpr_tile, tile_requests)
+            for _, items in tile_results:
+                for item in items if isinstance(items, list) else []:
+                    try:
+                        lat = float(item.get('lat'))
+                        lon = float(item.get('lon'))
+                    except (TypeError, ValueError):
+                        continue
+                    if not (min_lat <= lat <= max_lat and min_lon <= lon <= max_lon):
+                        continue
+                    normalized = {
+                        'type': 'node',
+                        'id': item.get('id'),
+                        'lat': lat,
+                        'lon': lon,
+                        'tags': item.get('tags') or {},
+                    }
+                    elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        if not lithuania_visible:
+            raise
+        source_errors.append(f'DeFlock tiles: {error}')
+
+    # Via Lietuva publishes official toll-control locations separately from the
+    # community-mapped DeFlock catalog. Fetch this small inventory only for views
+    # that intersect Lithuania, and never treat it as a live plate-read feed.
+    if lithuania_visible:
+        try:
+            catalog = cached_deflock_json(
+                LITHUANIA_TOLL_EQUIPMENT_URL, 'lt-via-toll-equipment:v1', ttl=21600)
+            for item in lithuania_toll_plate_readers(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Via Lietuva: {error}')
+    if source_errors:
+        print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 
     expiration = index.get('expiration_utc')
     expires_at = None
@@ -18574,6 +18664,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         'total_elements': total_elements,
         'elements_limited': len(elements) < total_elements,
         'viewport_filtered': True,
+        'sourceErrors': source_errors,
     }
     return json.dumps(body, separators=(',', ':')).encode()
 
