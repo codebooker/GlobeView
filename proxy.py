@@ -965,7 +965,7 @@ SECURITY_HEADERS = {
         "style-src 'self' 'unsafe-inline' https://unpkg.com; "
         "img-src 'self' data: blob: https://fl511.com https://511ga.org https://511wi.gov https://az511.gov https://511.idaho.gov https://udottraffic.utah.gov https://api.algotraffic.com https://www.mdottraffic.com https://*.mdottraffic.com https://drivenc.gov https://www.drivenc.gov https://snapshot.navigator.dot.ga.gov https://tiles.openfreemap.org "
         "https://mapservices.weather.noaa.gov https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://tiles.versatiles.org "
-        "https://*.arcgisonline.com https://tile.openweathermap.org https://embed.skylinewebcams.com https://www.ipcamlive.com https://*.ipcamlive.com https://kamera.atlas.vegvesen.no https://www.cita.lu https://weathercam.digitraffic.fi https://etraffic.dgt.es; "
+        "https://*.arcgisonline.com https://tile.openweathermap.org https://embed.skylinewebcams.com https://www.ipcamlive.com https://*.ipcamlive.com https://kamera.atlas.vegvesen.no https://www.cita.lu https://weathercam.digitraffic.fi https://etraffic.dgt.es https://informo.madrid.es; "
         "connect-src 'self' https://api.rainviewer.com https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://marine-api.open-meteo.com https://tiles.openfreemap.org https://tiles.versatiles.org https://*.wowza.com https://*.streamlock.net https://widevine-dash.ezdrm.com wss://cctv.trafficview.org:8420; "
         "media-src 'self' blob: https:; "
         "worker-src 'self' blob:; "

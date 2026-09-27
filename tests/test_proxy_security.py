@@ -9,6 +9,13 @@ import proxy
 
 
 class ProxySecurityTests(unittest.TestCase):
+    def test_european_road_camera_hosts_are_allowed_by_image_policy(self):
+        image_policy = proxy.SECURITY_HEADERS['Content-Security-Policy'].split('img-src ', 1)[1].split(';', 1)[0]
+        for host in ('weathercam.digitraffic.fi', 'etraffic.dgt.es', 'informo.madrid.es',
+                     'www.cita.lu', 'kamera.atlas.vegvesen.no'):
+            with self.subTest(host=host):
+                self.assertIn('https://' + host, image_policy.split())
+
     def test_stream_subpaths_share_a_rate_limit_bucket(self):
         self.assertEqual(
             proxy.rate_limit_bucket('/stream/camera-a/segment-1.ts'),
