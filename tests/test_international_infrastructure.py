@@ -16,6 +16,35 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_fintraffic_cameras_use_recent_collected_preset_only(self):
+        now = dt.datetime(2026, 9, 27, 9, 30, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'type': 'FeatureCollection', 'features': [
+            {'geometry': {'type': 'Point', 'coordinates': [24.95, 60.17]}, 'properties': {
+                'id': 'C01503', 'name': 'kt51_Inkoo', 'collectionStatus': 'GATHERING',
+                'presets': [{'id': 'C0150301', 'inCollection': True},
+                            {'id': 'C0150302', 'inCollection': False}]}},
+            {'geometry': {'type': 'Point', 'coordinates': [25.1, 60.2]}, 'properties': {
+                'id': 'C01504', 'collectionStatus': 'REMOVED_TEMPORARILY',
+                'presets': [{'id': 'C0150401', 'inCollection': True}]}}
+        ]}
+        observations = {'dataUpdatedTime': '2026-09-27T09:29:00Z', 'stations': [
+            {'id': 'C01503', 'presets': [
+                {'id': 'C0150301', 'measuredTime': '2026-09-27T09:25:00Z'},
+                {'id': 'C0150302', 'measuredTime': '2026-09-27T09:27:00Z'}]},
+            {'id': 'C01504', 'presets': [
+                {'id': 'C0150401', 'measuredTime': '2026-09-27T09:25:00Z'}]}
+        ]}
+        rows = feeds._parse_fintraffic_cameras(metadata, observations, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'fi:camera:C01503')
+        self.assertEqual(rows[0]['properties']['snapshot_url'],
+                         'https://weathercam.digitraffic.fi/C0150301.jpg')
+        self.assertEqual(rows[0]['properties']['snapshot_refresh_ms'], 600000)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [24.95, 60.17])
+        observations['dataUpdatedTime'] = '2026-09-27T08:30:00Z'
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_fintraffic_cameras(metadata, observations, now)
+
     def test_luxembourg_datex_maps_current_events_and_rejects_stale_feed(self):
         now = dt.datetime(2026, 9, 27, 8, 30, tzinfo=dt.timezone.utc).timestamp()
         document = '''<payload xmlns="http://datex2.eu/schema/3/d2Payload"

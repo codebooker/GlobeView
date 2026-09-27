@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
+FINTRAFFIC_CAMERAS_SOURCE = 'https://www.digitraffic.fi/en/road-traffic/'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
 NPG_BASE = 'https://northernpowergrid.opendatasoft.com'
@@ -81,9 +82,9 @@ _AUTOBAHN_CACHE = {service: {'until': 0, 'roads': {}, 'lock': threading.Lock()}
 
 
 def _get_json(url, fintraffic=False):
-    headers = {'User-Agent': 'GlobalMap/1.0 (public map feed reader)', 'Accept': 'application/json'}
+    headers = {'User-Agent': 'GlobeView/1.0 (public map feed reader)', 'Accept': 'application/json'}
     if fintraffic:
-        headers.update({'Accept-Encoding': 'gzip', 'Digitraffic-User': 'GlobalMap/1.0'})
+        headers.update({'Accept-Encoding': 'gzip', 'Digitraffic-User': 'GlobeView/1.0'})
     request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=15) as response:
         body = response.read(12 * 1024 * 1024 + 1)
@@ -506,6 +507,66 @@ def _fintraffic_signs():
             'updated_at': props.get('effectDate') or '',
         }))
     return features
+
+
+def _parse_fintraffic_cameras(metadata, observations, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(metadata, dict) or metadata.get('type') != 'FeatureCollection'
+            or not isinstance(metadata.get('features'), list)
+            or not isinstance(observations, dict) or not isinstance(observations.get('stations'), list)):
+        raise ValueError('Fintraffic camera catalog is invalid')
+    published = _timestamp(observations.get('dataUpdatedTime'))
+    if published is None or not -600 <= now - published <= 30 * 60:
+        raise ValueError('Fintraffic camera observations are stale')
+    recent = {station.get('id'): station for station in observations['stations']
+              if isinstance(station, dict) and isinstance(station.get('id'), str)}
+    features = []
+    for camera in metadata['features']:
+        if not isinstance(camera, dict):
+            continue
+        properties = camera.get('properties') or {}
+        if not isinstance(properties, dict):
+            continue
+        camera_id = str(properties.get('id') or '')
+        if (not re.fullmatch(r'C\d{5}', camera_id) or properties.get('collectionStatus') != 'GATHERING'
+                or properties.get('state') in {'REPAIR_INTERRUPTED', 'REPAIR_REQUEST_POSTED'}):
+            continue
+        point = _point(camera.get('geometry'))
+        if not point or not (19 <= point[0] <= 32 and 59 <= point[1] <= 71):
+            continue
+        observation = recent.get(camera_id) or {}
+        timestamps = {preset.get('id'): preset.get('measuredTime')
+                      for preset in observation.get('presets') or [] if isinstance(preset, dict)}
+        choices = []
+        for preset in properties.get('presets') or []:
+            if not isinstance(preset, dict):
+                continue
+            preset_id = str(preset.get('id') or '')
+            observed_text = timestamps.get(preset_id)
+            observed = _timestamp(observed_text)
+            if (preset.get('inCollection') is True and re.fullmatch(r'C\d{7}', preset_id)
+                    and observed is not None and -600 <= now - observed <= 30 * 60):
+                choices.append((observed, preset_id, observed_text))
+        if not choices:
+            continue
+        _, preset_id, observed_text = max(choices)
+        name = _clean(properties.get('name'), 90).replace('_', ' ')
+        features.append(_feature(point, {
+            'key': f'fi:camera:{camera_id}', 'layer': 'cameras',
+            'title': name or f'Road weather camera {camera_id}',
+            'detail': 'Recent road weather camera still',
+            'snapshot_url': f'https://weathercam.digitraffic.fi/{preset_id}.jpg',
+            'snapshot_refresh_ms': 600000,
+            'source': 'Fintraffic / Digitraffic · CC BY 4.0',
+            'source_url': FINTRAFFIC_CAMERAS_SOURCE, 'updated_at': observed_text,
+        }))
+    return features
+
+
+def _fintraffic_cameras():
+    metadata = _get_json(f'{FINTRAFFIC_BASE}/api/weathercam/v1/stations', fintraffic=True)
+    observations = _get_json(f'{FINTRAFFIC_BASE}/api/weathercam/v1/stations/data', fintraffic=True)
+    return _parse_fintraffic_cameras(metadata, observations)
 
 
 def _tfl_disruptions():
@@ -1545,6 +1606,7 @@ def _autobahn_service(service):
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
+        'fi_cameras': _fintraffic_cameras,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
