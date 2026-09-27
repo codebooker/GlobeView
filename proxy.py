@@ -944,6 +944,7 @@ PUBLIC_STATIC_FILES = frozenset({
     'global-cameras.json',
     'ports.json',
     'places.json',
+    'ireland-counties-2019.json',
     'globeview-logo.svg',
     'globeview-mark.svg',
     'state-boundary.json',

@@ -140,10 +140,31 @@ class HazardFeedTests(unittest.TestCase):
         with patch.object(hazard_feeds, '_canada_alerts', return_value=[{'id': 'ca:1'}]), patch.object(
             hazard_feeds, '_new_zealand_alerts', side_effect=RuntimeError('offline')
         ), patch.object(hazard_feeds, '_norway_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_ireland_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_ireland_alerts_use_current_county_regions_and_original_text(self):
+        now = dt.datetime.now(dt.timezone.utc)
+        future = (now + dt.timedelta(hours=2)).isoformat()
+        past = (now - dt.timedelta(hours=2)).isoformat()
+        warning = {'capId': 'cap.1', 'headline': 'Wind warning',
+                   'description': 'Keep clear of exposed areas.', 'regions': ['EI07', 'EI12'],
+                   'severity': 'Moderate', 'issued': now.isoformat(), 'expiry': future}
+        with patch.object(hazard_feeds, '_get_json', return_value=[
+            warning, {**warning, 'capId': 'cap.2', 'expiry': past},
+            {**warning, 'capId': 'cap.3', 'regions': ['EI07', 'UNKNOWN']},
+        ]):
+            items = hazard_feeds._ireland_alerts()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['regions'], ['EI07', 'EI12'])
+        self.assertEqual(items[0]['area'], 'Dublin, Kildare')
+        self.assertEqual(items[0]['title'], warning['headline'])
+        self.assertEqual(items[0]['advice'], warning['description'])
+        self.assertEqual(items[0]['sourceUrl'], 'https://cap.met.ie//cap.1.xml')
+        self.assertEqual(items[0]['locationKind'], 'county point')
 
     def test_norway_alerts_map_current_english_cap_polygon(self):
         future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=3)).isoformat()

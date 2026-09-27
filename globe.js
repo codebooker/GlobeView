@@ -778,7 +778,7 @@
       : type === 'cyclones' ? 'Cyclones: <a href="https://eonet.gsfc.nasa.gov/">NASA EONET</a>'
       : type === 'earthquakes' ? 'Earthquakes: <a href="https://earthquake.usgs.gov/">USGS</a>'
       : type === 'nws_alerts' ? 'Weather alerts: <a href="https://api.weather.gov/alerts/active">National Weather Service</a>'
-      : type === 'world_alerts' ? 'Weather alerts: <a href="https://api.weather.gc.ca/collections/weather-alerts">Environment and Climate Change Canada</a> (<a href="https://eccc-msc.github.io/open-data/licence/readme_en/">licence</a>) / <a href="https://alerts.metservice.com/cap/rss">© Meteorological Service of New Zealand Limited</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>) / <a href="https://api.met.no/weatherapi/metalerts/2.0/documentation">Norwegian Meteorological Institute</a> (<a href="https://api.met.no/doc/TermsOfService">CC BY 4.0</a>)'
+      : type === 'world_alerts' ? 'Weather alerts: <a href="https://api.weather.gc.ca/collections/weather-alerts">Environment and Climate Change Canada</a> (<a href="https://eccc-msc.github.io/open-data/licence/readme_en/">licence</a>) / <a href="https://alerts.metservice.com/cap/rss">© Meteorological Service of New Zealand Limited</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>) / <a href="https://api.met.no/weatherapi/metalerts/2.0/documentation">Norwegian Meteorological Institute</a> (<a href="https://api.met.no/doc/TermsOfService">CC BY 4.0</a>) / <a href="https://data.gov.ie/dataset/weather-warnings">Met Éireann</a> (custom open data licence) / <a href="https://data.gov.ie/dataset/counties-national-statutory-boundaries-2019-generalised-20m1">Tailte Éireann county boundaries</a> (CC BY 4.0)'
       : type === 'fires' ? 'Wildfires: <a href="https://www.gdacs.org/">Global Disaster Alert and Coordination System, GDACS</a>'
       : type === 'international' ? 'Emergency reports: <a href="https://www.rfs.nsw.gov.au/">NSW RFS</a> / <a href="https://www.fire.qld.gov.au/">Queensland Fire</a> / <a href="https://www.emergency.vic.gov.au/">VicEmergency</a> / <a href="https://www.civildefence.govt.nz/">NZ NEMA</a> / <a href="https://environment.data.gov.uk/flood-monitoring/doc/reference">Environment Agency</a> / <a href="https://einsatz.lsz-b.at/">LSZ Burgenland</a> / <a href="https://api.vedur.is/">Icelandic Meteorological Office</a> / <a href="https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto">Portugal ANEPC</a>'
       : type === 'floods' || type === 'volcanoes' ? 'Hazards: <a href="https://www.gdacs.org/">Global Disaster Alert and Coordination System, GDACS</a>'
@@ -2227,6 +2227,15 @@
   }
   document.getElementById('cyclone-guidance-close').addEventListener('click', hideCycloneGuidance);
 
+  let irelandCountiesPromise;
+  function loadIrelandCounties() {
+    irelandCountiesPromise ||= fetch('/ireland-counties-2019.json').then(response => {
+      if (!response.ok) throw new Error(`Ireland county boundaries: ${response.status}`);
+      return response.json();
+    }).then(data => data.counties);
+    return irelandCountiesPromise;
+  }
+
   async function loadHazards(type) {
     if (!styleReady || !enabled[type] || document.hidden) return;
     requests.get(type)?.abort();
@@ -2237,12 +2246,30 @@
       if (!response.ok) throw new Error(`${type}: ${response.status}`);
       const data = await response.json();
       if (controller.signal.aborted || !enabled[type]) return;
+      let irelandCounties = null;
+      if (type === 'world_alerts' && data.items?.some(item => item.country === 'Ireland' && item.regions?.length)) {
+        try { irelandCounties = await loadIrelandCounties(); }
+        catch (error) { irelandCountiesPromise = null; console.warn(error); }
+        if (controller.signal.aborted || !enabled[type]) return;
+      }
       const features = [];
       const records = new Map();
       const tracks = [];
       const areas = [];
       for (const item of data.items || []) {
         if ((type === 'nws_alerts' || type === 'world_alerts') && item.ends && Date.parse(item.ends) <= Date.now()) continue;
+        if (item.country === 'Ireland' && irelandCounties && Array.isArray(item.regions) &&
+            item.regions.length && item.regions.every(code => irelandCounties[code]?.geometry)) {
+          const polygons = item.regions.flatMap(code => {
+            const shape = irelandCounties[code].geometry;
+            return shape.type === 'Polygon' ? [shape.coordinates] :
+              shape.type === 'MultiPolygon' ? shape.coordinates : [];
+          });
+          if (polygons.length) {
+            item.geometry = { type: 'MultiPolygon', coordinates: polygons };
+            item.locationKind = 'polygon';
+          }
+        }
         const lon = Number(item.lon), lat = Number(item.lat);
         if (!validCoordinate(lat, lon)) continue;
         const ref = String(item.id || features.length);

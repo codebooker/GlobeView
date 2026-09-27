@@ -434,19 +434,66 @@ def _norway_alerts():
     return items
 
 
+@lru_cache(maxsize=1)
+def _ireland_counties():
+    path = Path(__file__).with_name('ireland-counties-2019.json')
+    return json.loads(path.read_text(encoding='utf-8'))['counties']
+
+
+def _ireland_alerts():
+    warnings = _get_json('https://www.met.ie/Open_Data/json/warning_IRELAND.json', max_bytes=500_000)
+    if not isinstance(warnings, list) or len(warnings) > 250:
+        raise ValueError('Unexpected Met Éireann warning feed')
+    counties = _ireland_counties()
+    now = dt.datetime.now(_UTC)
+    items = []
+    seen = set()
+    for warning in warnings:
+        if not isinstance(warning, dict):
+            continue
+        identifier = str(warning.get('capId') or '')
+        if not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', identifier) or identifier in seen:
+            continue
+        if not _future_timestamp(warning.get('expiry'), now):
+            continue
+        regions = warning.get('regions')
+        if not isinstance(regions, list) or not regions or any(code not in counties for code in regions):
+            continue  # Marine or unknown regions have no county boundary here.
+        seen.add(identifier)
+        regions = list(dict.fromkeys(regions))
+        centers = [counties[code]['center'] for code in regions]
+        mean_lon = sum(center[0] for center in centers) / len(centers)
+        mean_lat = sum(center[1] for center in centers) / len(centers)
+        lon, lat = min(centers, key=lambda center:
+                       (center[0] - mean_lon) ** 2 + (center[1] - mean_lat) ** 2)
+        area = ('Ireland' if len(regions) == len(counties) else
+                ', '.join(counties[code]['name'] for code in regions))
+        items.append({
+            'id': 'ie:' + identifier,
+            'title': warning.get('headline') or 'Weather warning',
+            'lon': lon, 'lat': lat, 'regions': regions,
+            'locationKind': 'county point', 'country': 'Ireland',
+            'source': 'Met Éireann', 'severity': warning.get('severity'),
+            'area': area, 'advice': warning.get('description') or '',
+            'observed': warning.get('issued'), 'ends': warning.get('expiry'),
+            'sourceUrl': 'https://cap.met.ie//' + identifier + '.xml',
+        })
+    return items
+
+
 def _world_alerts():
     items = []
     unavailable = []
     for country, loader in [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
-                            ('Norway', _norway_alerts)]:
+                            ('Norway', _norway_alerts), ('Ireland', _ireland_alerts)]:
         try:
             items.extend(loader())
         except Exception:
             unavailable.append(country)
-    if len(unavailable) == 3:
+    if len(unavailable) == 4:
         raise RuntimeError('International weather alert feeds are unavailable')
     return {'source': 'National meteorological services', 'items': items,
-            'countries': ['Canada', 'New Zealand', 'Norway'], 'unavailable': unavailable}
+            'countries': ['Canada', 'New Zealand', 'Norway', 'Ireland'], 'unavailable': unavailable}
 
 
 def _gdelt_events():
