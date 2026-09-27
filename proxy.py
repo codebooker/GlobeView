@@ -19538,12 +19538,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(400, 'Invalid camera ID'); return
         try:
             content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
-                f'madrid-camera:v1:{camera_id}',
+                f'madrid-camera:v2:{camera_id}',
                 lambda: madrid_camera_snapshot(camera_id),
                 ttl=300, stale_ttl=600, persist=False, wait_timeout=20)
             self._write_bytes(200, content, content_type,
                               cache_control='public, max-age=60, stale-while-revalidate=120',
                               extra_headers={'X-GlobeView-Cache': cache_status})
+        except FileNotFoundError:
+            self.send_error(404, 'Snapshot unavailable')
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 self.send_error(404, 'Snapshot unavailable')

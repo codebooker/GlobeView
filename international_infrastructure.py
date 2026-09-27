@@ -462,18 +462,70 @@ def _parse_madrid_cameras(root, published):
 
 def _madrid_cameras():
     root, published = _madrid_xml('CCTV.kml')
-    return _parse_madrid_cameras(root, published)
+    cameras = _parse_madrid_cameras(root, published)
+    unavailable = _madrid_unavailable_cameras(cameras)
+    return [camera for camera in cameras if camera['properties']['key'] not in unavailable]
+
+
+_MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
+_MADRID_CAMERA_HEALTH_LOCK = threading.Lock()
+_MADRID_CAMERA_PLACEHOLDER_BYTES = 17803
+
+
+def _madrid_camera_url(camera_id):
+    return f'https://informo.madrid.es/cameras/Camara{camera_id}.jpg'
+
+
+def _madrid_camera_headers_available(response, now):
+    if urllib.parse.urlsplit(response.url).hostname != 'informo.madrid.es':
+        return False
+    headers = response.headers
+    if headers.get('Content-Type', '').split(';')[0] != 'image/jpeg':
+        return False
+    if headers.get('Content-Length') == str(_MADRID_CAMERA_PLACEHOLDER_BYTES):
+        return False
+    modified = headers.get('Last-Modified')
+    if not modified:
+        return False
+    try:
+        age = now - email.utils.parsedate_to_datetime(modified).timestamp()
+    except (TypeError, ValueError):
+        return False
+    return -300 <= age <= 30 * 60
+
+
+def _madrid_unavailable_cameras(cameras):
+    with _MADRID_CAMERA_HEALTH_LOCK:
+        now = time.time()
+        if now < _MADRID_CAMERA_HEALTH['until']:
+            return _MADRID_CAMERA_HEALTH['unavailable']
+
+        def unavailable(camera):
+            key = camera['properties']['key']
+            camera_id = key.rsplit(':', 1)[-1]
+            request = urllib.request.Request(_madrid_camera_url(camera_id), method='HEAD',
+                                             headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+            try:
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    return key if not _madrid_camera_headers_available(response, now) else None
+            except (OSError, ValueError):
+                return key
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+            unavailable_ids = {key for key in executor.map(unavailable, cameras) if key}
+        _MADRID_CAMERA_HEALTH.update(until=now + 900, unavailable=unavailable_ids)
+        return unavailable_ids
 
 
 def madrid_camera_snapshot(camera_id):
     if not re.fullmatch(r'\d{4,6}', str(camera_id)):
         raise ValueError('Invalid Madrid camera ID')
     request = urllib.request.Request(
-        f'https://informo.madrid.es/cameras/Camara{camera_id}.jpg',
+        _madrid_camera_url(camera_id),
         headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
     with urllib.request.urlopen(request, timeout=15) as response:
-        if urllib.parse.urlsplit(response.url).hostname != 'informo.madrid.es':
-            raise ValueError('Unexpected Madrid camera redirect')
+        if not _madrid_camera_headers_available(response, time.time()):
+            raise FileNotFoundError('Madrid camera still is unavailable or stale')
         image = response.read(2_000_001)
     if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
         raise ValueError('Madrid camera returned no JPEG still')

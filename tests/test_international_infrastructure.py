@@ -201,13 +201,53 @@ class InfrastructureTests(unittest.TestCase):
     def test_madrid_camera_proxy_validates_id_and_image(self):
         class Response(io.BytesIO):
             url = 'https://informo.madrid.es/cameras/Camara06303.jpg'
+            headers = {'Content-Type': 'image/jpeg', 'Content-Length': '100000',
+                       'Last-Modified': 'Sat, 26 Sep 2026 18:00:00 GMT'}
         with self.assertRaises(ValueError):
             feeds.madrid_camera_snapshot('../bad')
-        with patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
             self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
-        with patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'not an image')):
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'not an image')):
             with self.assertRaises(ValueError):
                 feeds.madrid_camera_snapshot('06303')
+        placeholder = Response(b'\xff\xd8\xffimage')
+        placeholder.headers = dict(Response.headers, **{'Content-Length': '17803'})
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=placeholder):
+            with self.assertRaises(FileNotFoundError):
+                feeds.madrid_camera_snapshot('09305')
+
+    def test_madrid_camera_catalog_hides_offline_and_stale_stills(self):
+        class Response:
+            def __init__(self, url):
+                self.url = url
+                camera_id = url.rsplit('Camara', 1)[-1].split('.')[0]
+                self.headers = {'Content-Type': 'image/jpeg',
+                                'Content-Length': '17803' if camera_id == '09305' else '100000',
+                                'Last-Modified': ('Fri, 25 Sep 2026 18:00:00 GMT' if camera_id == '04301'
+                                                  else 'Sat, 26 Sep 2026 18:00:00 GMT')}
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+
+        cameras = [feeds._feature([-3.7, 40.4], {
+            'key': f'es:madrid:camera:{camera_id}', 'layer': 'cameras',
+        }) for camera_id in ('06303', '09305', '04301', '07313')]
+        previous = dict(feeds._MADRID_CAMERA_HEALTH)
+        def load(request, timeout):
+            if '07313' in request.full_url:
+                raise FileNotFoundError('missing camera')
+            return Response(request.full_url)
+        try:
+            feeds._MADRID_CAMERA_HEALTH['until'] = 0
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=load):
+                bad = feeds._madrid_unavailable_cameras(cameras)
+            self.assertEqual(bad, {'es:madrid:camera:09305', 'es:madrid:camera:04301',
+                                   'es:madrid:camera:07313'})
+        finally:
+            feeds._MADRID_CAMERA_HEALTH.update(previous)
 
     def test_madrid_signs_join_locations_and_preserve_alternating_phases(self):
         locations = [{'nombre': 'CPMV10051', 'longitud': '-3.7', 'latitud': '40.4'}]
