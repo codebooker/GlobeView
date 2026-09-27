@@ -616,8 +616,7 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_madrid_cameras(root, NOW)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
-        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
-                         'https://informo.madrid.es/cameras/Camara06303.jpg')
+        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
 
     def test_madrid_camera_health_checks_image_body(self):
         class Response(io.BytesIO):
@@ -727,6 +726,25 @@ class InfrastructureTests(unittest.TestCase):
         finally:
             feeds._MADRID_CAMERA_HEALTH.update(previous)
 
+    def test_failed_madrid_still_is_removed_from_next_map_response(self):
+        camera = feeds._feature([-3.7, 40.42], {
+            'key': 'es:madrid:camera:01315', 'layer': 'cameras',
+            'snapshot_url': '/madrid-camera/01315',
+        })
+        previous = dict(feeds._MADRID_CAMERA_HEALTH)
+        try:
+            feeds._MADRID_CAMERA_HEALTH.update(until=NOW + 900, unavailable=set())
+            with patch.object(feeds.urllib.request, 'urlopen', side_effect=FileNotFoundError):
+                with self.assertRaises(FileNotFoundError):
+                    feeds.madrid_camera_snapshot('01315')
+            with patch.object(feeds, '_snapshot', return_value={
+                    'sources': {'es_madrid_cameras': [camera]}, 'errors': []}), \
+                    patch.object(feeds, '_dgt_unavailable_cameras', return_value=set()):
+                self.assertEqual(feeds.road_snapshot('cameras', (-3.8, 40.3, -3.6, 40.5))['features'], [])
+        finally:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_HEALTH.update(previous)
+
     def test_madrid_signs_join_locations_and_preserve_alternating_phases(self):
         locations = [{'nombre': 'CPMV10051', 'longitud': '-3.7', 'latitud': '40.4'}]
         root = ET.fromstring('''<MESSAGE><HEAD><RESULT>OK</RESULT></HEAD><BODY>
@@ -811,8 +829,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'],
                          '/dgt-camera/168408')
-        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
-                         'https://etraffic.dgt.es/camarasEtraffic/168408.jpg')
+        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
         self.assertEqual(rows[0]['geometry']['coordinates'], [-0.4282263, 42.304092])
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)

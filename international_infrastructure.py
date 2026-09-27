@@ -639,7 +639,6 @@ def _parse_madrid_cameras(root, published):
             'title': _clean(data.get('Nombre'), 110) or f'Madrid road camera {camera_id}',
             'detail': 'Latest available still · normally updated every 5 min',
             'snapshot_url': f'/madrid-camera/{camera_id}',
-            'snapshot_fallback_url': _madrid_camera_url(camera_id),
             'snapshot_refresh_ms': 300000,
             'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_CAMERAS_SOURCE,
             'updated_at': published,
@@ -657,6 +656,12 @@ def _madrid_cameras():
 _MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
 _MADRID_CAMERA_HEALTH_LOCK = threading.Lock()
 _MADRID_CAMERA_PLACEHOLDER_BYTES = 17803
+
+
+def _mark_madrid_camera_unavailable(camera_id):
+    with _MADRID_CAMERA_HEALTH_LOCK:
+        _MADRID_CAMERA_HEALTH['unavailable'] = (
+            set(_MADRID_CAMERA_HEALTH['unavailable']) | {f'es:madrid:camera:{camera_id}'})
 
 
 def _madrid_camera_url(camera_id):
@@ -711,21 +716,25 @@ def madrid_camera_snapshot(camera_id):
         raise ValueError('Invalid Madrid camera ID')
     request = urllib.request.Request(_madrid_camera_url(camera_id), headers={
         'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
-    for attempt in range(2):
-        try:
-            with urllib.request.urlopen(request, timeout=8) as response:
-                if not _madrid_camera_headers_available(response, time.time()):
-                    raise FileNotFoundError('Madrid camera still is unavailable or stale')
-                image = response.read(2_000_001)
-            break
-        except urllib.error.HTTPError:
-            raise
-        except (TimeoutError, urllib.error.URLError):
-            if attempt:
+    try:
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    if not _madrid_camera_headers_available(response, time.time()):
+                        raise FileNotFoundError('Madrid camera still is unavailable or stale')
+                    image = response.read(2_000_001)
+                break
+            except urllib.error.HTTPError:
                 raise
-    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
-        raise ValueError('Madrid camera returned no JPEG still')
-    return image, 'image/jpeg'
+            except (TimeoutError, urllib.error.URLError):
+                if attempt:
+                    raise
+        if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+            raise ValueError('Madrid camera returned no JPEG still')
+        return image, 'image/jpeg'
+    except (OSError, ValueError):
+        _mark_madrid_camera_unavailable(camera_id)
+        raise
 
 
 def _lyon_camera_url(camera_id):
@@ -3198,7 +3207,6 @@ def _parse_dgt_cameras(root, now=None):
             'detail': ' · '.join(part for part in (f'km {km}' if km else '', province,
                                               'Latest available still') if part),
             'snapshot_url': f'/dgt-camera/{image_id}', 'snapshot_refresh_ms': 120000,
-            'snapshot_fallback_url': _dgt_camera_url(image_id),
             'source': 'Spain DGT · CC BY', 'source_url': DGT_CAMERAS_SOURCE,
             'updated_at': published,
         }))
@@ -3269,21 +3277,26 @@ def dgt_camera_snapshot(camera_id):
         raise ValueError('Invalid DGT camera ID')
     request = urllib.request.Request(_dgt_camera_url(camera_id), headers={
         'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
-    for attempt in range(2):
-        try:
-            with urllib.request.urlopen(request, timeout=8) as response:
-                if not _dgt_camera_headers_available(response, time.time()):
-                    raise FileNotFoundError('DGT camera still is unavailable or stale')
-                image = response.read(2_000_001)
-            break
-        except urllib.error.HTTPError:
-            raise
-        except (TimeoutError, urllib.error.URLError):
-            if attempt:
+    try:
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    if not _dgt_camera_headers_available(response, time.time()):
+                        raise FileNotFoundError('DGT camera still is unavailable or stale')
+                    image = response.read(2_000_001)
+                break
+            except urllib.error.HTTPError:
                 raise
-    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
-        raise ValueError('DGT camera returned no JPEG still')
-    return image, 'image/jpeg'
+            except (TimeoutError, urllib.error.URLError):
+                if attempt:
+                    raise
+        if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+            raise ValueError('DGT camera returned no JPEG still')
+        return image, 'image/jpeg'
+    except (OSError, ValueError):
+        with _DGT_CAMERA_HEALTH_LOCK:
+            _DGT_CAMERA_HEALTH[camera_id] = (time.time() + 180, False)
+        raise
 
 
 def _dgt_cameras():
@@ -4486,6 +4499,8 @@ def road_snapshot(layer, bbox=None):
                     and south <= item['geometry']['coordinates'][1] <= north]
     if layer == 'cameras':
         unavailable = _dgt_unavailable_cameras(features)
+        with _MADRID_CAMERA_HEALTH_LOCK:
+            unavailable.update(_MADRID_CAMERA_HEALTH['unavailable'])
         features = [item for item in features if item['properties']['key'] not in unavailable]
     return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': errors,
             'sources': sources}
