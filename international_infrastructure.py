@@ -17,6 +17,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 from zoneinfo import ZoneInfo
 
+from pyproj import Transformer
+
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
@@ -33,6 +35,9 @@ FRANCE_ROADS_URL = ('https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/'
 FRANCE_ROADS_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                        'evenements-routiers-sur-le-reseau-routier-national-non-concede')
 FRANCE_SENSOR_BASE = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/'
+BELGIUM_ROADS_URL = 'https://www.verkeerscentrum.be/uitwisseling/datex2v3full'
+BELGIUM_ROADS_SOURCE = 'https://www.verkeerscentrum.be/data'
+_BELGIUM_TO_WGS84 = Transformer.from_crs('EPSG:31370', 'EPSG:4326', always_xy=True)
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -604,6 +609,106 @@ def _france_sensors():
                                  _FRANCE_SENSOR_REFERENCES['points'], now)
 
 
+def _belgium_road_point(record):
+    """DATEX v3 geometry is Belgian Lambert 72 (EPSG:31370), not decimal degrees."""
+    line = record.find('.//{*}gmlLineString')
+    if line is not None and line.get('srsName') == 'EPSG:31370':
+        pos_list = line.findtext('{*}posList')
+        try:
+            values = [float(value) for value in pos_list.split()]
+            if len(values) >= 2 and len(values) % 2 == 0:
+                midpoint = (len(values) // 4) * 2
+                x, y = values[midpoint:midpoint + 2]
+            else:
+                return None
+        except (AttributeError, ValueError):
+            return None
+    else:
+        try:
+            x = float(record.findtext('.//{*}pointCoordinates/{*}longitude'))
+            y = float(record.findtext('.//{*}pointCoordinates/{*}latitude'))
+        except (TypeError, ValueError):
+            return None
+    if not (math.isfinite(x) and math.isfinite(y) and 0 <= x <= 300000 and 0 <= y <= 300000):
+        return None
+    lon, lat = _BELGIUM_TO_WGS84.transform(x, y)
+    return [lon, lat] if math.isfinite(lon) and math.isfinite(lat) and 2.3 <= lon <= 6.5 and 49.4 <= lat <= 51.6 else None
+
+
+def _belgium_otap_road_names(root):
+    names = {}
+    for situation in root.findall('situation'):
+        reference = situation.findtext('./key/situationReference', default='')
+        match = re.search(r'(\d+)$', reference)
+        road = _clean(situation.findtext('.//milestone/roadName'), 48)
+        if match and road:
+            names[match.group(1)] = road
+    return names
+
+
+def _parse_belgium_roads(root, road_names=None, now=None):
+    now = time.time() if now is None else now
+    published = _timestamp(root.findtext('{*}publicationTime'))
+    if published is None or not -600 <= now - published <= 30 * 60:
+        raise ValueError('Flemish road publication is stale or invalid')
+    road_names = road_names or {}
+    features = []
+    work_types = {'MaintenanceWorks', 'ConstructionWorks'}
+    incident_types = {'Accident', 'AbnormalTraffic', 'EnvironmentalObstruction',
+                      'GeneralObstruction', 'InfrastructureDamageObstruction',
+                      'VehicleObstruction', 'WeatherRelatedRoadConditions'}
+    management_types = {'RoadOrCarriagewayOrLaneManagement', 'GeneralNetworkManagement',
+                        'ReroutingManagement', 'SpeedManagement'}
+    conditions = {'newRoadworksLayout': 'Roadworks layout', 'narrowLanes': 'Narrow lanes',
+                  'roadClosed': 'Road closed', 'singleAlternateLineTraffic': 'Alternating traffic'}
+    for situation in root.findall('{*}situation'):
+        records = []
+        for record in situation.findall('{*}situationRecord'):
+            kind = record.get(_DATEX_TYPE, '').split(':')[-1]
+            if kind not in work_types | incident_types | management_types:
+                continue
+            if record.findtext('.//{*}validityStatus') != 'active':
+                continue
+            start = _timestamp(record.findtext('.//{*}overallStartTime'))
+            end = _timestamp(record.findtext('.//{*}overallEndTime'))
+            if (start is not None and start > now) or (end is not None and end < now):
+                continue
+            records.append(record)
+        if not records:
+            continue
+        point = next((p for record in records if (p := _belgium_road_point(record)) is not None), None)
+        if point is None:
+            continue
+        kinds = {record.get(_DATEX_TYPE, '').split(':')[-1] for record in records}
+        management = {record.findtext('.//{*}roadOrCarriagewayOrLaneManagementType') for record in records}
+        is_work = bool(kinds & work_types or 'newRoadworksLayout' in management)
+        layer = 'construction' if is_work else 'incidents'
+        identifier = re.search(r'(\d+)$', situation.get('id', ''))
+        road = road_names.get(identifier.group(1), '') if identifier else ''
+        label = 'Roadworks' if is_work else 'Road disruption'
+        details = [conditions[value] for value in conditions if value in management]
+        if not details and kinds & work_types:
+            details = ['Maintenance work']
+        features.append(_feature(point, {
+            'key': f'be:flemish:{situation.get("id")}', 'layer': layer,
+            'title': f'{label} · {road}' if road else f'{label} · Flanders',
+            'detail': ' · '.join(details) or label,
+            'source': 'Vlaams Verkeerscentrum · Modellicentie Gratis Hergebruik',
+            'source_url': BELGIUM_ROADS_SOURCE,
+            'updated_at': situation.findtext('{*}situationVersionTime', default=''),
+        }))
+    return features
+
+
+def _belgium_roads():
+    feed = _get_xml(BELGIUM_ROADS_URL)
+    try:
+        names = _belgium_otap_road_names(_get_xml('https://www.verkeerscentrum.be/uitwisseling/otap'))
+    except (OSError, ValueError, ET.ParseError):
+        names = {}
+    return _parse_belgium_roads(feed, names)
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -615,6 +720,7 @@ _FETCHERS = {
         'uk_scotland_construction': _scotland_roadworks,
         'fr_national_roads': _france_roads,
         'fr_traffic_sensors': _france_sensors,
+        'be_flemish_roads': _belgium_roads,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},

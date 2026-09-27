@@ -150,6 +150,46 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_france_sensors(stale, references, now)
 
+    def test_flemish_datex_uses_lambert72_and_current_event_windows(self):
+        now = dt.datetime(2026, 9, 27, 12, 30, tzinfo=dt.timezone.utc).timestamp()
+        xml = '''<payload xmlns="http://datex2.eu/schema/3/d2Payload" xmlns:s="http://datex2.eu/schema/3/situation"
+          xmlns:l="http://datex2.eu/schema/3/locationReferencing" xmlns:g="http://datex2.eu/schema/3/gml"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <publicationTime>2026-09-27T12:25:00Z</publicationTime>
+          <s:situation id="EVT123"><s:situationVersionTime>2026-09-27T12:20:00Z</s:situationVersionTime>
+            <s:situationRecord xsi:type="s:RoadOrCarriagewayOrLaneManagement">
+              <s:validity><s:validityStatus>active</s:validityStatus><s:validityTimeSpecification>
+                <s:overallStartTime>2026-09-27T12:00:00Z</s:overallStartTime>
+                <s:overallEndTime>2026-09-27T14:00:00Z</s:overallEndTime>
+              </s:validityTimeSpecification></s:validity>
+              <s:locationReference><l:gmlLineString srsName="EPSG:31370"><g:posList>149000 170000 150000 170000 151000 170000</g:posList></l:gmlLineString></s:locationReference>
+              <s:roadOrCarriagewayOrLaneManagementType>newRoadworksLayout</s:roadOrCarriagewayOrLaneManagementType>
+            </s:situationRecord></s:situation>
+          <s:situation id="EVT456"><s:situationRecord xsi:type="s:RoadOrCarriagewayOrLaneManagement">
+            <s:validity><s:validityStatus>active</s:validityStatus><s:overallStartTime>2026-09-27T12:00:00Z</s:overallStartTime></s:validity>
+            <s:locationReference><l:pointCoordinates><l:latitude>170000</l:latitude><l:longitude>150000</l:longitude></l:pointCoordinates></s:locationReference>
+            <s:roadOrCarriagewayOrLaneManagementType>roadClosed</s:roadOrCarriagewayOrLaneManagementType>
+          </s:situationRecord></s:situation>
+          <s:situation id="EVT789"><s:situationRecord xsi:type="s:MaintenanceWorks">
+            <s:validity><s:validityStatus>active</s:validityStatus><s:overallEndTime>2026-09-27T11:00:00Z</s:overallEndTime></s:validity>
+            <s:locationReference><l:pointCoordinates><l:latitude>170000</l:latitude><l:longitude>150000</l:longitude></l:pointCoordinates></s:locationReference>
+          </s:situationRecord></s:situation></payload>'''
+        rows = feeds._parse_belgium_roads(ET.fromstring(xml), {'123': 'E40'}, now)
+        self.assertEqual([row['properties']['layer'] for row in rows], ['construction', 'incidents'])
+        self.assertEqual(rows[0]['properties']['title'], 'Roadworks · E40')
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], 4.368752, places=5)
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][1], 50.840411, places=5)
+        self.assertEqual(rows[1]['properties']['detail'], 'Road closed')
+        stale = ET.fromstring(xml.replace('2026-09-27T12:25:00Z', '2026-09-27T10:25:00Z'))
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_belgium_roads(stale, now=now)
+
+    def test_flemish_otap_road_name_join(self):
+        root = ET.fromstring('''<situationPublication><situation><key><situationReference>SIT123</situationReference></key>
+          <situationElement><elementlocation><milestone><roadName>E411 - A4</roadName></milestone>
+          </elementlocation></situationElement></situation></situationPublication>''')
+        self.assertEqual(feeds._belgium_otap_road_names(root), {'123': 'E411 - A4'})
+
     def test_power_filters_restored_and_future_outages_and_deduplicates(self):
         uk_rows = [
             {'incidentreference': 'a', 'geopoint': {'lon': 0.1, 'lat': 51.5},
