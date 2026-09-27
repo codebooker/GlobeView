@@ -105,15 +105,22 @@ class InfrastructureTests(unittest.TestCase):
           <roadOrCarriagewayOrLaneManagementType>roadClosed</roadOrCarriagewayOrLaneManagementType>
           <generalPublicComment><comment><values><value lang="is">Fært fjallabílum</value>
           <value lang="en">Mountain vehicles</value></values></comment></generalPublicComment>
-          </situationRecord><situationRecord id="IRCA_ROADCONDITIONS_124_1">
+          </situationRecord><situationRecord id="IRCA_ROADCONDITIONS_125_1">
+          <validityStatus>active</validityStatus><overallStartTime>{stamp(-300)}</overallStartTime>
+          <predefinedLocationReference id="IRCA_PredefinedLocation_segments_123"/>
+          <roadOrCarriagewayOrLaneManagementType>roadClosed</roadOrCarriagewayOrLaneManagementType>
+          <generalPublicComment><comment><values><value lang="en">Easily passable</value>
+          </values></comment></generalPublicComment></situationRecord>
+          <situationRecord id="IRCA_ROADCONDITIONS_124_1">
           <validityStatus>definedByValidityTimeSpec</validityStatus>
           <overallStartTime>{stamp(-600)}</overallStartTime><overallEndTime>{stamp(-1)}</overallEndTime>
           <predefinedLocationReference id="IRCA_PredefinedLocation_segments_123"/>
           <poorEnvironmentType>fog</poorEnvironmentType></situationRecord></messageContainer>''')
         rows = feeds._parse_iceland_road_conditions(sections, conditions, NOW)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['properties']['title'], 'Road restriction · Hellisheiði')
-        self.assertIn('Mountain vehicles', rows[0]['properties']['detail'])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]['properties']['title'], 'Mountain vehicles · Hellisheiði')
+        self.assertEqual(rows[1]['properties']['title'], 'Easily passable · Hellisheiði')
+        self.assertIn('Approximate section location', rows[0]['properties']['detail'])
         self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], -21.34, places=2)
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_iceland_road_conditions(sections, conditions, NOW + 3600)

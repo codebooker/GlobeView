@@ -1351,7 +1351,7 @@ def _parse_iceland_road_conditions(sections_root, data_root, now=None):
         sections[section_id] = [lon, lat], name
     if not sections:
         raise ValueError('Iceland road condition sections are missing')
-    labels = {'roadClosed': 'Road restriction',
+    labels = {'roadClosed': 'Road condition',
               'closedPermanentlyForTheWinter': 'Winter road closure',
               'fog': 'Fog', 'slushOnRoad': 'Slush on road',
               'looseChippings': 'Loose chippings'}
@@ -1381,11 +1381,14 @@ def _parse_iceland_road_conditions(sections_root, data_root, now=None):
         comment = next((_clean(item.text, 180) for item in comments if item.get('lang') == 'en'), '')
         if not comment:
             comment = next((_clean(item.text, 180) for item in comments), '')
+        label = comment if condition == 'roadClosed' and comment in {
+            'Mountain vehicles', 'Easily passable', 'Impassable'} else labels[condition]
         point, name = sections[section_id]
         features.append(_feature(point, {
             'key': f'is:irca:condition:{record_id}', 'layer': 'incidents',
-            'title': f'{labels[condition]} · {name}' if name else labels[condition],
-            'detail': ' · '.join(part for part in (comment, 'Approximate section location') if part),
+            'title': f'{label} · {name}' if name else label,
+            'detail': ' · '.join(part for part in (
+                comment if comment != label else '', 'Approximate section location') if part),
             'source': 'Vegagerðin · CC BY 4.0', 'source_url': ICELAND_ROADS_SOURCE,
             'updated_at': published_text,
         }))
