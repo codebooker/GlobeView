@@ -842,8 +842,8 @@
           : type === 'civair' || type === 'govair'
           ? ['interpolate', ['linear'], ['zoom'], 0, 0.45, 5, 0.65, 6, 0.95, 7, 1.15, 8, 1.4, 12, 1.5]
           : ['interpolate', ['linear'], ['zoom'], 0, 0.88, 10, 1.1, 15, 1.22],
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
+        'icon-allow-overlap': type !== 'sensors',
+        'icon-ignore-placement': type !== 'sensors',
         'icon-rotate': ['coalesce', ['get', 'heading'], 0],
         visibility: 'none'
       }
