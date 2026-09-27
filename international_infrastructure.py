@@ -101,6 +101,8 @@ LUXEMBOURG_CAMERAS_URL = 'https://www.cita.lu/kml/cameras.kml'
 LUXEMBOURG_CAMERAS_SOURCE = 'https://data.public.lu/en/datasets/cita-cameras-autoroute/'
 LUXEMBOURG_TRAFFIC_BASE = 'https://www.cita.lu/info_trafic/datex/trafficstatus_'
 LUXEMBOURG_TRAFFIC_SOURCE = 'https://data.public.lu/en/datasets/cita-donnees-trafic-en-datex-ii/'
+LITHUANIA_CAMERA_TABLE_URL = 'https://eismoinfo.lt/eismoinfo-backend/camera-info-table'
+LITHUANIA_CAMERA_SOURCE = 'https://eismoinfo.lt/'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -119,6 +121,8 @@ _AUTOBAHN_CACHE = {service: {'until': 0, 'roads': {}, 'lock': threading.Lock()}
                    for service in ('roadworks', 'warning', 'closure')}
 _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Lock()}
                        for service in ('cameras', 'sign_locations')}
+_LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_LITHUANIA_TRANSFORMER = Transformer.from_crs('EPSG:3346', 'EPSG:4326', always_xy=True)
 
 
 def _get_json(url, fintraffic=False):
@@ -3215,6 +3219,77 @@ def _tii_signs():
     return _parse_tii_signs(_get_json(TII_TRAFFIC_BASE + '/signs_v1/api/signs'))
 
 
+def _lithuania_camera_rows():
+    cache = _LITHUANIA_CAMERA_CATALOG
+    with cache['lock']:
+        now = time.time()
+        if now < cache['until']:
+            return cache['rows']
+        rows = _get_json(LITHUANIA_CAMERA_TABLE_URL)
+        if not isinstance(rows, list) or not rows:
+            raise ValueError('Lithuania camera table is empty')
+        cache.update(until=now + 180, rows=rows)
+        return rows
+
+
+def _parse_lithuania_cameras(rows, now=None):
+    now = time.time() if now is None else now
+    features = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        camera_id = str(row.get('id') or '')
+        if (not re.fullmatch(r'\d{1,6}', camera_id) or camera_id in seen or
+                row.get('image') != f'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id={camera_id}'):
+            continue
+        try:
+            captured = float(row['date']) / 1000
+            x, y = float(row['x']), float(row['y'])
+            lon, lat = _LITHUANIA_TRANSFORMER.transform(x, y)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (-300 <= now - captured <= 30 * 60 and
+                20.8 <= lon <= 26.9 and 53.8 <= lat <= 56.5):
+            continue
+        seen.add(camera_id)
+        road = _clean(row.get('roadNr'), 24)
+        km = row.get('km')
+        captured_text = dt.datetime.fromtimestamp(captured, dt.timezone.utc).strftime('%H:%M UTC')
+        detail = ' · '.join(part for part in (road, f'km {km}' if km is not None else '',
+                                               f'Still {captured_text}') if part)
+        features.append(_feature([lon, lat], {
+            'key': f'lt:eismoinfo:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(row.get('name'), 110) or f'Lithuania road camera {camera_id}',
+            'detail': detail, 'snapshot_url': f'/lithuania-camera/{camera_id}',
+            'snapshot_refresh_ms': 180000,
+            'source': 'Via Lietuva · Eismoinfo', 'source_url': LITHUANIA_CAMERA_SOURCE,
+        }))
+    return features
+
+
+def _lithuania_cameras():
+    return _parse_lithuania_cameras(_lithuania_camera_rows())
+
+
+def lithuania_camera_snapshot(camera_id):
+    camera_id = str(camera_id)
+    if not re.fullmatch(r'\d{1,6}', camera_id):
+        raise ValueError('Invalid Lithuania camera ID')
+    if not any(item['properties']['key'].endswith(f':{camera_id}') for item in _lithuania_cameras()):
+        raise FileNotFoundError('Lithuania camera has no recent still')
+    url = f'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id={camera_id}'
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'image/jpeg'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if response.url != url or response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg':
+            raise ValueError('Lithuania camera returned an unexpected response')
+        image = response.read(2_000_001)
+    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Lithuania camera returned no JPEG still')
+    return image, 'image/jpeg'
+
+
 _FETCHERS = {
     'roads': {
         'ie_tii_cameras': _tii_cameras,
@@ -3222,6 +3297,7 @@ _FETCHERS = {
         'ie_tii_signs': _tii_signs,
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
+        'lt_eismoinfo_cameras': _lithuania_cameras,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
         'is_road_sensors': _iceland_sensors,

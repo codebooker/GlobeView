@@ -17,6 +17,35 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_lithuania_cameras_require_recent_capture_and_official_image(self):
+        url = 'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=72'
+        row = {'id': 72, 'name': 'Vilnius A1 10,04', 'roadNr': 'A1', 'km': 10.04,
+               'x': 576154, 'y': 6056867, 'image': url, 'date': int((NOW - 300) * 1000)}
+        rows = feeds._parse_lithuania_cameras([row, dict(row, id=73),
+                                               dict(row, id=74, image='https://elsewhere.example/74.jpg'),
+                                               dict(row, id=75, image=url,
+                                                    date=int((NOW - 3600) * 1000))], NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/lithuania-camera/72')
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], 25.1798, places=3)
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][1], 54.6426, places=3)
+
+    def test_lithuania_camera_proxy_uses_fresh_catalog_and_jpeg(self):
+        class Response(io.BytesIO):
+            url = 'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=72'
+            headers = {'Content-Type': 'image/jpeg'}
+        feature = feeds._feature([25.18, 54.64], {
+            'key': 'lt:eismoinfo:camera:72', 'layer': 'cameras'})
+        with self.assertRaises(ValueError):
+            feeds.lithuania_camera_snapshot('../72')
+        with patch.object(feeds, '_lithuania_cameras', return_value=[]):
+            with self.assertRaises(FileNotFoundError):
+                feeds.lithuania_camera_snapshot('72')
+        with patch.object(feeds, '_lithuania_cameras', return_value=[feature]), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
+            self.assertEqual(feeds.lithuania_camera_snapshot('72'),
+                             (b'\xff\xd8\xffimage', 'image/jpeg'))
+
     def test_iceland_cameras_group_views_and_require_verified_location(self):
         base = {'Maelist_nr': 7001, 'Myndavel': 'Hellisheiði', 'Vegheiti': 'Hringvegur',
                 'Breidd': 64.018296, 'Lengd': -21.342636}
