@@ -2,6 +2,7 @@
 
 import concurrent.futures
 import datetime as dt
+import email.utils
 import html
 from html.parser import HTMLParser
 import json
@@ -21,6 +22,8 @@ QLD_URL = 'https://publiccontent-gis-psba-qld-gov-au.s3.amazonaws.com/content/Fe
 NZ_URL = 'https://alerthub.civildefence.govt.nz/atom/pwp'
 ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods'
 BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
+UPPER_AUSTRIA_URL = 'https://cf-einsaetze.ooelfv.at/webext2/rss/json_laufend.txt'
+UPPER_AUSTRIA_SOURCE = 'https://einsaetze.ooelfv.at/einsatz/aktuell'
 ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
 PORTUGAL_SOURCE = 'https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto'
 SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
@@ -392,6 +395,67 @@ def parse_burgenland(page, now=None):
     return output
 
 
+def parse_upper_austria(payload, now=None):
+    """Map current, public fire-brigade dispatches at the publisher's approximate points."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(payload, dict) or payload.get('webext2') is not True or payload.get('title') != 'laufend':
+        raise ValueError('Upper Austria ongoing dispatch feed is invalid')
+    try:
+        published = email.utils.parsedate_to_datetime(payload['pubDate']).astimezone(dt.timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        raise ValueError('Upper Austria dispatch update time missing') from None
+    if not -dt.timedelta(minutes=5) <= now - published <= dt.timedelta(minutes=20):
+        raise ValueError('Upper Austria dispatch feed is stale')
+    incidents = payload.get('einsaetze')
+    if not isinstance(incidents, dict):
+        raise ValueError('Upper Austria dispatch records are invalid')
+    output = []
+    for wrapper in list(incidents.values())[:250]:
+        row = wrapper.get('einsatz') if isinstance(wrapper, dict) else None
+        if not isinstance(row, dict) or row.get('status') != 'offen':
+            continue
+        kind = row.get('einsatzart')
+        # SELBST covers self-initiated operations and exercises; it is not a
+        # reliable public emergency call.
+        if kind not in ('BRAND', 'PERSON', 'TEE'):
+            continue
+        incident_id = str(row.get('num1') or '')
+        if not re.fullmatch(r'E\d{9}', incident_id):
+            continue
+        point = row.get('wgs84') or {}
+        if not isinstance(point, dict):
+            continue
+        lon, lat = point.get('lng'), point.get('lat')
+        if not _valid(lon, lat) or not (12.6 <= float(lon) <= 15.1 and 47.4 <= float(lat) <= 48.9):
+            continue
+        try:
+            started = email.utils.parsedate_to_datetime(row['startzeit']).astimezone(dt.timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not dt.timedelta(minutes=-5) <= now - started <= dt.timedelta(days=2):
+            continue
+        district_data = row.get('bezirk') or {}
+        address_data = row.get('adresse') or {}
+        dispatch_data = row.get('einsatztyp') or {}
+        if not all(isinstance(value, dict) for value in (district_data, address_data, dispatch_data)):
+            continue
+        district = _clean(district_data.get('text'), 60)
+        municipality = _clean(address_data.get('emun'), 80)
+        dispatch = _clean(dispatch_data.get('text'), 90)
+        if not municipality or not dispatch:
+            continue
+        detail = f'Ongoing fire brigade dispatch · {municipality}'
+        if district:
+            detail += f' · {district}'
+        detail += ' · approximate public location'
+        observed = started.isoformat().replace('+00:00', 'Z')
+        output.append(_item(f'upper-austria:{incident_id}', lon, lat,
+                            dispatch, detail, 'OÖ Landes-Feuerwehrverband',
+                            UPPER_AUSTRIA_SOURCE, observed,
+                            'fire' if kind == 'BRAND' else 'warning'))
+    return output
+
+
 def parse_iceland(payload, now=None):
     now = now or dt.datetime.now(dt.timezone.utc)
     if not isinstance(payload, list):
@@ -648,6 +712,7 @@ _LOADERS = {
     'nz_alerts': fetch_nz,
     'england_floods': lambda: parse_england(_json(ENGLAND_URL)),
     'burgenland_fire': lambda: parse_burgenland(_html(BURGENLAND_URL)),
+    'upper_austria_fire': lambda: parse_upper_austria(_json(UPPER_AUSTRIA_URL)),
     'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
     'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
     'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),

@@ -133,6 +133,31 @@ class InternationalEmergencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds.parse_burgenland(page, now + dt.timedelta(minutes=30))
 
+    def test_upper_austria_maps_current_dispatches_without_exercises_or_addresses(self):
+        now = dt.datetime(2026, 9, 27, 21, 30, tzinfo=dt.timezone.utc)
+        base = {'num1': 'E260905494', 'status': 'offen', 'einsatzart': 'BRAND',
+                'startzeit': 'Sun, 27 Sep 2026 23:10:00 +0200',
+                'wgs84': {'lng': '14.4761', 'lat': '48.2137'},
+                'einsatztyp': {'text': 'Brandmeldealarm'},
+                'adresse': {'emun': 'Enns', 'default': 'Private address 123'},
+                'bezirk': {'text': 'Linz-Land'}}
+        payload = {'webext2': True, 'title': 'laufend',
+                   'pubDate': 'Sun, 27 Sep 2026 23:29:00 +0200',
+                   'einsaetze': {'0': {'einsatz': base},
+                                '1': {'einsatz': {**base, 'num1': 'E260905495', 'einsatzart': 'SELBST'}},
+                                '2': {'einsatz': {**base, 'num1': 'E260905496', 'status': 'abgeschlossen'}},
+                                '3': {'einsatz': {**base, 'num1': 'E260905497',
+                                                  'wgs84': {'lng': '20', 'lat': '48'}}}}}
+        items = feeds.parse_upper_austria(payload, now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['id'], 'upper-austria:E260905494')
+        self.assertEqual(items[0]['category'], 'fire')
+        self.assertEqual(items[0]['observed'], '2026-09-27T21:10:00Z')
+        self.assertIn('Enns', items[0]['detail'])
+        self.assertNotIn('Private address', str(items[0]))
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds.parse_upper_austria(payload, now + dt.timedelta(minutes=30))
+
     def test_iceland_cap_maps_active_polygon_and_excludes_cleared_alerts(self):
         now = dt.datetime(2026, 9, 27, 8, tzinfo=dt.timezone.utc)
         row = {'identifier': 'imo-1', 'area_id': 14, 'msgtype': 'Alert',
