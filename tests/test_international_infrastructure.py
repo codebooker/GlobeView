@@ -16,6 +16,40 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_fintraffic_traffic_and_weather_sensors_require_recent_readings(self):
+        now = dt.datetime(2026, 9, 27, 9, 30, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'type': 'FeatureCollection', 'features': [
+            {'geometry': {'type': 'Point', 'coordinates': [24.64, 60.22]}, 'properties': {
+                'id': 20002, 'name': 'vt1_Espoo_Hirvisuo', 'collectionStatus': 'GATHERING'}},
+            {'geometry': {'type': 'Point', 'coordinates': [25.0, 60.3]}, 'properties': {
+                'id': 20003, 'collectionStatus': 'REMOVED_TEMPORARILY'}}]}
+        readings = {'dataUpdatedTime': '2026-09-27T09:29:00Z', 'stations': [
+            {'id': 20002, 'sensorValues': [
+                {'id': 5122, 'value': 97, 'measuredTime': '2026-09-27T09:27:00Z'},
+                {'id': 5116, 'value': 1848, 'measuredTime': '2026-09-27T09:27:00Z'},
+                {'id': 5125, 'value': 88, 'measuredTime': '2026-09-27T09:26:00Z'},
+                {'id': 5119, 'value': 936, 'measuredTime': '2026-09-27T09:26:00Z'}]},
+            {'id': 20003, 'sensorValues': [
+                {'id': 5122, 'value': 80, 'measuredTime': '2026-09-27T09:27:00Z'}]}]}
+        rows = feeds._parse_fintraffic_sensors('tms', metadata, readings, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'fi:tms:20002')
+        self.assertIn('Direction 1: 97 km/h, 1,848 veh/h', rows[0]['properties']['detail'])
+        self.assertIn('Direction 2: 88 km/h, 936 veh/h', rows[0]['properties']['detail'])
+        weather = {'dataUpdatedTime': '2026-09-27T09:29:00Z', 'stations': [
+            {'id': 20002, 'sensorValues': [
+                {'id': 1, 'value': 13.8, 'measuredTime': '2026-09-27T09:25:00Z'},
+                {'id': 3, 'value': 20.7, 'measuredTime': '2026-09-27T09:25:00Z'}]}]}
+        rows = feeds._parse_fintraffic_sensors('weather', metadata, weather, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['detail'], 'Air 13.8°C · Road 20.7°C')
+        weather['stations'][0]['sensorValues'][0]['measuredTime'] = '2026-09-27T08:00:00Z'
+        weather['stations'][0]['sensorValues'][1]['measuredTime'] = '2026-09-27T08:00:00Z'
+        self.assertEqual(feeds._parse_fintraffic_sensors('weather', metadata, weather, now), [])
+        readings['dataUpdatedTime'] = '2026-09-27T08:00:00Z'
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_fintraffic_sensors('tms', metadata, readings, now)
+
     def test_fintraffic_cameras_use_recent_collected_preset_only(self):
         now = dt.datetime(2026, 9, 27, 9, 30, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'type': 'FeatureCollection', 'features': [

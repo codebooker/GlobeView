@@ -569,6 +569,98 @@ def _fintraffic_cameras():
     return _parse_fintraffic_cameras(metadata, observations)
 
 
+def _parse_fintraffic_sensors(kind, metadata, observations, now=None):
+    if kind not in {'tms', 'weather'}:
+        raise ValueError('Unknown Fintraffic sensor type')
+    now = time.time() if now is None else now
+    if (not isinstance(metadata, dict) or metadata.get('type') != 'FeatureCollection'
+            or not isinstance(metadata.get('features'), list)
+            or not isinstance(observations, dict) or not isinstance(observations.get('stations'), list)):
+        raise ValueError('Fintraffic sensor feed is invalid')
+    published = _timestamp(observations.get('dataUpdatedTime'))
+    if published is None or not -600 <= now - published <= 20 * 60:
+        raise ValueError('Fintraffic sensor publication is stale')
+    recent = {station.get('id'): station for station in observations['stations']
+              if isinstance(station, dict) and isinstance(station.get('id'), int)}
+    result = []
+    for station in metadata['features']:
+        if not isinstance(station, dict):
+            continue
+        props = station.get('properties') or {}
+        if not isinstance(props, dict):
+            continue
+        station_id = props.get('id')
+        if (not isinstance(station_id, int) or props.get('collectionStatus') != 'GATHERING'
+                or props.get('state') in {'REPAIR_INTERRUPTED', 'REPAIR_REQUEST_POSTED', 'FAULT_DOUBT'}):
+            continue
+        point = _point(station.get('geometry'))
+        if not point or not (19 <= point[0] <= 32 and 59 <= point[1] <= 71):
+            continue
+        observation = recent.get(station_id) or {}
+        values = {}
+        for sensor in observation.get('sensorValues') or []:
+            if not isinstance(sensor, dict):
+                continue
+            sensor_id = sensor.get('id')
+            measured = _timestamp(sensor.get('measuredTime'))
+            if measured is None or not -600 <= now - measured <= 15 * 60:
+                continue
+            try:
+                value = float(sensor.get('value'))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                values[sensor_id] = (value, measured, sensor['measuredTime'])
+        detail = []
+        used_measurements = []
+        if kind == 'tms':
+            for direction, speed_id, flow_id in ((1, 5122, 5116), (2, 5125, 5119)):
+                measurements = []
+                speed = values.get(speed_id)
+                flow = values.get(flow_id)
+                if speed and 0 <= speed[0] <= 200:
+                    measurements.append(f'{speed[0]:.0f} km/h')
+                    used_measurements.append(speed)
+                if flow and 0 <= flow[0] <= 10000:
+                    measurements.append(f'{flow[0]:,.0f} veh/h')
+                    used_measurements.append(flow)
+                if measurements:
+                    detail.append(f'Direction {direction}: {", ".join(measurements)}')
+            title = 'Traffic counter'
+            source_url = 'https://www.digitraffic.fi/en/road-traffic/lam/'
+        else:
+            for sensor_id, label, low, high in ((1, 'Air', -60, 70), (3, 'Road', -60, 80)):
+                measurement = values.get(sensor_id)
+                if measurement and low <= measurement[0] <= high:
+                    detail.append(f'{label} {measurement[0]:.1f}°C')
+                    used_measurements.append(measurement)
+            if not any(item.startswith('Road ') for item in detail):
+                road = values.get(5)
+                if road and -60 <= road[0] <= 80:
+                    detail.append(f'Road {road[0]:.1f}°C')
+                    used_measurements.append(road)
+            title = 'Road weather station'
+            source_url = FINTRAFFIC_CAMERAS_SOURCE
+        if not detail:
+            continue
+        name = _clean(props.get('name'), 90).replace('_', ' ')
+        measured_text = max(used_measurements, key=lambda item: item[1])[2]
+        result.append(_feature(point, {
+            'key': f'fi:{kind}:{station_id}', 'layer': 'sensors',
+            'title': f'{title} · {name}' if name else f'{title} {station_id}',
+            'detail': ' · '.join(detail),
+            'source': 'Fintraffic / Digitraffic · CC BY 4.0',
+            'source_url': source_url, 'updated_at': measured_text,
+        }))
+    return result
+
+
+def _fintraffic_sensors(kind):
+    metadata = _get_json(f'{FINTRAFFIC_BASE}/api/{kind}/v1/stations', fintraffic=True)
+    observations = _get_json(f'{FINTRAFFIC_BASE}/api/{kind}/v1/stations/data', fintraffic=True)
+    return _parse_fintraffic_sensors(kind, metadata, observations)
+
+
 def _tfl_disruptions():
     data = _get_json(TFL_URL)
     features = []
@@ -1607,6 +1699,8 @@ _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
+        'fi_traffic_sensors': lambda: _fintraffic_sensors('tms'),
+        'fi_weather_sensors': lambda: _fintraffic_sensors('weather'),
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
