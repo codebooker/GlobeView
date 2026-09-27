@@ -424,7 +424,7 @@ body.panel-collapsed .panel.open{visibility:visible;pointer-events:auto}
 .map-actions{right:12px;bottom:45px}
 .map-actions button{width:44px;height:44px}
 body.radio-playing .map-actions{bottom:210px}
-.radio-list{top:60px;left:10px;max-height:calc(100dvh - 250px)}
+.radio-list{top:106px;left:10px;max-height:calc(100dvh - 296px)}
 .radio-player{right:10px;bottom:10px;left:10px;width:auto}
 .cyber-map-key{right:58px;bottom:78px;width:min(226px,calc(100vw - 82px))}
 .maplibregl-control-container .maplibregl-ctrl-attrib{max-width:calc(100vw - 24px)}
@@ -432,21 +432,25 @@ body.radio-playing .map-actions{bottom:210px}
 .trip-input-row input,.draw-selected input[type=text],.draw-radius-control input{font-size:16px}
 .trip-input-row button,.trip-options button,.trip-actions button,.draw-tools button,.draw-progress-actions button,.draw-selected-actions button{min-height:44px}
 }
-@media(min-width:801px) and (max-width:900px){.trip-panel,.draw-panel{top:64px;right:16px;bottom:auto;left:auto;width:350px;max-height:calc(100dvh - 80px)}
+@media(min-width:801px) and (max-width:900px){.trip-panel,.draw-panel{top:106px;right:16px;bottom:auto;left:auto;width:350px;max-height:calc(100dvh - 122px)}
 }
-@media(max-width:800px){.topbar{height:100px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:38px 42px;gap:6px 12px;padding:6px 12px 7px}
+@media(max-width:1100px){.topbar{height:100px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:38px 42px;gap:6px 12px;padding:6px 12px 7px}
 .brand{grid-column:1;grid-row:1;min-width:0}
 .brand img{width:30px;height:30px}
 .brand strong{font-size:15px}
+.product-context{display:none}
 .top-actions{grid-column:2;grid-row:1;gap:10px;margin:0}
 .live-indicator{display:none}
 .panel-button{height:38px;min-width:76px}
-.place-search{grid-column:1 / -1;grid-row:2;width:100%;height:42px;margin:0}
+.place-search{grid-column:1 / -1;grid-row:2;width:100%;max-width:none;height:42px;margin:0}
 .place-search input{height:42px}
 .search-mark{top:6px}
 .place-results{top:47px;left:0;width:100%;max-width:none}
 .panel{top:100px;max-height:calc(100dvh - 100px)}
 #status,body.tracking-aircraft #status{top:106px}
+}
+@media(min-width:901px) and (max-width:1100px){.panel{top:100px}
+.aircraft-track,.trip-panel,.draw-panel{top:110px;max-height:calc(100dvh - 126px)}
 }
 @media(max-width:900px) and (max-height:500px){.map-actions{bottom:12px;max-height:calc(100dvh - 110px);overflow-y:auto}
 .map-actions button{flex:none}

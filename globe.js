@@ -456,7 +456,8 @@
   });
 
   function setMapPadding() {
-    map.setPadding({ top: 54, right: 0, bottom: 0, left: window.innerWidth > 900 && !document.body.classList.contains('panel-collapsed') ? 288 : 0 });
+    map.setPadding({ top: window.innerWidth <= 1100 ? 100 : 54, right: 0, bottom: 0,
+      left: window.innerWidth > 900 && !document.body.classList.contains('panel-collapsed') ? 288 : 0 });
   }
   setMapPadding();
 
