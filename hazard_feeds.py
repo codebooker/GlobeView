@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import math
+import re
 import threading
 import time
 import urllib.request
@@ -45,7 +46,7 @@ def _get_json(url, max_bytes=5_000_000, accept='application/json'):
 
 def _get_xml(url, max_bytes=2_000_000):
     request = urllib.request.Request(url, headers={
-        'User-Agent': 'GlobalMap/1.0 (weather alert map)',
+        'User-Agent': 'GlobeView/1.0 (https://globeview.app)',
         'Accept': 'application/xml, application/rss+xml',
     })
     with urllib.request.urlopen(request, timeout=25) as response:
@@ -368,18 +369,84 @@ def _new_zealand_alerts():
     return items
 
 
+@lru_cache(maxsize=512)
+def _norway_cap_alert(identifier):
+    if not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', identifier):
+        raise ValueError('Invalid Norway CAP identifier')
+    url = ('https://api.met.no/weatherapi/metalerts/2.0/current?cap='
+           + urllib.parse.quote(identifier, safe='') + '&lang=en')
+    return _get_xml(url, max_bytes=250_000)
+
+
+def _norway_alerts():
+    feed = _get_xml('https://api.met.no/weatherapi/metalerts/2.0/current.rss?lang=en&geographicDomain=land')
+    now = dt.datetime.now(_UTC)
+    items = []
+    failed = 0
+    for entry in feed.findall('./channel/item')[:250]:
+        identifier = (entry.findtext('guid') or '').strip()
+        if not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', identifier):
+            continue
+        try:
+            cap = _norway_cap_alert(identifier)
+        except Exception:
+            failed += 1
+            continue
+        if (cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual'
+                or cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')):
+            continue
+        info = next((node for node in cap.findall('cap:info', _CAP_NS)
+                     if (node.findtext('cap:language', namespaces=_CAP_NS) or '').startswith('en')), None)
+        if info is None or not _future_timestamp(info.findtext('cap:expires', namespaces=_CAP_NS), now):
+            continue
+        polygons = []
+        areas = []
+        for area in info.findall('cap:area', _CAP_NS):
+            for polygon in area.findall('cap:polygon', _CAP_NS):
+                ring = _cap_polygon(polygon.text)
+                if ring:
+                    polygons.append([ring])
+            if area.findtext('cap:areaDesc', namespaces=_CAP_NS):
+                areas.append(area.findtext('cap:areaDesc', namespaces=_CAP_NS))
+        if not polygons:
+            continue
+        geometry = {'type': 'MultiPolygon', 'coordinates': polygons}
+        point = _polygon_point(geometry)
+        if not point:
+            continue
+        items.append({
+            'id': 'no:' + identifier,
+            'title': info.findtext('cap:headline', namespaces=_CAP_NS) or entry.findtext('title') or 'Weather alert',
+            'lon': round(point[0], 5), 'lat': round(point[1], 5),
+            'geometry': geometry, 'locationKind': 'polygon',
+            'country': 'Norway', 'source': 'Norwegian Meteorological Institute',
+            'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+            'area': '; '.join(areas)[:250],
+            'advice': ' '.join((info.findtext('cap:instruction', namespaces=_CAP_NS)
+                                or info.findtext('cap:description', namespaces=_CAP_NS) or '').split())[:480],
+            'observed': cap.findtext('cap:sent', namespaces=_CAP_NS),
+            'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
+            'sourceUrl': 'https://api.met.no/weatherapi/metalerts/2.0/current?cap='
+                         + urllib.parse.quote(identifier, safe='') + '&lang=en',
+        })
+    if failed and not items:
+        raise RuntimeError('Norwegian weather notices are unavailable')
+    return items
+
+
 def _world_alerts():
     items = []
     unavailable = []
-    for country, loader in [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts)]:
+    for country, loader in [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
+                            ('Norway', _norway_alerts)]:
         try:
             items.extend(loader())
         except Exception:
             unavailable.append(country)
-    if len(unavailable) == 2:
+    if len(unavailable) == 3:
         raise RuntimeError('International weather alert feeds are unavailable')
     return {'source': 'National meteorological services', 'items': items,
-            'countries': ['Canada', 'New Zealand'], 'unavailable': unavailable}
+            'countries': ['Canada', 'New Zealand', 'Norway'], 'unavailable': unavailable}
 
 
 def _gdelt_events():

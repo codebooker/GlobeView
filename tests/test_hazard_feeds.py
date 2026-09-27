@@ -139,10 +139,31 @@ class HazardFeedTests(unittest.TestCase):
     def test_world_alerts_keep_available_country_when_other_feed_fails(self):
         with patch.object(hazard_feeds, '_canada_alerts', return_value=[{'id': 'ca:1'}]), patch.object(
             hazard_feeds, '_new_zealand_alerts', side_effect=RuntimeError('offline')
+        ), patch.object(hazard_feeds, '_norway_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_norway_alerts_map_current_english_cap_polygon(self):
+        future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=3)).isoformat()
+        feed = ET.fromstring('''<rss><channel><item><guid>safe.123</guid></item>
+            <item><guid>../../unsafe</guid></item></channel></rss>''')
+        cap = ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+            <identifier>safe.123</identifier><status>Actual</status><msgType>Alert</msgType>
+            <info><language>no</language><headline>Norsk tekst</headline></info>
+            <info><language>en-GB</language><headline>Strong wind</headline>
+              <severity>Moderate</severity><expires>{future}</expires>
+              <area><areaDesc>Test region</areaDesc>
+                <polygon>62,5 62,6 63,6 63,5 62,5</polygon></area></info></alert>''')
+        with patch.object(hazard_feeds, '_get_xml', return_value=feed), patch.object(
+            hazard_feeds, '_norway_cap_alert', return_value=cap) as fetch:
+            items = hazard_feeds._norway_alerts()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['title'], 'Strong wind')
+        self.assertEqual(items[0]['geometry']['coordinates'][0][0][0], [5, 62])
+        self.assertEqual(items[0]['country'], 'Norway')
+        fetch.assert_called_once_with('safe.123')
 
 
 if __name__ == '__main__':
