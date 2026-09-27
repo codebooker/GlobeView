@@ -25,6 +25,10 @@ FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
+MADRID_SIGNS_SOURCE = 'https://datos.madrid.es/dataset/202078-0-trafico-paneles-superficie'
+MADRID_SIGN_LOCATIONS = ('https://datos.madrid.es/dataset/202535-0-paneles-informacion-variable/'
+                         'resource/202535-2-paneles-informacion-variable-csv/download/'
+                         '202535-2-paneles-informacion-variable-csv.csv')
 FINTRAFFIC_CAMERAS_SOURCE = 'https://www.digitraffic.fi/en/road-traffic/'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
@@ -314,6 +318,68 @@ def _parse_madrid_cameras(root, published):
 def _madrid_cameras():
     root, published = _madrid_xml('CCTV.kml')
     return _parse_madrid_cameras(root, published)
+
+
+def _parse_madrid_signs(locations, root, published):
+    if root.findtext('HEAD/RESULT') != 'OK':
+        raise ValueError('Madrid sign publication failed')
+    points = {}
+    for row in locations:
+        sign_id = row.get('nombre') or ''
+        if not re.fullmatch(r'CPMV\d{5}', sign_id):
+            continue
+        try:
+            point = [float(row['longitud']), float(row['latitud'])]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if -3.9 <= point[0] <= -3.45 and 40.25 <= point[1] <= 40.65:
+            points[sign_id] = point
+    body = root.find('BODY')
+    if body is None:
+        raise ValueError('Madrid sign publication has no body')
+    messages = {}
+    for line in body.findall('LINES'):
+        sign_id = line.findtext('VMS_ID')
+        phase = line.findtext('PHASE_NUMBER') or ''
+        try:
+            order = int(line.findtext('LINE_NUMBER'))
+        except (TypeError, ValueError):
+            continue
+        message = _clean(line.findtext('LINE'), 100)
+        if sign_id in points and message:
+            messages.setdefault(sign_id, {}).setdefault(phase, []).append((order, message))
+    features = []
+    for device in body.findall('DEVICES'):
+        sign_id = device.findtext('VMS_ID') or ''
+        if sign_id not in points or sign_id not in messages:
+            continue
+        phases = []
+        for phase in sorted(messages[sign_id]):
+            lines = [message for _, message in sorted(messages[sign_id][phase])]
+            if lines:
+                phases.append(' / '.join(lines))
+        detail = '  •  '.join(dict.fromkeys(phases))[:280]
+        if not detail:
+            continue
+        features.append(_feature(points[sign_id], {
+            'key': f'es:madrid:sign:{sign_id}', 'layer': 'signs',
+            'title': _clean(device.findtext('VMS_DESCRIPTION'), 100) or 'Madrid road sign',
+            'detail': detail, 'source': 'Madrid City Council · CC BY 4.0',
+            'source_url': MADRID_SIGNS_SOURCE, 'updated_at': published,
+        }))
+    return features
+
+
+def _madrid_signs():
+    root, published = _madrid_xml('pmv_aytomadrid.xml')
+    request = urllib.request.Request(MADRID_SIGN_LOCATIONS,
+                                     headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        body = response.read(256 * 1024 + 1)
+    if len(body) > 256 * 1024:
+        raise ValueError('Madrid sign locations exceeded size limit')
+    locations = csv.DictReader(io.StringIO(body.decode('utf-8-sig')), delimiter=';')
+    return _parse_madrid_signs(locations, root, published)
 
 
 def _norway_wfs(layer, cql_filter=None):
@@ -2167,6 +2233,7 @@ _FETCHERS = {
         'es_sct_cameras': _sct_cameras,
         'es_madrid_incidents': _madrid_incidents,
         'es_madrid_cameras': _madrid_cameras,
+        'es_madrid_signs': _madrid_signs,
         'pl_gddkia_roads': _poland_roads,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),

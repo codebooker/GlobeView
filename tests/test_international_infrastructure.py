@@ -44,6 +44,22 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['properties']['snapshot_url'],
                          'https://informo.madrid.es/cameras/Camara06303.jpg')
 
+    def test_madrid_signs_join_locations_and_preserve_alternating_phases(self):
+        locations = [{'nombre': 'CPMV10051', 'longitud': '-3.7', 'latitud': '40.4'}]
+        root = ET.fromstring('''<MESSAGE><HEAD><RESULT>OK</RESULT></HEAD><BODY>
+          <DEVICES><VMS_ID>CPMV10051</VMS_ID><VMS_DESCRIPTION>M30 panel</VMS_DESCRIPTION></DEVICES>
+          <LINES><VMS_ID>CPMV10051</VMS_ID><PHASE_NUMBER>1</PHASE_NUMBER>
+            <LINE_NUMBER>2</LINE_NUMBER><LINE>CLOSED</LINE></LINES>
+          <LINES><VMS_ID>CPMV10051</VMS_ID><PHASE_NUMBER>1</PHASE_NUMBER>
+            <LINE_NUMBER>1</LINE_NUMBER><LINE>ROAD</LINE></LINES>
+          <LINES><VMS_ID>CPMV10051</VMS_ID><PHASE_NUMBER>2</PHASE_NUMBER>
+            <LINE_NUMBER>1</LINE_NUMBER><LINE>DETOUR</LINE></LINES>
+        </BODY></MESSAGE>''')
+        rows = feeds._parse_madrid_signs(locations, root, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['detail'], 'ROAD / CLOSED  •  DETOUR')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [-3.7, 40.4])
+
     def test_poland_road_events_require_fresh_publication_and_active_dates(self):
         now = dt.datetime(2026, 9, 27, 10, 50, tzinfo=dt.timezone.utc).timestamp()
         root = ET.fromstring('''<utrudnienia gen="2026-09-27T12:48:00+0200">
