@@ -580,6 +580,33 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['layer'], 'construction')
 
+    def test_bratislava_roadworks_include_only_current_vehicle_restrictions(self):
+        now = dt.datetime(2026, 9, 27, 22, tzinfo=dt.timezone.utc).timestamp()
+        def item(work_id, **overrides):
+            props = {
+                'OBJECTID': work_id, 'zobrazovanie': 'Zobrazovat',
+                'uzavierka': 'čiastočná', 'vplyv_obmedzenia': 'Auta,Verejna_doprava',
+                'datum_vzniku': (now - 86400) * 1000,
+                'potvrdeny_termin_realizacie': None,
+                'termin_finalnej_upravy': (now + 86400) * 1000,
+                'adresa_rozkopavky': 'Košická ul.', 'predmet_nadpis': 'Utility works',
+            }
+            props.update(overrides)
+            return {'type': 'Feature', 'geometry': {'type': 'Point',
+                    'coordinates': [17.13, 48.15]}, 'properties': props}
+        payload = {'type': 'FeatureCollection', 'features': [
+            item(1), item(2, vplyv_obmedzenia='Chodci'),
+            item(3, datum_vzniku=(now + 3600) * 1000),
+            item(4, termin_finalnej_upravy=(now - 3600) * 1000),
+            item(5, zobrazovanie='Nezobrazovat'), item(6, uzavierka='žiadna'),
+        ]}
+        rows = feeds._parse_bratislava_roadworks(payload, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'sk:bratislava:works:1')
+        self.assertIn('Scheduled permit; not confirmed live', rows[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_bratislava_roadworks({**payload, 'exceededTransferLimit': True}, now)
+
     def test_madrid_cameras_use_same_origin_image_proxy(self):
         root = ET.fromstring('''<kml xmlns="http://earth.google.com/kml/2.2"><Document>
           <Placemark><ExtendedData><Data name="Numero"><Value>06303</Value></Data>

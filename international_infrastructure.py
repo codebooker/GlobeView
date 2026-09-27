@@ -140,6 +140,10 @@ CZ_NDIC_ROADS_URL = 'https://gis.brno.cz/ags3/rest/services/PUBLIC/uzavirky_ndic
 CZ_NDIC_ROADS_SOURCE = 'https://gis.brno.cz/ost/edas/public/3c5ff253-35f3-4ac0-86ab-db9e06586552'
 BRNO_WAZE_URL = 'https://gis.brno.cz/ags1/rest/services/Hosted/WazeAlerts/FeatureServer/0/query'
 BRNO_WAZE_SOURCE = 'https://gis.brno.cz/ags1/rest/services/Hosted/WazeAlerts/FeatureServer/0'
+BRATISLAVA_WORKS_URL = ('https://services8.arcgis.com/pRlN1m0su5BYaFAS/arcgis/rest/services/'
+                       'Rozkopavky_CSO_view/FeatureServer/0/query')
+BRATISLAVA_WORKS_SOURCE = ('https://bratislava.sk/doprava-a-komunikacie/'
+                           'sprava-a-udrzba-komunikacii/obmedzenia-a-poruchy')
 LITHUANIA_RESTRICTIONS_URL = ('https://eismoinfo.lt/eismoinfo-backend/'
                               'layer-dynamic-features/EAL?lks=true')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -4125,6 +4129,73 @@ def _brno_waze_alerts():
     return _parse_brno_waze_alerts(_get_json(BRNO_WAZE_URL + '?' + query))
 
 
+def _parse_bratislava_roadworks(payload, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list)
+            or payload.get('exceededTransferLimit') or len(payload['features']) > 2000):
+        raise ValueError('Bratislava road restriction publication is invalid or incomplete')
+    features = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict) or not isinstance(row.get('properties'), dict):
+            continue
+        props = row['properties']
+        point = _point(row.get('geometry'))
+        if not point or not (16.95 <= point[0] <= 17.35 and 48.03 <= point[1] <= 48.30):
+            continue
+        work_id = str(props.get('OBJECTID') or '')
+        if not work_id.isdecimal() or work_id in seen or props.get('zobrazovanie') != 'Zobrazovat':
+            continue
+        closure = props.get('uzavierka')
+        if closure not in {'čiastočná', 'úplná'}:
+            continue
+        affected = str(props.get('vplyv_obmedzenia') or '').split(',')
+        if not {'Auta', 'Verejna_doprava'}.intersection(affected):
+            continue
+        try:
+            start = float(props.get('potvrdeny_termin_realizacie') or props['datum_vzniku']) / 1000
+            end = float(props['termin_finalnej_upravy']) / 1000
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not start <= now <= end or end <= start:
+            continue
+        seen.add(work_id)
+        street = _clean(props.get('adresa_rozkopavky'), 90)
+        subject = _clean(props.get('predmet_nadpis'), 110)
+        affected_labels = [label for code, label in (('Auta', 'drivers'),
+                                                   ('Verejna_doprava', 'public transport'))
+                           if code in affected]
+        end_date = dt.datetime.fromtimestamp(end, ZoneInfo('Europe/Bratislava')).strftime('%d %b %Y')
+        detail = ' · '.join(part for part in (
+            subject, f'Affects {" and ".join(affected_labels)}',
+            f'Permit ends {end_date}', 'Scheduled permit; not confirmed live',
+        ) if part)
+        features.append(_feature(point, {
+            'key': f'sk:bratislava:works:{work_id}', 'layer': 'construction',
+            'title': f'{"Full" if closure == "úplná" else "Partial"} road closure'
+                     + (f' · {street}' if street else ''),
+            'detail': detail, 'source': 'City of Bratislava',
+            'source_url': BRATISLAVA_WORKS_SOURCE,
+        }))
+    return features
+
+
+def _bratislava_roadworks():
+    now = time.time()
+    stamp = dt.datetime.fromtimestamp(now, dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    query = urllib.parse.urlencode({
+        'where': f"termin_finalnej_upravy >= TIMESTAMP '{stamp}' "
+                 "AND zobrazovanie = 'Zobrazovat'",
+        'outFields': ('OBJECTID,datum_vzniku,potvrdeny_termin_realizacie,'
+                      'termin_finalnej_upravy,uzavierka,zobrazovanie,'
+                      'vplyv_obmedzenia,predmet_nadpis,adresa_rozkopavky'),
+        'returnGeometry': 'true', 'outSR': '4326', 'resultRecordCount': '2000',
+        'f': 'geojson',
+    })
+    return _parse_bratislava_roadworks(_get_json(BRATISLAVA_WORKS_URL + '?' + query), now)
+
+
 def _cz_ndic_time(value):
     try:
         return dt.datetime.strptime(str(value), '%d.%m.%Y %H:%M').replace(
@@ -4305,6 +4376,7 @@ _FETCHERS = {
         'ee_tarktee_restrictions': _estonia_restrictions,
         'cz_ndic_roads': _cz_ndic_roads,
         'cz_brno_waze_alerts': _brno_waze_alerts,
+        'sk_bratislava_roadworks': _bratislava_roadworks,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
         'is_road_sensors': _iceland_sensors,

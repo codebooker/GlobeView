@@ -135,7 +135,9 @@ The [Ústí nad Labem Region crisis portal](https://pkr.kr-ustecky.cz/pkr/zasahy
 
 ## Slovakia
 
-The [Slovak Road Administration's DATEX II traffic service](https://www.cdb.sk/en/traffic-information-rds-tmc/data-service-in-the-DATEX-II.alej) provides situational road data after a signed access request. It is not an anonymous feed, so no Slovak road event, camera, or sign markers have been added from it. [ZSD and VSD](https://www.zsdis.sk/Uvod/Online-sluzby) display current customer outages, but a reusable geolocated bulk feed has not been verified. Emergency dispatch and official plate-reader sources remain unverified.
+[Bratislava's city road restriction map](https://bratislava.sk/doprava-a-komunikacie/sprava-a-udrzba-komunikacii/obmedzenia-a-poruchy) publishes permitted works and utility repairs through its public ArcGIS layer. GlobeView maps only partial or full closures whose scheduled dates are current, the city marks visible, and the record says cars or public transport are affected. The markers are **scheduled permits, not confirmation that crews or closures are present now**. The query requests only location, schedule, street, and road-effect fields; it excludes personal contact fields in the underlying dataset. On 27 September 2026, 15 records passed the filters.
+
+The [Slovak Road Administration's DATEX II traffic service](https://www.cdb.sk/en/traffic-information-rds-tmc/data-service-in-the-DATEX-II.alej) provides situational road data after a signed access request. It is not an anonymous feed, so no national Slovak road event, camera, or sign markers have been added from it. Bratislava's separate [2026 Waze crash archive](https://geoportal.bratislava.sk/hsite/rest/services/doprava/waze_nehody_2026/MapServer) was several days behind on 27 September and is not presented as live. [ZSD and VSD](https://www.zsdis.sk/Uvod/Online-sluzby) display current customer outages, but a reusable geolocated bulk feed has not been verified. Emergency dispatch and official plate-reader sources remain unverified.
 
 ## Slovenia
 
