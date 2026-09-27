@@ -16,6 +16,33 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_south_tyrol_roads_require_current_publication_and_active_record(self):
+        now = dt.datetime(2026, 9, 27, 11, 30, tzinfo=dt.timezone.utc).timestamp()
+        root = ET.fromstring('''<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><payloadPublication>
+          <publicationTime>2026-09-27T11:29:00Z</publicationTime>
+          <situation id="work-1"><situationRecord xsi:type="RoadOrCarriagewayOrLaneManagement">
+            <validity><validityStatus>active</validityStatus><validityTimeSpecification>
+              <overallStartTime>2026-09-27T08:00:00Z</overallStartTime></validityTimeSpecification></validity>
+            <generalPublicComment><comment><values><value lang="it">Cantiere stradale</value>
+              </values></comment></generalPublicComment><groupOfLocations><locationContainedInGroup>
+              <pointByCoordinates><pointCoordinates><latitude>46.5</latitude>
+              <longitude>11.3</longitude></pointCoordinates></pointByCoordinates>
+              </locationContainedInGroup></groupOfLocations></situationRecord></situation>
+          <situation id="future-1"><situationRecord xsi:type="PublicEvent">
+            <validity><validityStatus>definedByValidityTimeSpec</validityStatus>
+              <validityTimeSpecification><overallStartTime>2026-09-28T08:00:00Z</overallStartTime>
+              </validityTimeSpecification></validity>
+            <pointByCoordinates><pointCoordinates><latitude>46.6</latitude><longitude>11.4</longitude>
+              </pointCoordinates></pointByCoordinates></situationRecord></situation>
+          </payloadPublication></d2LogicalModel>''')
+        rows = feeds._parse_south_tyrol_roads(root, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [11.3, 46.5])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_south_tyrol_roads(root, now + 21 * 60)
+
     def test_madrid_incidents_use_local_time_and_skip_future_work(self):
         now = dt.datetime(2026, 9, 27, 11, tzinfo=dt.timezone.utc).timestamp()
         root = ET.fromstring('''<Incidencias>

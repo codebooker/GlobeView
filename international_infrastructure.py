@@ -29,6 +29,9 @@ MADRID_SIGNS_SOURCE = 'https://datos.madrid.es/dataset/202078-0-trafico-paneles-
 MADRID_SIGN_LOCATIONS = ('https://datos.madrid.es/dataset/202535-0-paneles-informacion-variable/'
                          'resource/202535-2-paneles-informacion-variable-csv/download/'
                          '202535-2-paneles-informacion-variable-csv.csv')
+SOUTH_TYROL_ROADS_URL = ('https://datex.api.opendatahub.com/datex/2/'
+                         'province-bz/situation-publication.xml')
+SOUTH_TYROL_SOURCE = 'https://docs.opendatahub.com/use-data/datexii-api/reference/'
 FINTRAFFIC_CAMERAS_SOURCE = 'https://www.digitraffic.fi/en/road-traffic/'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
@@ -380,6 +383,58 @@ def _madrid_signs():
         raise ValueError('Madrid sign locations exceeded size limit')
     locations = csv.DictReader(io.StringIO(body.decode('utf-8-sig')), delimiter=';')
     return _parse_madrid_signs(locations, root, published)
+
+
+def _parse_south_tyrol_roads(root, now=None):
+    now = time.time() if now is None else now
+    publication = root.findtext('.//{*}publicationTime')
+    published = _timestamp(publication)
+    if published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('South Tyrol road publication is stale')
+    features = []
+    for situation in root.findall('.//{*}situation'):
+        situation_id = situation.get('id') or ''
+        if not re.fullmatch(r'[A-Za-z0-9-]{1,80}', situation_id):
+            continue
+        record = situation.find('{*}situationRecord')
+        if record is None:
+            continue
+        status = record.findtext('.//{*}validityStatus')
+        start = _timestamp(record.findtext('.//{*}overallStartTime'))
+        end = _timestamp(record.findtext('.//{*}overallEndTime'))
+        if status not in {'active', 'definedByValidityTimeSpec'}:
+            continue
+        if status == 'definedByValidityTimeSpec' and start is None:
+            continue
+        if (start is not None and start > now + 300) or (end is not None and end <= now):
+            continue
+        try:
+            lat = float(record.findtext('.//{*}pointByCoordinates/{*}pointCoordinates/{*}latitude'))
+            lon = float(record.findtext('.//{*}pointByCoordinates/{*}pointCoordinates/{*}longitude'))
+        except (TypeError, ValueError):
+            continue
+        if not (10 <= lon <= 13 and 46 <= lat <= 48):
+            continue
+        comments = record.findall('.//{*}generalPublicComment/{*}comment/{*}values/{*}value')
+        comment = next((value.text for value in comments if value.get('lang') == 'it' and value.text), '')
+        if not comment:
+            comment = next((value.text for value in comments if value.text), '')
+        detail = _clean(comment, 260)
+        record_type = record.get('{http://www.w3.org/2001/XMLSchema-instance}type') or ''
+        is_work = record_type == 'MaintenanceWorks' or bool(re.search(r'\b(cantiere|lavori|baustelle|bauarbeiten)\b', detail, re.I))
+        layer = 'construction' if is_work else 'incidents'
+        features.append(_feature([lon, lat], {
+            'key': f'it:south-tyrol:road:{situation_id}', 'layer': layer,
+            'title': 'Roadworks' if is_work else 'Road event',
+            'detail': detail or _clean(record_type, 80),
+            'source': 'Open Data Hub · Province of Bolzano',
+            'source_url': SOUTH_TYROL_SOURCE, 'updated_at': publication,
+        }))
+    return features
+
+
+def _south_tyrol_roads():
+    return _parse_south_tyrol_roads(_get_xml(SOUTH_TYROL_ROADS_URL))
 
 
 def _norway_wfs(layer, cql_filter=None):
@@ -2234,6 +2289,7 @@ _FETCHERS = {
         'es_madrid_incidents': _madrid_incidents,
         'es_madrid_cameras': _madrid_cameras,
         'es_madrid_signs': _madrid_signs,
+        'it_south_tyrol_roads': _south_tyrol_roads,
         'pl_gddkia_roads': _poland_roads,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
