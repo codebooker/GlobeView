@@ -141,10 +141,37 @@ class HazardFeedTests(unittest.TestCase):
             hazard_feeds, '_new_zealand_alerts', side_effect=RuntimeError('offline')
         ), patch.object(hazard_feeds, '_norway_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_ireland_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_germany_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_dwd_status_archive_maps_current_polygons_and_accepts_empty_zip(self):
+        now = dt.datetime.now(dt.timezone.utc)
+        future = (now + dt.timedelta(hours=2)).isoformat()
+        xml = f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+          <identifier>test-123</identifier><sent>{now.isoformat()}</sent>
+          <status>Actual</status><msgType>Update</msgType>
+          <info><language>en</language><headline>Official WARNING of FOG</headline>
+          <severity>Minor</severity><expires>{future}</expires>
+          <instruction>Drive carefully.</instruction><area><areaDesc>Kreis Test</areaDesc>
+          <polygon>48.0,11.0 48.1,11.0 48.1,11.1 48.0,11.0</polygon>
+          </area></info></alert>'''
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, 'w') as zipped:
+            zipped.writestr('warning.ENG.xml', xml)
+        items = hazard_feeds._parse_dwd_alerts_zip(archive.getvalue(), now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['country'], 'Germany')
+        self.assertEqual(items[0]['geometry']['coordinates'][0][0][0], [11, 48])
+        self.assertEqual(items[0]['area'], 'Kreis Test')
+        self.assertEqual(hazard_feeds._parse_dwd_alerts_zip(
+            archive.getvalue(), now + dt.timedelta(hours=3)), [])
+        empty = io.BytesIO()
+        with zipfile.ZipFile(empty, 'w'):
+            pass
+        self.assertEqual(hazard_feeds._parse_dwd_alerts_zip(empty.getvalue(), now), [])
 
     def test_ireland_alerts_use_current_county_regions_and_original_text(self):
         now = dt.datetime.now(dt.timezone.utc)

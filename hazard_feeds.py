@@ -1,6 +1,7 @@
 """Cached, normalized global natural-hazard feeds for the globe client."""
 import datetime as dt
 import csv
+import email.utils
 import io
 import json
 import math
@@ -283,6 +284,8 @@ def _canada_alerts():
 
 
 _CAP_NS = {'cap': 'urn:oasis:names:tc:emergency:cap:1.2'}
+_DWD_CAP_URL = ('https://opendata.dwd.de/weather/alerts/cap/DISTRICT_DWD_STAT/'
+                'Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMDWD_DISTRICT_EN.zip')
 
 
 def _cap_polygon(value):
@@ -303,6 +306,77 @@ def _cap_polygon(value):
     if points[0] != points[-1]:
         points.append(points[0])
     return points
+
+
+def _parse_dwd_alerts_zip(body, now=None):
+    """The status archive contains all current district notices, or an empty ZIP."""
+    now = dt.datetime.now(_UTC) if now is None else now
+    items = []
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        members = archive.infolist()
+        if len(members) > 500 or sum(member.file_size for member in members) > 30_000_000:
+            raise ValueError('DWD warning archive exceeded size limit')
+        if any(not member.filename.endswith('.xml') for member in members):
+            raise ValueError('Unexpected DWD warning archive member')
+        for member in members:
+            cap = ET.fromstring(archive.read(member))
+            if (cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual'
+                    or cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')):
+                continue
+            identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or member.filename
+            for index, info in enumerate(cap.findall('cap:info', _CAP_NS)):
+                if (info.findtext('cap:language', namespaces=_CAP_NS) != 'en'
+                        or not _future_timestamp(info.findtext('cap:expires', namespaces=_CAP_NS), now)):
+                    continue
+                polygons = []
+                areas = []
+                for area in info.findall('cap:area', _CAP_NS):
+                    for polygon in area.findall('cap:polygon', _CAP_NS):
+                        ring = _cap_polygon(polygon.text)
+                        if ring:
+                            polygons.append([ring])
+                    description = area.findtext('cap:areaDesc', namespaces=_CAP_NS)
+                    if description:
+                        areas.append(description)
+                if not polygons:
+                    continue
+                geometry = {'type': 'MultiPolygon', 'coordinates': polygons}
+                point = _polygon_point(geometry)
+                if not point:
+                    continue
+                advice = (info.findtext('cap:instruction', namespaces=_CAP_NS)
+                          or info.findtext('cap:description', namespaces=_CAP_NS) or '')
+                items.append({
+                    'id': 'de:' + identifier + ':' + str(index),
+                    'title': info.findtext('cap:headline', namespaces=_CAP_NS) or 'Weather warning',
+                    'lon': round(point[0], 5), 'lat': round(point[1], 5),
+                    'geometry': geometry, 'locationKind': 'polygon',
+                    'country': 'Germany', 'source': 'Deutscher Wetterdienst · GeoBasis-DE / BKG',
+                    'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+                    'area': '; '.join(areas)[:250],
+                    'advice': ' '.join(advice.split())[:480],
+                    'observed': cap.findtext('cap:sent', namespaces=_CAP_NS),
+                    'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
+                    'sourceUrl': 'https://www.dwd.de/DE/wetter/warnungen/warnWetter_node.html',
+                })
+    return items
+
+
+def _germany_alerts():
+    request = urllib.request.Request(_DWD_CAP_URL, headers={'User-Agent': 'GlobeView/1.0'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'opendata.dwd.de':
+            raise ValueError('Unexpected DWD warning redirect')
+        modified = response.headers.get('Last-Modified')
+        if not modified:
+            raise ValueError('DWD warning archive has no publication time')
+        age = time.time() - email.utils.parsedate_to_datetime(modified).timestamp()
+        if not -300 <= age <= 30 * 60:
+            raise ValueError('DWD warning archive is stale')
+        body = response.read(4_000_001)
+    if len(body) > 4_000_000:
+        raise ValueError('DWD warning archive exceeded size limit')
+    return _parse_dwd_alerts_zip(body)
 
 
 @lru_cache(maxsize=512)
@@ -484,16 +558,18 @@ def _ireland_alerts():
 def _world_alerts():
     items = []
     unavailable = []
-    for country, loader in [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
-                            ('Norway', _norway_alerts), ('Ireland', _ireland_alerts)]:
+    loaders = [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
+               ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
+               ('Germany', _germany_alerts)]
+    for country, loader in loaders:
         try:
             items.extend(loader())
         except Exception:
             unavailable.append(country)
-    if len(unavailable) == 4:
+    if len(unavailable) == len(loaders):
         raise RuntimeError('International weather alert feeds are unavailable')
     return {'source': 'National meteorological services', 'items': items,
-            'countries': ['Canada', 'New Zealand', 'Norway', 'Ireland'], 'unavailable': unavailable}
+            'countries': [country for country, _ in loaders], 'unavailable': unavailable}
 
 
 def _gdelt_events():
