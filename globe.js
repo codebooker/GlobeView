@@ -1165,6 +1165,10 @@
       button.addEventListener('click', () => openSeaConditions(coordinates));
       root.append(button);
     }
+    if (type === 'cameras' && meta.snapshotUrl) {
+      attachCameraMedia(root, { item: { expando: { snapshotUrl: meta.snapshotUrl } } }, null, popup);
+      return;
+    }
     if (!meta.region || !meta.item) return;
     if (type === 'cameras') {
       attachCameraMedia(root, meta, null, popup);
@@ -1229,7 +1233,8 @@
     const controller = new AbortController();
     requests.set(type, controller);
     const bounds = currentBounds();
-    const internationalVisible = ['signs', 'incidents', 'construction'].includes(type) && [
+    const internationalVisible = ['signs', 'incidents', 'construction', 'cameras'].includes(type) && [
+      { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } },
       { bounds: { minLon: 19, maxLon: 32, minLat: 59, maxLat: 71 } },
       { bounds: { minLon: -9, maxLon: 3, minLat: 49, maxLat: 61.5 } },
       { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } },
@@ -1287,7 +1292,8 @@
         title: p.title || POINT[type].label,
         detail: [p.detail, p.updated_at ? `Updated ${p.updated_at}` : ''].filter(Boolean).join(' · '),
         source: p.source || 'Public road authority', sourceUrl: p.source_url,
-        signImage: type === 'signs' ? p.image_data || '' : ''
+        signImage: type === 'signs' ? p.image_data || '' : '',
+        snapshotUrl: type === 'cameras' ? p.snapshot_url || '' : ''
       });
       features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && /warning/i.test(p.title || '') }));
     }

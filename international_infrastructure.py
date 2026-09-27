@@ -55,6 +55,8 @@ ZURICH_COUNTERS_URL = ('https://maps.zh.ch/wfs/TBAVMSZHWFS?SERVICE=WFS&REQUEST=G
                        '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
 ZURICH_COUNTER_CONFIG_URL = 'https://vdp.zh.ch/pws/public-service/readCollectorsCfg'
 ZURICH_COUNTER_SOURCE = 'https://datenkatalog.statistik.zh.ch/datasets/692@tiefbauamt-kanton-zuerich'
+NORWAY_WFS_URL = 'https://ogckart-sn1.atlas.vegvesen.no/datex_3_1/ows'
+NORWAY_SOURCE = 'https://www.vegvesen.no/trafikk/kart'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -152,6 +154,94 @@ def _point(geometry):
 
 def _feature(lonlat, properties):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': lonlat}, 'properties': properties}
+
+
+def _norway_wfs(layer, cql_filter=None):
+    params = {'service': 'WFS', 'version': '1.0.0', 'request': 'GetFeature',
+              'typeName': f'datex_3_1:{layer}', 'outputFormat': 'application/json',
+              'maxFeatures': '2000'}
+    if cql_filter:
+        params['cql_filter'] = cql_filter
+    return _get_json(f'{NORWAY_WFS_URL}?{urllib.parse.urlencode(params)}')
+
+
+def _norway_publication_current(items, now):
+    if not items:
+        return True
+    timestamp = str((items[0].get('properties') or {}).get('endJsonTime') or '')
+    published = _timestamp(re.sub(r'([+-]\d{2})(\d{2})$', r'\1:\2', timestamp))
+    if published is None or not -300 <= now - published <= 30 * 60:
+        raise ValueError('Norwegian WFS publication is stale or invalid')
+    return True
+
+
+def _parse_norway_roads(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') or []
+    _norway_publication_current(rows, now)
+    features = []
+    for item in rows:
+        p = item.get('properties') or {}
+        point = _point(item.get('geometry'))
+        if not point or not (4 <= point[0] <= 32 and 57 <= point[1] <= 72):
+            continue
+        if p.get('isMainRecord') is not True or p.get('activePeriodAtLastUpdate') != 1:
+            continue
+        situation_id = str(p.get('situationId') or '')
+        if not situation_id:
+            continue
+        kind = str(p.get('situationType') or '')
+        layer = 'construction' if kind in {'MaintenanceWorks', 'ConstructionWorks'} else 'incidents'
+        road = _clean(p.get('roadNumber'), 25)
+        place = _clean(p.get('locationDescription'), 120)
+        description = _clean(str(p.get('description') or '').replace('|', ' · '), 240)
+        features.append(_feature(point, {
+            'key': f'no:road:{situation_id}', 'layer': layer,
+            'title': place or f'{road} · {"Roadworks" if layer == "construction" else "Road event"}',
+            'detail': description or kind, 'source': 'Statens vegvesen',
+            'source_url': NORWAY_SOURCE,
+        }))
+    return features
+
+
+def _norway_roads():
+    return _parse_norway_roads(_norway_wfs('SituationSimple',
+                              'isMainRecord=true AND activePeriodAtLastUpdate=1'))
+
+
+def _parse_norway_cameras(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') or []
+    _norway_publication_current(rows, now)
+    features = []
+    for item in rows:
+        p = item.get('properties') or {}
+        point = _point(item.get('geometry'))
+        if not point or not (4 <= point[0] <= 32 and 57 <= point[1] <= 72):
+            continue
+        if p.get('status.stillImageAvailability') != 'videoOrImagesAvailable':
+            continue
+        camera_id = str(p.get('cameraId') or '')
+        image = str(p.get('stillImageUrl') or '')
+        parsed = urllib.parse.urlparse(image)
+        if (not re.fullmatch(r'\d+_\d+', camera_id) or parsed.scheme != 'https'
+                or parsed.hostname != 'kamera.atlas.vegvesen.no'
+                or parsed.path != f'/api/images/{camera_id}'):
+            continue
+        name = _clean(p.get('description'), 90)
+        orientation = _clean(p.get('orientationDescription'), 90)
+        road = _clean(p.get('roadNumber'), 25)
+        features.append(_feature(point, {
+            'key': f'no:camera:{camera_id}', 'layer': 'cameras',
+            'title': ' · '.join(part for part in (road, name) if part) or 'Road camera',
+            'detail': orientation, 'snapshot_url': image,
+            'source': 'Statens vegvesen', 'source_url': NORWAY_SOURCE,
+        }))
+    return features
+
+
+def _norway_cameras():
+    return _parse_norway_cameras(_norway_wfs('CctvSimple'))
 
 
 def _parse_zurich_roadworks(items, now=None):
@@ -1226,6 +1316,8 @@ _FETCHERS = {
         'nl_ndw_signs': _ndw_signs,
         'ch_zurich_roadworks': _zurich_roadworks,
         'ch_zurich_sensors': _zurich_sensors,
+        'no_road_events': _norway_roads,
+        'no_road_cameras': _norway_cameras,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},
@@ -1258,7 +1350,7 @@ def _snapshot(kind):
 
 
 def road_snapshot(layer, bbox=None):
-    if layer not in {'signs', 'incidents', 'construction', 'sensors'}:
+    if layer not in {'signs', 'incidents', 'construction', 'sensors', 'cameras'}:
         raise ValueError('Unknown road layer')
     if bbox is not None:
         west, south, east, north = bbox

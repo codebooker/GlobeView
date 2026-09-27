@@ -16,6 +16,35 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_norway_roads_only_include_active_main_records(self):
+        published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
+        base = {'geometry': {'type': 'Point', 'coordinates': [10.7, 59.9]},
+                'properties': {'endJsonTime': published, 'situationId': 'event-1',
+                               'situationType': 'MaintenanceWorks', 'isMainRecord': True,
+                               'activePeriodAtLastUpdate': 1, 'locationDescription': 'E6 Oslo',
+                               'description': 'Roadwork|One lane closed'}}
+        rows = feeds._parse_norway_roads({'features': [base,
+            {**base, 'properties': {**base['properties'], 'isMainRecord': False}},
+            {**base, 'properties': {**base['properties'], 'activePeriodAtLastUpdate': 0}}]}, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertEqual(rows[0]['properties']['key'], 'no:road:event-1')
+        with self.assertRaises(ValueError):
+            feeds._parse_norway_roads({'features': [base]}, NOW + 3600)
+
+    def test_norway_cameras_require_available_official_image(self):
+        published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
+        base = {'geometry': {'type': 'Point', 'coordinates': [10.7, 59.9]},
+                'properties': {'endJsonTime': published, 'cameraId': '3000063_1',
+                               'status.stillImageAvailability': 'videoOrImagesAvailable',
+                               'stillImageUrl': 'https://kamera.atlas.vegvesen.no/api/images/3000063_1'}}
+        rows = feeds._parse_norway_cameras({'features': [base,
+            {**base, 'properties': {**base['properties'], 'stillImageUrl': 'https://example.com/api/images/3000063_1'}},
+            {**base, 'properties': {**base['properties'], 'status.stillImageAvailability': 'videoOrImagesUnavailableDueToCameraFault'}}]}, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'cameras')
+        self.assertEqual(rows[0]['properties']['snapshot_url'], base['properties']['stillImageUrl'])
+
     def test_zurich_sensors_join_active_counters_by_station_number(self):
         locations = [
             {'geometry': {'type': 'Point', 'coordinates': [8.48, 47.45]},
