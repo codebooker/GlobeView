@@ -46,6 +46,10 @@ AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
+ZURICH_ROADWORKS_URL = ('https://maps.zh.ch/wfs/TbaBaustellenZHWFS?SERVICE=WFS&REQUEST=GetFeature'
+                        '&VERSION=2.0.0&TYPENAMES=ms:baustellen-uebersicht'
+                        '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
+ZURICH_ROADWORKS_SOURCE = 'https://data.stadt-zuerich.ch/dataset/d991a4a2-32ea-4f7a-93b5-0f31a016d71c'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -143,6 +147,50 @@ def _point(geometry):
 
 def _feature(lonlat, properties):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': lonlat}, 'properties': properties}
+
+
+def _parse_zurich_roadworks(items, now=None):
+    today = dt.datetime.fromtimestamp(time.time() if now is None else now, ZoneInfo('Europe/Zurich')).date()
+    features = []
+    for item in items:
+        properties = item.get('properties') or {}
+        point = _point(item.get('geometry'))
+        if not point or not (8.35 <= point[0] <= 9 and 47.15 <= point[1] <= 47.7):
+            continue
+        if properties.get('status_baustelle') != 'aktiv (Bauzeit)':
+            continue
+        try:
+            start = dt.date.fromisoformat(str(properties.get('datum_baubeginn'))[:10])
+            end = dt.date.fromisoformat(str(properties.get('datum_bauende'))[:10])
+        except ValueError:
+            continue
+        if not start <= today <= end:
+            continue
+        road_id = _clean(properties.get('strassenbez'), 20)
+        km_start = _clean(properties.get('kmvon'), 20)
+        road = _clean(properties.get('strassenname'), 100)
+        municipality = _clean(properties.get('gemeindename'), 65)
+        if not road_id or not km_start or not road:
+            continue
+        description = _clean(properties.get('beschreibung'), 150)
+        guidance = _clean(properties.get('verkehrsfuehrung'), 150)
+        features.append(_feature(point, {
+            'key': f'ch:zh:roadwork:{road_id}:{km_start}:{start.isoformat()}',
+            'layer': 'construction',
+            'title': f'Roadworks · {road}' + (f', {municipality}' if municipality else ''),
+            'detail': _clean(' · '.join(part for part in (description, guidance, f'Through {end.isoformat()}')
+                                       if part), 280),
+            'source': 'Kanton Zürich Tiefbauamt · CC0',
+            'source_url': ZURICH_ROADWORKS_SOURCE,
+        }))
+    return features
+
+
+def _zurich_roadworks():
+    data = _get_json(ZURICH_ROADWORKS_URL)
+    if data.get('type') != 'FeatureCollection':
+        raise ValueError('Zurich roadworks feed is invalid')
+    return _parse_zurich_roadworks(data.get('features') or [])
 
 
 def _fintraffic_messages(layer):
@@ -1108,6 +1156,7 @@ _FETCHERS = {
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_signs': _ndw_signs,
+        'ch_zurich_roadworks': _zurich_roadworks,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},

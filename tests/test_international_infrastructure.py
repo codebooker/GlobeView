@@ -16,6 +16,28 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_zurich_roadworks_show_only_current_works_without_contact_details(self):
+        current = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [8.8, 47.5]},
+                   'properties': {'strassenbez': '831', 'kmvon': '0.240',
+                                  'strassenname': 'Pestalozzistrasse', 'gemeindename': 'Elsau',
+                                  'beschreibung': 'Bridge repair', 'verkehrsfuehrung': 'Traffic lights',
+                                  'status_baustelle': 'aktiv (Bauzeit)',
+                                  'datum_baubeginn': '2026-03-02T00:00:00',
+                                  'datum_bauende': '2026-09-30T00:00:00',
+                                  'ansprechperson': 'Private contact', 'telefonnummer': '12345'}}
+        future = {**current, 'properties': {**current['properties'], 'status_baustelle':
+                  'zukünftig (Bauzeit in Zukunft)'}}
+        expired = {**current, 'properties': {**current['properties'], 'datum_bauende':
+                   '2026-09-25T00:00:00'}}
+        bad_point = {**current, 'geometry': {'type': 'Point', 'coordinates': [0, 0]}}
+        rows = feeds._parse_zurich_roadworks([current, future, expired, bad_point], NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [8.8, 47.5])
+        self.assertIn('Traffic lights', rows[0]['properties']['detail'])
+        self.assertNotIn('Private contact', str(rows[0]))
+        self.assertNotIn('12345', str(rows[0]))
+
     def test_autobahn_excludes_future_works_and_maps_current_closure(self):
         payload = {'closure': [
             {'identifier': 'current', 'future': False, 'title': 'A1 | Junction',
