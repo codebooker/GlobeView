@@ -1396,6 +1396,14 @@
   const aircraftFitRoute = document.getElementById('aircraft-fit-route');
   const aircraftTrackStatus = document.getElementById('aircraft-track-status');
   const aircraftFollowButton = document.getElementById('aircraft-follow');
+  function aircraftAgeLabel(ageSeconds) {
+    if (!Number.isFinite(ageSeconds)) return '';
+    if (ageSeconds < 60) return `${Math.max(0, Math.round(ageSeconds))}s ago`;
+    const minutes = Math.floor(ageSeconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m ago`;
+  }
   function retryAfterMs(response) {
     const seconds = Number(response.headers.get('Retry-After'));
     return Math.min(86400000, Math.max(60000, Number.isFinite(seconds) ? seconds * 1000 : 60000));
@@ -1404,7 +1412,7 @@
     if (!trackedAircraft) return;
     const age = trackedAircraft.lastObservedAt ? Math.max(0, Math.round((Date.now() - trackedAircraft.lastObservedAt) / 1000)) : null;
     trackedAircraft.stale = age == null || age > 90;
-    aircraftTrackStatus.textContent = `${message} · ${age == null ? 'last position unknown' : `last report ${age}s ago`}`;
+    aircraftTrackStatus.textContent = age == null ? message : `${message} · ${aircraftAgeLabel(age)}`;
     updateTrackedMarker();
   }
   function updateTrackedMarker() {
@@ -1463,13 +1471,13 @@
       if (controller.signal.aborted || trackedAircraft?.hex !== hex) return;
       trackedAircraft.historyPoints = data.status === 'available' ? data.points || [] : [];
       aircraftTrailStatus.textContent = trackedAircraft.historyPoints.length > 1
-        ? `Observed trail · ${trackedAircraft.historyPoints.length} OpenSky waypoints, plus positions seen here`
-        : 'No current flown trail reported · drawing positions seen here';
+        ? `Trail · ${trackedAircraft.historyPoints.length} past points`
+        : 'No past trail available';
       updateAircraftTrail();
       updateAircraftRoute();
     } catch (error) {
       if (controller.signal.aborted || trackedAircraft?.hex !== hex) return;
-      aircraftTrailStatus.textContent = 'Past trail unavailable · drawing positions seen here';
+      aircraftTrailStatus.textContent = 'Past trail unavailable';
     } finally {
       if (!controller.signal.aborted && trackedAircraft?.hex === hex) {
         trackedAircraft.trailLookupFinished = true;
@@ -1510,7 +1518,7 @@
       updateAircraftRoute();
     }
     if (!/^[A-Z]{3}[A-Z0-9]{1,7}$/.test(callsign)) {
-      aircraftTrackRoute.textContent = 'Airport route unavailable for this callsign.';
+      aircraftTrackRoute.textContent = 'Route unavailable';
       if (trackedAircraft) {
         trackedAircraft.routeLookupFinished = true;
         maybeAutoFitTrackedPath();
@@ -1519,26 +1527,26 @@
     }
     const controller = new AbortController();
     aircraftRouteController = controller;
-    aircraftTrackRoute.textContent = 'Checking airport route…';
+    aircraftTrackRoute.textContent = 'Checking route…';
     try {
       const params = new URLSearchParams({ callsign, lat: String(item.lat), lon: String(item.lon) });
       const response = await fetch(`/aircraft/route?${params}`, { signal: controller.signal });
       if (!response.ok) throw new Error(`Route lookup: ${response.status}`);
       const data = await response.json();
       if (trackedAircraft?.hex !== hex || controller.signal.aborted) return;
-      if (!data.route) { aircraftTrackRoute.textContent = 'No plausible airport route reported for this flight.'; return; }
+      if (!data.route) { aircraftTrackRoute.textContent = 'No route found'; return; }
       trackedAircraft.route = data.route;
       aircraftFitRoute.hidden = false;
       const origin = data.route.origin, destination = data.route.destination;
       aircraftTrackRoute.replaceChildren(
         textElement('strong', '', `${origin.code || 'Origin'} → ${destination.code || 'Destination'}`),
         textElement('small', '', `${origin.name || 'Departure airport'} → ${destination.name || 'Arrival airport'}`),
-        textElement('small', '', 'Teal: observed trail when available · dashed: toward destination. A straight origin connector appears when no trail is available. Airport pair is a plausible callsign match, not a filed flight plan. Source: ADSB.im.')
+        textElement('small', '', 'Estimated route · dashed line to destination')
       );
       updateAircraftRoute();
     } catch (error) {
       if (controller.signal.aborted || trackedAircraft?.hex !== hex) return;
-      aircraftTrackRoute.textContent = 'Airport route lookup unavailable.';
+      aircraftTrackRoute.textContent = 'Route unavailable';
     } finally {
       if (!controller.signal.aborted && trackedAircraft?.hex === hex) {
         trackedAircraft.routeLookupFinished = true;
@@ -1610,14 +1618,13 @@
       typeof item.gs === 'number' ? `${Math.round(item.gs)} kt` : '', item.t || ''].filter(Boolean).join(' · ');
     const verticalRate = typeof item.baro_rate === 'number' ? `${item.baro_rate > 0 ? '+' : ''}${Math.round(item.baro_rate)} ft/min` : '';
     aircraftTrackMore.textContent = [
-      `${({ civil: 'Civil', medical: 'Medical', police: 'Law enforcement', fire: 'Fire / rescue', military: 'Military', gov: 'Government' })[aircraftService(item)]} ${aircraftShape(item)}`,
-      item.desc || '', item.ownOp || registryCache.get(trackedAircraft.hex) || '',
+      ({ civil: 'Civil', medical: 'Medical', police: 'Law enforcement', fire: 'Fire / rescue', military: 'Military', gov: 'Government' })[aircraftService(item)],
       typeof item.track === 'number' ? `Heading ${Math.round(item.track)}°` : '',
       item.squawk ? `Squawk ${item.squawk}` : '', verticalRate
     ].filter(Boolean).join(' · ');
-    aircraftTrackStatus.textContent = initial ? 'Checking current position…' : trackedAircraft.stale
-      ? `${trackedAircraft.provider || 'Aircraft feed'} · last report ${Math.round(age)}s ago · may be stale`
-      : `${trackedAircraft.provider || 'Aircraft feed'} · position ${Math.round(age)}s ago · checks every 20s`;
+    aircraftTrackStatus.textContent = initial ? 'Locating…' : trackedAircraft.stale
+      ? `Last seen ${aircraftAgeLabel(age)} · stale`
+      : `Updated ${aircraftAgeLabel(age)}`;
     updateTrackedMarker();
     if (trackingFollow && !trackedAircraft.stale && (initial || !previous || Math.abs(lat - previous.lat) + Math.abs(lon - previous.lon) > 0.002)) {
       map.easeTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 7), duration: initial ? 950 : 650, essential: true });
@@ -1627,7 +1634,7 @@
   async function refreshTrackedAircraft() {
     if (!trackedAircraft || trackedController || document.hidden) return;
     if (Date.now() < trackedRetryAt) {
-      showTrackedLastPosition('Provider busy · retrying shortly');
+      showTrackedLastPosition('Feed busy');
       return;
     }
     const hex = trackedAircraft.hex;
@@ -1637,7 +1644,7 @@
       const response = await fetch(`/aircraft?scope=hex&id=${encodeURIComponent(hex)}`, { signal: controller.signal, cache: 'no-store' });
       if (response.status === 429) {
         trackedRetryAt = Date.now() + retryAfterMs(response);
-        showTrackedLastPosition('Provider busy · retrying shortly');
+        showTrackedLastPosition('Feed busy');
         return;
       }
       if (!response.ok) throw new Error(`Aircraft lookup: ${response.status}`);
@@ -1645,7 +1652,7 @@
       if (trackedAircraft?.hex !== hex) return;
       const item = (data.aircraft || []).find(row => String(row.hex || '').toLowerCase() === hex);
       if (item) updateTrackedAircraft(item, false, data.updated_at, data.source);
-      else showTrackedLastPosition('Signal unavailable');
+      else showTrackedLastPosition('Signal lost');
     } catch (error) {
       if (controller.signal.aborted || trackedAircraft?.hex !== hex) return;
       console.warn('Tracked aircraft:', error);
