@@ -19471,7 +19471,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(400, 'Invalid camera id'); return
 
         def load_snapshot():
-            url = ('https://mct.gencat.cat/mct2bo/TransitCamera?'
+            # SCT's camera host uses obsolete TLS parameters on the production
+            # host. Fetch its public image over HTTP server-side, then validate
+            # and serve it to browsers from our HTTPS origin.
+            url = ('http://mct.gencat.cat/mct2bo/TransitCamera?'
                    f'nom={camera_id}.gif&visualitzacio=imatge')
             request = urllib.request.Request(url, headers={
                 'User-Agent': 'GlobeView/1.0 (+https://github.com/codebooker/GlobeView)'})
