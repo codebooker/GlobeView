@@ -2849,7 +2849,8 @@ def _parse_dgt_cameras(root, now=None):
     return features
 
 
-_DGT_MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
+_DGT_CAMERA_HEALTH = {}
+_DGT_CAMERA_HEALTH_LOCK = threading.Lock()
 _DGT_CAMERA_PLACEHOLDER_BYTES = {'32634', '9422'}
 
 
@@ -2875,32 +2876,34 @@ def _dgt_camera_headers_available(response, now):
     return -300 <= age <= 30 * 60
 
 
-def _dgt_madrid_unavailable_cameras(features):
-    """Omit DGT's successful-looking placeholder and long-stale camera JPEGs."""
+def _dgt_unavailable_cameras(features):
+    """Check only visible DGT stills; a fresh JPEG header can hide a bad body."""
+    cameras = {item['properties']['snapshot_url'].rsplit('/', 1)[-1]
+               for item in features if item['properties']['key'].startswith('es:dgt:camera:')}
+    if not cameras:
+        return set()
     now = time.time()
-    if now < _DGT_MADRID_CAMERA_HEALTH['until']:
-        return _DGT_MADRID_CAMERA_HEALTH['unavailable']
-    madrid = [item for item in features if
-              -3.9 <= item['geometry']['coordinates'][0] <= -3.45 and
-              40.25 <= item['geometry']['coordinates'][1] <= 40.65]
 
-    def unavailable(item):
-        camera_id = item['properties']['snapshot_url'].rsplit('/', 1)[-1]
-        request = urllib.request.Request(_dgt_camera_url(camera_id), method='HEAD', headers={
+    def available(camera_id):
+        request = urllib.request.Request(_dgt_camera_url(camera_id), headers={
             'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
         try:
             with urllib.request.urlopen(request, timeout=6) as response:
-                return not _dgt_camera_headers_available(response, now)
-        except urllib.error.HTTPError:
-            return True
+                return (_dgt_camera_headers_available(response, now)
+                        and response.read(3) == b'\xff\xd8\xff')
         except (OSError, ValueError):
-            return True
+            return False
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-        unavailable_ids = {item['properties']['key'] for item, bad in
-                           zip(madrid, executor.map(unavailable, madrid)) if bad}
-    _DGT_MADRID_CAMERA_HEALTH.update(until=now + 600, unavailable=unavailable_ids)
-    return unavailable_ids
+    with _DGT_CAMERA_HEALTH_LOCK:
+        pending = [camera_id for camera_id in cameras
+                   if _DGT_CAMERA_HEALTH.get(camera_id, (0, False))[0] <= now]
+        if pending:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
+                for camera_id, good in zip(pending, executor.map(available, pending)):
+                    _DGT_CAMERA_HEALTH[camera_id] = (now + 600, good)
+        return {item['properties']['key'] for item in features
+                if item['properties']['key'].startswith('es:dgt:camera:')
+                and not _DGT_CAMERA_HEALTH[item['properties']['snapshot_url'].rsplit('/', 1)[-1]][1]}
 
 
 def dgt_camera_snapshot(camera_id):
@@ -2927,9 +2930,7 @@ def dgt_camera_snapshot(camera_id):
 
 def _dgt_cameras():
     root = _dgt_static_xml('cameras', DGT_BASE + 'DevicePublication/camaras_datex2_v37.xml')
-    features = _parse_dgt_cameras(root)
-    unavailable = _dgt_madrid_unavailable_cameras(features)
-    return [item for item in features if item['properties']['key'] not in unavailable]
+    return _parse_dgt_cameras(root)
 
 
 def _parse_dgt_incidents(root, now=None):
@@ -3739,6 +3740,9 @@ def road_snapshot(layer, bbox=None):
     if bbox is not None:
         features = [item for item in features if west <= item['geometry']['coordinates'][0] <= east
                     and south <= item['geometry']['coordinates'][1] <= north]
+    if layer == 'cameras':
+        unavailable = _dgt_unavailable_cameras(features)
+        features = [item for item in features if item['properties']['key'] not in unavailable]
     return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': errors,
             'sources': sources}
 

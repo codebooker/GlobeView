@@ -600,7 +600,7 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)
 
-    def test_dgt_madrid_omits_placeholders_and_stale_images(self):
+    def test_dgt_visible_cameras_omit_placeholders_stale_and_invalid_images(self):
         class Response:
             def __init__(self, url):
                 self.url = url
@@ -610,26 +610,35 @@ class InfrastructureTests(unittest.TestCase):
                                     camera_id, '125668'),
                                 'Last-Modified': email.utils.formatdate(
                                     NOW - (3600 if camera_id == '1104.jpg' else 300), usegmt=True)}
+            def read(self, size):
+                return b'bad' if self.url.endswith('/1105.jpg') else b'\xff\xd8\xff'
             def __enter__(self): return self
             def __exit__(self, *_): return False
-        items = [feeds._feature([-3.7, 40.4], {
-            'key': f'es:dgt:camera:{number}', 'layer': 'cameras',
+        items = [feeds._feature([-4.13, 40.7], {
+            'key': f'es:dgt:camera:{number + 10000}', 'layer': 'cameras',
             'snapshot_url': f'/dgt-camera/{number}',
-        }) for number in (923, 1103, 1104, 929)]
-        previous = dict(feeds._DGT_MADRID_CAMERA_HEALTH)
+        }) for number in (923, 1103, 1104, 1105, 929)]
+        previous = dict(feeds._DGT_CAMERA_HEALTH)
         try:
-            feeds._DGT_MADRID_CAMERA_HEALTH['until'] = 0
+            feeds._DGT_CAMERA_HEALTH.clear()
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
-                self.assertEqual(feeds._dgt_madrid_unavailable_cameras(items),
-                                 {'es:dgt:camera:923', 'es:dgt:camera:1103', 'es:dgt:camera:1104'})
-            feeds._DGT_MADRID_CAMERA_HEALTH['until'] = 0
+                self.assertEqual(feeds._dgt_unavailable_cameras(items),
+                                 {item['properties']['key'] for item in items[:4]})
+            # A second map request uses the health cache without another upstream request.
             with patch.object(feeds.time, 'time', return_value=NOW), \
-                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
-                self.assertEqual(feeds._dgt_madrid_unavailable_cameras(items),
-                                 {item['properties']['key'] for item in items})
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=AssertionError):
+                self.assertEqual(feeds._dgt_unavailable_cameras(items),
+                                 {item['properties']['key'] for item in items[:4]})
+            with patch.object(feeds, '_snapshot', return_value={
+                    'sources': {'es_dgt_cameras': items}, 'errors': []}), \
+                    patch.object(feeds.time, 'time', return_value=NOW):
+                result = feeds.road_snapshot('cameras', (-4.2, 40.6, -4.0, 40.8))
+                self.assertEqual([item['properties']['key'] for item in result['features']],
+                                 [items[-1]['properties']['key']])
         finally:
-            feeds._DGT_MADRID_CAMERA_HEALTH.update(previous)
+            feeds._DGT_CAMERA_HEALTH.clear()
+            feeds._DGT_CAMERA_HEALTH.update(previous)
 
     def test_dgt_camera_proxy_validates_image_and_freshness(self):
         class Response(io.BytesIO):
