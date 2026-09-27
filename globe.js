@@ -1356,6 +1356,7 @@
       { bounds: { minLon: 3, maxLon: 7.4, minLat: 50.6, maxLat: 53.8 } },
       { bounds: { minLon: 5.5, maxLon: 15.5, minLat: 47, maxLat: 55.1 } },
       { bounds: { minLon: 14, maxLon: 24.3, minLat: 48.8, maxLat: 55.2 } },
+      { bounds: { minLon: 16.7, maxLon: 22.6, minLat: 47.7, maxLat: 49.7 } },
       { bounds: { minLon: 20.8, maxLon: 26.9, minLat: 53.8, maxLat: 56.5 } },
       { bounds: { minLon: 10, maxLon: 13, minLat: 46, maxLat: 48 } },
       { bounds: { minLon: -19, maxLon: 5, minLat: 27, maxLat: 45 } }
