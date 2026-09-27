@@ -203,6 +203,28 @@ class InfrastructureTests(unittest.TestCase):
             self.assertEqual(len(feeds._cz_ndic_roads()), 2)
             self.assertEqual(fetch.call_count, 2)
 
+    def test_brno_waze_reports_separate_works_and_reject_old_reports(self):
+        now = dt.datetime(2026, 9, 27, 22, tzinfo=dt.timezone.utc).timestamp()
+        def alert(number, kind, subtype='', age=600, coords=None):
+            return {'type': 'Feature', 'geometry': {'type': 'Point',
+                    'coordinates': coords or [16.61, 49.19]}, 'properties': {
+                'uuid': f'00000000-0000-0000-0000-{number:012d}',
+                'pubMillis': int((now - age) * 1000), 'type': kind, 'subtype': subtype,
+                'street': '<b>Veveří</b>', 'city': 'Brno',
+                'reportDescription': '<script>bad</script>Road blocked'}}
+        payload = {'type': 'FeatureCollection', 'properties': {'exceededTransferLimit': False},
+                   'features': [alert(1, 'ACCIDENT'),
+                                alert(2, 'HAZARD', 'HAZARD_ON_ROAD_CONSTRUCTION'),
+                                alert(3, 'JAM'), alert(4, 'ACCIDENT', age=7 * 3600),
+                                alert(5, 'ACCIDENT', coords=[0, 0])]}
+        rows = feeds._parse_brno_waze_alerts(payload, now)
+        self.assertEqual([row['properties']['layer'] for row in rows], ['incidents', 'construction'])
+        self.assertIn('Reported roadworks', rows[1]['properties']['title'])
+        self.assertIn('unverified', rows[0]['properties']['detail'])
+        self.assertNotIn('<script>', str(rows))
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_brno_waze_alerts({**payload, 'properties': {'exceededTransferLimit': True}}, now)
+
     def test_lithuania_cameras_require_recent_capture_and_official_image(self):
         url = 'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=72'
         row = {'id': 72, 'name': 'Vilnius A1 10,04', 'roadNr': 'A1', 'km': 10.04,

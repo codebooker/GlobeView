@@ -138,6 +138,8 @@ ESTONIA_RESTRICTIONS_URL = (
 ESTONIA_RESTRICTIONS_SOURCE = 'https://tarktee.transpordiamet.ee/'
 CZ_NDIC_ROADS_URL = 'https://gis.brno.cz/ags3/rest/services/PUBLIC/uzavirky_ndic/MapServer/0/query'
 CZ_NDIC_ROADS_SOURCE = 'https://gis.brno.cz/ost/edas/public/3c5ff253-35f3-4ac0-86ab-db9e06586552'
+BRNO_WAZE_URL = 'https://gis.brno.cz/ags1/rest/services/Hosted/WazeAlerts/FeatureServer/0/query'
+BRNO_WAZE_SOURCE = 'https://gis.brno.cz/ags1/rest/services/Hosted/WazeAlerts/FeatureServer/0'
 LITHUANIA_RESTRICTIONS_URL = ('https://eismoinfo.lt/eismoinfo-backend/'
                               'layer-dynamic-features/EAL?lks=true')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -4052,6 +4054,77 @@ def _estonia_restrictions():
     return _parse_estonia_restrictions(_get_json(ESTONIA_RESTRICTIONS_URL + '?' + query))
 
 
+def _parse_brno_waze_alerts(payload, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list)
+            or not isinstance(payload.get('properties'), dict)
+            or payload['properties'].get('exceededTransferLimit')
+            or len(payload['features']) > 500):
+        raise ValueError('Brno road alert publication is invalid or incomplete')
+    output = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        point = _point(row.get('geometry'))
+        if not isinstance(props, dict) or not point or not (16.2 <= point[0] <= 16.9 and 48.9 <= point[1] <= 49.5):
+            continue
+        alert_id = str(props.get('uuid') or '')
+        if not re.fullmatch(r'[a-fA-F0-9-]{36}', alert_id) or alert_id in seen:
+            continue
+        try:
+            published = float(props['pubMillis']) / 1000
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not -300 <= now - published <= 6 * 3600:
+            continue
+        kind = str(props.get('type') or '')
+        subtype = str(props.get('subtype') or '')
+        if kind == 'JAM':
+            continue  # Traffic flow already has its own layer.
+        if kind == 'ACCIDENT':
+            title, layer = 'Reported crash', 'incidents'
+        elif kind == 'ROAD_CLOSED':
+            title, layer = 'Reported road closure', 'incidents'
+        elif kind == 'HAZARD':
+            labels = {
+                'HAZARD_ON_ROAD_CONSTRUCTION': ('Reported roadworks', 'construction'),
+                'HAZARD_ON_ROAD_LANE_CLOSED': ('Reported lane closure', 'incidents'),
+                'HAZARD_ON_ROAD_TRAFFIC_LIGHT_FAULT': ('Reported traffic signal fault', 'incidents'),
+                'HAZARD_ON_SHOULDER_CAR_STOPPED': ('Reported stopped vehicle', 'incidents'),
+                'HAZARD_ON_ROAD_OBJECT': ('Reported road obstruction', 'incidents'),
+                'HAZARD_ON_ROAD_POT_HOLE': ('Reported pothole', 'incidents'),
+            }
+            title, layer = labels.get(subtype, ('Reported road hazard', 'incidents'))
+        else:
+            continue
+        seen.add(alert_id)
+        street = _clean(props.get('street'), 80)
+        city = _clean(props.get('city'), 60)
+        description = _clean(props.get('reportDescription'), 120)
+        output.append(_feature(point, {
+            'key': f'cz:brno:waze:{alert_id}', 'layer': layer,
+            'title': title + (f' · {street}' if street else ''),
+            'detail': ' · '.join(part for part in (city, description, 'User report · unverified') if part),
+            'source': 'Waze · City of Brno · CC BY 4.0', 'source_url': BRNO_WAZE_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(published, dt.timezone.utc).strftime('%d %b %H:%M UTC'),
+        }))
+    return output
+
+
+def _brno_waze_alerts():
+    cutoff = int((time.time() - 6 * 3600) * 1000)
+    query = urllib.parse.urlencode({
+        'where': f'pubMillis >= {cutoff}',
+        'outFields': 'uuid,pubMillis,type,subtype,street,city,reportDescription',
+        'returnGeometry': 'true', 'outSR': '4326', 'resultRecordCount': 500,
+        'f': 'geojson',
+    })
+    return _parse_brno_waze_alerts(_get_json(BRNO_WAZE_URL + '?' + query))
+
+
 def _cz_ndic_time(value):
     try:
         return dt.datetime.strptime(str(value), '%d.%m.%Y %H:%M').replace(
@@ -4231,6 +4304,7 @@ _FETCHERS = {
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
         'ee_tarktee_restrictions': _estonia_restrictions,
         'cz_ndic_roads': _cz_ndic_roads,
+        'cz_brno_waze_alerts': _brno_waze_alerts,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
         'is_road_sensors': _iceland_sensors,
