@@ -21,6 +21,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 from zoneinfo import ZoneInfo
 
+from pyproj import Transformer
+
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 TII_TRAFFIC_BASE = 'https://iretg.carsprogram.org'
@@ -46,6 +48,11 @@ NGED_OUTAGES_URL = ('https://connecteddata.nationalgrid.co.uk/dataset/'
                     '292f788f-4339-455b-8cc0-153e14509d4d/download/power_outage_ext.csv')
 SSEN_OUTAGES_URL = 'https://external.distribution.prd.ssen.co.uk/opendataportal-prd/v4/api/getallfaults'
 WALES_RSS_BASE = 'https://traffic.wales/feeds'
+NATIONAL_HIGHWAYS_ROADWORKS_DATASET = ('https://www.data.gov.uk/dataset/'
+                                       '5b3267d8-4307-4eef-a9af-3a4c28224694/'
+                                       'highways_agency_planned_roadworks')
+NATIONAL_HIGHWAYS_ROADWORKS_CATALOG = ('https://ckan.publishing.service.gov.uk/api/3/action/'
+                                       'package_show?id=highways_agency_planned_roadworks')
 SRWR_BASE = 'https://downloads.srwr.scot/disruptions-export/api/v1'
 FRANCE_ROADS_URL = ('https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/'
                     'publicationsDIR/Evenementiel-DIR/grt/RRN/content.xml')
@@ -99,6 +106,7 @@ _CACHE = {
 }
 _STALE_SECONDS = 900
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
+_NH_ROADWORKS_CACHE = {'until': 0, 'url': '', 'published': '', 'activities': []}
 _FRANCE_SENSOR_REFERENCES = {'until': 0, 'points': {}}
 _GIPOD_TILE_CACHE = {}
 _GIPOD_TILE_LOCKS = {}
@@ -1235,6 +1243,83 @@ def _wales_feed(layer):
             'source_url': source_url, 'updated_at': item.findtext('pubDate') or '',
         }))
     return features
+
+
+def _parse_national_highways_roadworks(root, published):
+    if root.tag.rsplit('}', 1)[-1] != 'Report':
+        raise ValueError('National Highways roadworks publication is invalid')
+    transformer = Transformer.from_crs('EPSG:27700', 'EPSG:4326', always_xy=True)
+    activities = []
+    for work in root.findall('.//{*}HE_PLANNED_WORKS'):
+        event_id = work.get('NEW_EVENT_NUMBER', '')
+        position = work.find('.//{*}EASTNORTH[@CENTRE_EASTING]')
+        if (not re.fullmatch(r'\d{8}-\d{3}', event_id)
+                or work.get('STATUS') != 'Published' or position is None):
+            continue
+        try:
+            start = dt.datetime.strptime(work.get('SDATE', ''), '%d-%b-%Y %H:%M').replace(
+                tzinfo=ZoneInfo('Europe/London')).timestamp()
+            end = dt.datetime.strptime(work.get('EDATE', ''), '%d-%b-%Y %H:%M').replace(
+                tzinfo=ZoneInfo('Europe/London')).timestamp()
+            east = float(position.get('CENTRE_EASTING'))
+            north = float(position.get('CENTRE_NORTHING'))
+            if not (0 <= east <= 700_000 and 0 <= north <= 1_300_000 and end > start):
+                continue
+            lon, lat = transformer.transform(east, north)
+        except (TypeError, ValueError):
+            continue
+        if not (-9 <= lon <= 3 and 49 <= lat <= 59):
+            continue
+        road = work.find('.//{*}ROAD')
+        road_name = _clean(road.get('ROAD_NUMBER') if road is not None else '', 20)
+        description = _clean(work.get('DESCRIPTION'), 220)
+        delay = _clean(work.get('EXPDEL'), 50)
+        detail = ' · '.join(part for part in ('Scheduled, not confirmed live', description,
+                                              f'Expected delay: {delay}' if delay else '') if part)
+        activities.append((start, end, _feature([lon, lat], {
+            'key': f'uk:nh:roadworks:{event_id}', 'layer': 'construction',
+            'title': f'Scheduled roadworks · {road_name}' if road_name else 'Scheduled roadworks',
+            'detail': detail, 'source': 'National Highways · OGL v3.0',
+            'source_url': NATIONAL_HIGHWAYS_ROADWORKS_DATASET,
+            'updated_at': published,
+        })))
+    if not activities:
+        raise ValueError('National Highways roadworks publication has no usable records')
+    return activities
+
+
+def _national_highways_roadworks():
+    now = time.time()
+    if now >= _NH_ROADWORKS_CACHE['until']:
+        listing = _get_json(NATIONAL_HIGHWAYS_ROADWORKS_CATALOG)
+        if listing.get('success') is not True:
+            raise ValueError('National Highways roadworks catalog is unavailable')
+        resources = listing.get('result', {}).get('resources', [])
+        candidates = []
+        for resource in resources:
+            url = str(resource.get('url') or '')
+            if not re.fullmatch(
+                    r'https://s3\.eu-west-2\.amazonaws\.com/webdata\.nationalhighways\.co\.uk/'
+                    r'ha-roadworks/nh_roadworks_20\d{2}_\d{1,2}_\d{1,2}\.xml', url):
+                continue
+            published = _timestamp(resource.get('created'))
+            if published is not None:
+                candidates.append((published, url, resource.get('created')))
+        if not candidates:
+            raise ValueError('National Highways roadworks file is unavailable')
+        published, url, published_text = max(candidates)
+        if not -300 <= now - published <= 12 * 86400:
+            raise ValueError('National Highways roadworks file is stale')
+        if url != _NH_ROADWORKS_CACHE['url']:
+            request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+            with urllib.request.urlopen(request, timeout=25) as response:
+                body = response.read(5 * 1024 * 1024 + 1)
+            if len(body) > 5 * 1024 * 1024:
+                raise ValueError('National Highways roadworks file exceeded 5 MB')
+            activities = _parse_national_highways_roadworks(ET.fromstring(body), published_text)
+            _NH_ROADWORKS_CACHE.update(url=url, published=published_text, activities=activities)
+        _NH_ROADWORKS_CACHE['until'] = now + 6 * 3600
+    return [item for start, end, item in _NH_ROADWORKS_CACHE['activities'] if start <= now < end]
 
 
 def _parse_scotland_archive(body):
@@ -2775,6 +2860,7 @@ _FETCHERS = {
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
+        'uk_national_highways_roadworks': _national_highways_roadworks,
         'uk_ni_trafficwatch': _trafficwatch_roads,
         'uk_wales_incidents': lambda: _wales_feed('incidents'),
         'uk_wales_construction': lambda: _wales_feed('construction'),

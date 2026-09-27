@@ -812,6 +812,57 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['geometry']['coordinates'], [-0.1, 51.5])
 
+    def test_national_highways_weekly_works_are_scheduled_and_windowed(self):
+        source = b'''<Report xmlns="WebTeam"><HE_PLANNED_WORKS>
+          <HE_PLANNED_WORKS_Collection>
+            <HE_PLANNED_WORKS NEW_EVENT_NUMBER="00389408-001" STATUS="Published"
+              SDATE="26-SEP-2026 06:00" EDATE="28-SEP-2026 05:00"
+              DESCRIPTION="A38 lane restriction" EXPDEL="Slight (less than 10 mins)">
+              <EASTNORTH><EASTNORTH CENTRE_EASTING="413949" CENTRE_NORTHING="309566"/></EASTNORTH>
+              <ROADS><ROAD ROAD_NUMBER="A38"/></ROADS>
+            </HE_PLANNED_WORKS>
+            <HE_PLANNED_WORKS NEW_EVENT_NUMBER="00389409-001" STATUS="Published"
+              SDATE="28-SEP-2026 06:00" EDATE="29-SEP-2026 05:00"
+              DESCRIPTION="Future work"><EASTNORTH>
+              <EASTNORTH CENTRE_EASTING="413949" CENTRE_NORTHING="309566"/>
+              </EASTNORTH></HE_PLANNED_WORKS>
+          </HE_PLANNED_WORKS_Collection></HE_PLANNED_WORKS></Report>'''
+        previous = dict(feeds._NH_ROADWORKS_CACHE)
+        catalog = {'success': True, 'result': {'resources': [{
+            'url': ('https://s3.eu-west-2.amazonaws.com/webdata.nationalhighways.co.uk/'
+                    'ha-roadworks/nh_roadworks_2026_21_9.xml'),
+            'created': '2026-09-21T10:51:15',
+        }]}}
+        try:
+            feeds._NH_ROADWORKS_CACHE.update(until=0, url='', activities=[])
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds, '_get_json', return_value=catalog), \
+                    patch.object(feeds.urllib.request, 'urlopen', return_value=io.BytesIO(source)):
+                rows = feeds._national_highways_roadworks()
+            self.assertEqual(len(rows), 1)
+            self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], -1.7951, places=3)
+            self.assertAlmostEqual(rows[0]['geometry']['coordinates'][1], 52.6836, places=3)
+            self.assertIn('not confirmed live', rows[0]['properties']['detail'])
+            self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        finally:
+            feeds._NH_ROADWORKS_CACHE.update(previous)
+
+    def test_national_highways_rejects_old_catalog_file(self):
+        previous = dict(feeds._NH_ROADWORKS_CACHE)
+        try:
+            feeds._NH_ROADWORKS_CACHE['until'] = 0
+            catalog = {'success': True, 'result': {'resources': [{
+                'url': ('https://s3.eu-west-2.amazonaws.com/webdata.nationalhighways.co.uk/'
+                        'ha-roadworks/nh_roadworks_2026_1_1.xml'),
+                'created': '2026-01-01T10:00:00',
+            }]}}
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds, '_get_json', return_value=catalog):
+                with self.assertRaisesRegex(ValueError, 'stale'):
+                    feeds._national_highways_roadworks()
+        finally:
+            feeds._NH_ROADWORKS_CACHE.update(previous)
+
     def test_wales_roadworks_only_include_current_geolocated_works(self):
         local_now = dt.datetime.now(ZoneInfo('Europe/London'))
         start = (local_now - dt.timedelta(days=1)).strftime('%d/%m/%Y %H:%M')
