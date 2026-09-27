@@ -1205,6 +1205,99 @@ def _iceland_roads():
     return _parse_iceland_roads(_get_xml(ICELAND_ROADS_URL))
 
 
+ICELAND_MEASUREMENT_SITES_URL = ('https://datex.vegagerdin.is/measurementsitetablepublication3_1/'
+                                 'MeasurementSiteTablePublicationService/pullsnapshotdata')
+ICELAND_MEASUREMENTS_URL = ('https://datex.vegagerdin.is/measureddatapublication3_1/'
+                            'MeasureDataService/pullsnapshotdata')
+_ICELAND_SITES_CACHE = {'until': 0, 'root': None, 'lock': threading.Lock()}
+
+
+def _iceland_measurement_sites():
+    cache = _ICELAND_SITES_CACHE
+    with cache['lock']:
+        if time.time() >= cache['until'] or cache['root'] is None:
+            cache['root'] = _get_xml(ICELAND_MEASUREMENT_SITES_URL)
+            cache['until'] = time.time() + 6 * 3600
+        return cache['root']
+
+
+def _parse_iceland_sensors(sites_root, data_root, now=None):
+    now = time.time() if now is None else now
+    if sites_root.tag != 'messageContainer' or data_root.tag != 'messageContainer':
+        raise ValueError('Iceland measurement publication is invalid')
+    published_text = data_root.findtext('.//{*}publicationTime')
+    published = _timestamp(published_text)
+    if published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('Iceland measurement publication is stale')
+    sites = {}
+    for site in sites_root.findall('.//{*}measurementSite'):
+        site_id = site.get('id') or ''
+        if not re.fullmatch(r'IRCA_MP_\d+', site_id):
+            continue
+        coordinates = site.find('.//{*}coordinatesForDisplay')
+        if coordinates is None:
+            continue
+        try:
+            point = [float(coordinates.findtext('{*}longitude')),
+                     float(coordinates.findtext('{*}latitude'))]
+        except (TypeError, ValueError):
+            continue
+        if not (-25 <= point[0] <= -13 and 63 <= point[1] <= 67.5):
+            continue
+        name = _clean(site.findtext('.//{*}measurementSiteName/{*}values/{*}value'), 90)
+        sites[site_id] = point, name
+    if not sites:
+        raise ValueError('Iceland measurement sites are missing')
+    features = []
+    for observation in data_root.findall('.//{*}siteMeasurements'):
+        reference = observation.find('{*}measurementSiteReference')
+        site_id = reference.get('id') if reference is not None else None
+        if site_id not in sites:
+            continue
+        measured_text = observation.findtext('{*}measurementTimeDefault/{*}timeValue')
+        measured = _timestamp(measured_text)
+        if measured is None or not -300 <= now - measured <= 30 * 60:
+            continue
+        quantities = {row.get('index'): row for row in observation.findall('{*}physicalQuantity')
+                      if row.find('.//{*}physicalQuantityFault') is None}
+        def reading(index, path, low, high):
+            row = quantities.get(index)
+            if row is None:
+                return None
+            try:
+                value = float(row.findtext(path))
+            except (TypeError, ValueError):
+                return None
+            return value if math.isfinite(value) and low <= value <= high else None
+        flow = reading('9', './/{*}vehicleFlowPer10Minute/{*}vehicleFlowRate', 0, 5000)
+        air = reading('4', './/{*}airTemperature/{*}temperature', -80, 60)
+        road = reading('5', './/{*}roadSurfaceTemperature/{*}temperature', -80, 90)
+        details = []
+        if flow is not None:
+            details.append(f'{flow:,.0f} {"vehicle" if flow == 1 else "vehicles"} / 10 min')
+        if air is not None:
+            details.append(f'Air {air:.1f}°C')
+        if road is not None:
+            details.append(f'Road {road:.1f}°C')
+        if not details:
+            continue
+        point, name = sites[site_id]
+        features.append(_feature(point, {
+            'key': f'is:irca:sensor:{site_id}', 'layer': 'sensors',
+            'title': f'Roadside station · {name}' if name else 'Roadside station',
+            'detail': ' · '.join(details),
+            'source': 'Vegagerðin · CC BY 4.0', 'source_url': ICELAND_ROADS_SOURCE,
+            'updated_at': measured_text,
+        }))
+    return features
+
+
+def _iceland_sensors():
+    sites = _iceland_measurement_sites()
+    data = _get_xml(ICELAND_MEASUREMENTS_URL)
+    return _parse_iceland_sensors(sites, data)
+
+
 def _parse_fintraffic_sensors(kind, metadata, observations, now=None):
     if kind not in {'tms', 'weather'}:
         raise ValueError('Unknown Fintraffic sensor type')
@@ -3008,6 +3101,7 @@ _FETCHERS = {
         'fi_cameras': _fintraffic_cameras,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
+        'is_road_sensors': _iceland_sensors,
         'fi_traffic_sensors': lambda: _fintraffic_sensors('tms'),
         'fi_weather_sensors': lambda: _fintraffic_sensors('weather'),
         'es_dgt_cameras': _dgt_cameras,

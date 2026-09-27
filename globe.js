@@ -2037,7 +2037,8 @@
     try {
       const internationalSensorsVisible = type === 'sensors' && [
         { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } },
-        { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } }
+        { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } },
+        { bounds: { minLon: -25, maxLon: -13, minLat: 63, maxLat: 67.5 } }
       ].some(region => regionVisible(region, currentBounds()));
       const northAmericaSensorsVisible = type !== 'sensors' || regionVisible({ bounds: {
         minLon: -170, maxLon: -50, minLat: 15, maxLat: 72 } }, currentBounds());

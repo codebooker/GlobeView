@@ -59,6 +59,36 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_iceland_roads(root, NOW + 3600)
 
+    def test_iceland_sensors_join_locations_and_skip_faulty_or_old_readings(self):
+        stamp = lambda offset: dt.datetime.fromtimestamp(NOW + offset, dt.timezone.utc).isoformat()
+        sites = ET.fromstring('''<messageContainer><measurementSite id="IRCA_MP_1">
+          <measurementSiteName><values><value>Hellisheiði</value></values></measurementSiteName>
+          <coordinatesForDisplay><latitude>64.02</latitude><longitude>-21.34</longitude></coordinatesForDisplay>
+          </measurementSite><measurementSite id="IRCA_MP_2"><coordinatesForDisplay>
+          <latitude>64.03</latitude><longitude>-21.35</longitude></coordinatesForDisplay>
+          </measurementSite></messageContainer>''')
+        data = ET.fromstring(f'''<messageContainer><publicationTime>{stamp(-60)}</publicationTime>
+          <siteMeasurements><measurementSiteReference id="IRCA_MP_1"/>
+            <measurementTimeDefault><timeValue>{stamp(-300)}</timeValue></measurementTimeDefault>
+            <physicalQuantity index="9"><vehicleFlowPer10Minute><vehicleFlowRate>12</vehicleFlowRate>
+              </vehicleFlowPer10Minute></physicalQuantity>
+            <physicalQuantity index="4"><airTemperature><temperature>6.2</temperature>
+              </airTemperature></physicalQuantity>
+            <physicalQuantity index="5"><physicalQuantityFault>sensorFault</physicalQuantityFault>
+              <roadSurfaceTemperature><temperature>4.0</temperature></roadSurfaceTemperature>
+              </physicalQuantity></siteMeasurements>
+          <siteMeasurements><measurementSiteReference id="IRCA_MP_2"/>
+            <measurementTimeDefault><timeValue>{stamp(-3600)}</timeValue></measurementTimeDefault>
+            <physicalQuantity index="4"><airTemperature><temperature>3.0</temperature>
+              </airTemperature></physicalQuantity></siteMeasurements>
+          </messageContainer>''')
+        rows = feeds._parse_iceland_sensors(sites, data, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['detail'], '12 vehicles / 10 min · Air 6.2°C')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [-21.34, 64.02])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_iceland_sensors(sites, data, NOW + 3600)
+
 
     def test_tii_cameras_only_publish_active_public_stills(self):
         rows = [
