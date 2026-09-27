@@ -1352,7 +1352,7 @@
       features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && /\b(alert|closed|warning)\b/i.test(expando.message || '') }));
     }
     const international = await internationalPromise;
-    if (controller.signal.aborted || !enabled[type]) return;
+    if (controller.signal.aborted || requests.get(type) !== controller || !enabled[type]) return;
     for (const item of international?.features || []) {
       const [lon, lat] = item.geometry?.coordinates || [];
       if (!validCoordinate(lat, lon) || !inBounds(lat, lon, bounds)) continue;
@@ -1373,8 +1373,14 @@
       features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && /warning/i.test(p.title || '') }));
     }
     if (international?.sourceErrors?.length) console.warn('Some international road feeds are unavailable:', international.sourceErrors);
+    if ((failures || (internationalVisible && !international)) && !features.length) {
+      // Keep the last working markers when an upstream request briefly fails.
+      // Retry sooner than the normal refresh without starting a request every tick.
+      fetchedAt.set(type, Date.now() - POINT[type].refreshMs + 30000);
+      showStatus(`${POINT[type].label} feed is temporarily unavailable. Retrying.`, true);
+      return;
+    }
     setPoints(type, features, records);
-    if ((failures || (internationalVisible && !international)) && !features.length) showStatus(`${POINT[type].label} feeds are unavailable here.`, true);
   }
 
   const GOV_CALLSIGNS = /^(CBP|FED|DOJ|DEA|FBI|ATF|FAMS|HSI|ALEA|GSP|MHP|FHP|FLHP|OPD|OCSO|PCSO|HCSO|BCSO|SCSO|LCSO|MCSO|FLPD|OIPD|SHERIFF|TROOPER|POLICE|PATROL|RESCUE|JOLLY|PEDRO|KING|REACH|EVAC|MEDEVAC|DUSTOFF)/i;
