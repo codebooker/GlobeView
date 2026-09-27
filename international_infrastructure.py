@@ -1298,6 +1298,106 @@ def _iceland_sensors():
     return _parse_iceland_sensors(sites, data)
 
 
+ICELAND_ROAD_CONDITIONS_URL = ('https://datex.vegagerdin.is/situationpublication3_1/'
+                                'RoadConditionService/pullsnapshotdata')
+ICELAND_ROAD_SECTIONS_URL = ('https://datex.vegagerdin.is/predefinedlocationspublication3_1/'
+                              'PredefinedLocationsPublicationService/pullsnapshotdata')
+_ICELAND_SECTIONS_CACHE = {'until': 0, 'root': None, 'lock': threading.Lock()}
+
+
+def _iceland_road_sections():
+    cache = _ICELAND_SECTIONS_CACHE
+    with cache['lock']:
+        if time.time() >= cache['until'] or cache['root'] is None:
+            cache['root'] = _get_xml(ICELAND_ROAD_SECTIONS_URL, max_bytes=6 * 1024 * 1024)
+            cache['until'] = time.time() + 12 * 3600
+        return cache['root']
+
+
+def _parse_iceland_road_conditions(sections_root, data_root, now=None):
+    now = time.time() if now is None else now
+    if sections_root.tag != 'messageContainer' or data_root.tag != 'messageContainer':
+        raise ValueError('Iceland road conditions publication is invalid')
+    published_text = data_root.findtext('.//{*}publicationTime')
+    published = _timestamp(published_text)
+    if published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('Iceland road conditions publication is stale')
+    transformer = Transformer.from_crs('EPSG:3057', 'EPSG:4326', always_xy=True)
+    sections = {}
+    for section in sections_root.findall('.//{*}predefinedLocationReference'):
+        section_id = section.get('id') or ''
+        if not re.fullmatch(r'IRCA_PredefinedLocation_segments_\d+', section_id):
+            continue
+        positions = []
+        for line in section.findall('.//{*}gmlLineString'):
+            if not (line.get('srsName') or '').endswith('#3057'):
+                continue
+            try:
+                values = [float(value) for value in (line.findtext('{*}posList') or '').split()]
+            except ValueError:
+                continue
+            if len(values) < 4 or len(values) % 2:
+                continue
+            positions.extend(zip(values[::2], values[1::2]))
+        if not positions:
+            continue
+        x = sum(point[0] for point in positions) / len(positions)
+        y = sum(point[1] for point in positions) / len(positions)
+        lon, lat = transformer.transform(x, y)
+        if not (math.isfinite(lon) and math.isfinite(lat) and -25 <= lon <= -13 and 63 <= lat <= 67.5):
+            continue
+        name = _clean(section.findtext('{*}predefinedLocationGroupName/{*}values/{*}value')
+                      or section.findtext('{*}predefinedLocationName/{*}values/{*}value'), 100)
+        sections[section_id] = [lon, lat], name
+    if not sections:
+        raise ValueError('Iceland road condition sections are missing')
+    labels = {'roadClosed': 'Road restriction',
+              'closedPermanentlyForTheWinter': 'Winter road closure',
+              'fog': 'Fog', 'slushOnRoad': 'Slush on road',
+              'looseChippings': 'Loose chippings'}
+    features = []
+    for record in data_root.findall('.//{*}situationRecord'):
+        record_id = record.get('id') or ''
+        if not re.fullmatch(r'IRCA_ROADCONDITIONS_\d+_\d+', record_id):
+            continue
+        reference = record.find('.//{*}predefinedLocationReference')
+        section_id = reference.get('id') if reference is not None else None
+        if section_id not in sections:
+            continue
+        status = (record.findtext('.//{*}validityStatus') or '').strip()
+        start = _timestamp(record.findtext('.//{*}overallStartTime'))
+        end = _timestamp(record.findtext('.//{*}overallEndTime'))
+        if (status not in {'active', 'definedByValidityTimeSpec'}
+                or (status == 'definedByValidityTimeSpec' and start is None)
+                or (start and start > now) or (end and end <= now)):
+            continue
+        condition = next((record.findtext('.//{*}' + key) for key in (
+            'roadOrCarriagewayOrLaneManagementType', 'weatherRelatedRoadConditionType',
+            'poorEnvironmentType', 'nonWeatherRelatedRoadConditionType')
+            if record.findtext('.//{*}' + key) in labels), None)
+        if condition is None:
+            continue
+        comments = record.findall('.//{*}generalPublicComment/{*}comment/{*}values/{*}value')
+        comment = next((_clean(item.text, 180) for item in comments if item.get('lang') == 'en'), '')
+        if not comment:
+            comment = next((_clean(item.text, 180) for item in comments), '')
+        point, name = sections[section_id]
+        features.append(_feature(point, {
+            'key': f'is:irca:condition:{record_id}', 'layer': 'incidents',
+            'title': f'{labels[condition]} · {name}' if name else labels[condition],
+            'detail': ' · '.join(part for part in (comment, 'Approximate section location') if part),
+            'source': 'Vegagerðin · CC BY 4.0', 'source_url': ICELAND_ROADS_SOURCE,
+            'updated_at': published_text,
+        }))
+    return features
+
+
+def _iceland_road_conditions():
+    sections = _iceland_road_sections()
+    conditions = _get_xml(ICELAND_ROAD_CONDITIONS_URL)
+    return _parse_iceland_road_conditions(sections, conditions)
+
+
 def _parse_fintraffic_sensors(kind, metadata, observations, now=None):
     if kind not in {'tms', 'weather'}:
         raise ValueError('Unknown Fintraffic sensor type')
@@ -3102,6 +3202,7 @@ _FETCHERS = {
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
         'is_road_sensors': _iceland_sensors,
+        'is_road_conditions': _iceland_road_conditions,
         'fi_traffic_sensors': lambda: _fintraffic_sensors('tms'),
         'fi_weather_sensors': lambda: _fintraffic_sensors('weather'),
         'es_dgt_cameras': _dgt_cameras,

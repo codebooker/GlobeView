@@ -89,6 +89,35 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_iceland_sensors(sites, data, NOW + 3600)
 
+    def test_iceland_road_conditions_join_current_sections_only(self):
+        stamp = lambda offset: dt.datetime.fromtimestamp(NOW + offset, dt.timezone.utc).isoformat()
+        x, y = feeds.Transformer.from_crs('EPSG:4326', 'EPSG:3057', always_xy=True).transform(-21.34, 64.02)
+        sections = ET.fromstring(f'''<messageContainer><predefinedLocationReference
+          id="IRCA_PredefinedLocation_segments_123">
+          <predefinedLocationGroupName><values><value>Hellisheiði</value></values>
+          </predefinedLocationGroupName><gmlLineString srsName="http://www.opengis.net/gml/srs/epsg.xml#3057">
+          <posList>{x} {y} {x + 100} {y + 100}</posList></gmlLineString>
+          </predefinedLocationReference></messageContainer>''')
+        conditions = ET.fromstring(f'''<messageContainer><publicationTime>{stamp(-60)}</publicationTime>
+          <situationRecord id="IRCA_ROADCONDITIONS_123_1"><validityStatus>
+          definedByValidityTimeSpec</validityStatus><overallStartTime>{stamp(-300)}</overallStartTime>
+          <predefinedLocationReference id="IRCA_PredefinedLocation_segments_123"/>
+          <roadOrCarriagewayOrLaneManagementType>roadClosed</roadOrCarriagewayOrLaneManagementType>
+          <generalPublicComment><comment><values><value lang="is">Fært fjallabílum</value>
+          <value lang="en">Mountain vehicles</value></values></comment></generalPublicComment>
+          </situationRecord><situationRecord id="IRCA_ROADCONDITIONS_124_1">
+          <validityStatus>definedByValidityTimeSpec</validityStatus>
+          <overallStartTime>{stamp(-600)}</overallStartTime><overallEndTime>{stamp(-1)}</overallEndTime>
+          <predefinedLocationReference id="IRCA_PredefinedLocation_segments_123"/>
+          <poorEnvironmentType>fog</poorEnvironmentType></situationRecord></messageContainer>''')
+        rows = feeds._parse_iceland_road_conditions(sections, conditions, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['title'], 'Road restriction · Hellisheiði')
+        self.assertIn('Mountain vehicles', rows[0]['properties']['detail'])
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], -21.34, places=2)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_iceland_road_conditions(sections, conditions, NOW + 3600)
+
 
     def test_tii_cameras_only_publish_active_public_stills(self):
         rows = [
