@@ -17,7 +17,7 @@ from cyber_feeds import cyber_snapshot
 from international_emergency import international_emergency_snapshot
 from international_infrastructure import (road_snapshot as international_road_snapshot,
                                           power_snapshot as international_power_snapshot,
-                                          zurich_sensor_sample)
+                                          zurich_sensor_sample, northern_ireland_camera_snapshot)
 from radio_catalog import catalog_snapshot as radio_catalog_snapshot, record_station_click
 from cyclone_guidance import guidance_snapshot as cyclone_guidance_snapshot
 from trip_routing import RouteBusy, RouteNotFound, RouteTooLong, RouteUnavailable, parse_point as parse_route_point, route_snapshot
@@ -1000,6 +1000,7 @@ RATE_LIMIT_WINDOW = 60
 RATE_LIMITS = {
     '/stream/': 240,
     '/camera-snapshot/': 180,
+    '/northern-ireland-camera/': 180,
     '/511/': 180,
     '/fl511/': 180,
     '/tile': 1200,
@@ -19127,6 +19128,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_camera_snapshot(parsed)
         elif parsed.path.startswith('/catalonia-camera/'):
             self._handle_catalonia_camera(parsed)
+        elif parsed.path.startswith('/northern-ireland-camera/'):
+            self._handle_northern_ireland_camera(parsed)
         elif parsed.path.startswith('/stream/'):
             self._handle_stream_proxy(parsed)
         elif parsed.path == '/tile':
@@ -19504,6 +19507,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                               extra_headers={'X-GlobeView-Cache': cache_status})
         except Exception as exc:
             self._log_exception('catalonia-camera', exc)
+            self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_northern_ireland_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/northern-ireland-camera/')
+        if not re.fullmatch(r'\d{1,5}', camera_id):
+            self.send_error(400, 'Invalid camera ID'); return
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'northern-ireland-camera:v1:{camera_id}',
+                lambda: northern_ireland_camera_snapshot(camera_id),
+                ttl=60, stale_ttl=180, persist=False, wait_timeout=20)
+            self._write_bytes(200, content, content_type,
+                              cache_control='public, max-age=30, stale-while-revalidate=60',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except FileNotFoundError:
+            self.send_error(404, 'Snapshot unavailable')
+        except Exception as exc:
+            self._log_exception('northern-ireland-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
 
     def _handle_registry(self, parsed):

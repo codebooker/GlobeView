@@ -10,6 +10,7 @@ import hashlib
 import html
 import io
 import json
+import http.cookiejar
 import math
 import re
 import threading
@@ -34,6 +35,8 @@ SOUTH_TYROL_ROADS_URL = ('https://datex.api.opendatahub.com/datex/2/'
 SOUTH_TYROL_SOURCE = 'https://docs.opendatahub.com/use-data/datexii-api/reference/'
 FINTRAFFIC_CAMERAS_SOURCE = 'https://www.digitraffic.fi/en/road-traffic/'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
+TRAFFICWATCH_BASE = 'https://www.trafficwatchni.com/twni/'
+TRAFFICWATCH_SOURCE = 'https://www.trafficwatchni.com/twni/cameras'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
 NPG_BASE = 'https://northernpowergrid.opendatasoft.com'
 NGED_OUTAGES_URL = ('https://connecteddata.nationalgrid.co.uk/dataset/'
@@ -231,6 +234,143 @@ def _point(geometry):
 
 def _feature(lonlat, properties):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': lonlat}, 'properties': properties}
+
+
+def _trafficwatch_map_data():
+    """One shared read of the DfI public map, including its session CSRF token."""
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    request = urllib.request.Request(TRAFFICWATCH_SOURCE + '?viewby=mapCheck&d=CCTV_CAMERAS',
+                                     headers={'User-Agent': 'GlobeView/1.0 (public map feed reader)'})
+    with opener.open(request, timeout=15) as response:
+        page = response.read(500_001)
+    if len(page) > 500_000:
+        raise ValueError('TrafficWatchNI map page exceeded size limit')
+    page = page.decode('utf-8')
+    token = re.search(r'<meta name="_csrf" content="([A-Za-z0-9_-]{20,200})"', page)
+    header = re.search(r'<meta name="_csrf_header" content="([A-Za-z0-9_-]{3,40})"', page)
+    if not token or not header or header.group(1) != 'X-CSRF-TOKEN':
+        raise ValueError('TrafficWatchNI CSRF token unavailable')
+    payload = urllib.parse.urlencode({'selectedTypes': 'CCTV_CAMERAS,ROAD_WORKS,MESSAGE_SIGNS',
+                                      'roadworksEndDateFilter': ''}).encode()
+    request = urllib.request.Request(TRAFFICWATCH_BASE + 'map/mapData', data=payload,
+                                     headers={header.group(1): token.group(1),
+                                              'Referer': TRAFFICWATCH_SOURCE,
+                                              'User-Agent': 'GlobeView/1.0 (public map feed reader)'})
+    with opener.open(request, timeout=15) as response:
+        body = response.read(1_500_001)
+    if len(body) > 1_500_000:
+        raise ValueError('TrafficWatchNI map data exceeded size limit')
+    result = json.loads(body)
+    data = result.get('mapData') if isinstance(result, dict) else None
+    if not isinstance(data, dict) or any(not isinstance(data.get(key), list) for key in
+                                          ('CCTV_CAMERAS', 'ROAD_WORKS', 'MESSAGE_SIGNS')):
+        raise ValueError('TrafficWatchNI map data is incomplete')
+    return data
+
+
+def _trafficwatch_datetime(value):
+    try:
+        return dt.datetime.strptime(value, '%a, %d %b %Y %H:%M').replace(
+            tzinfo=ZoneInfo('Europe/London')).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _trafficwatch_date(value):
+    try:
+        return dt.datetime.strptime(value, '%a, %d %b %Y').date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_trafficwatch(data, now=None):
+    now = time.time() if now is None else now
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/London')).date()
+    features = []
+    for row in data['CCTV_CAMERAS']:
+        if not isinstance(row, dict):
+            continue
+        camera_id = str(row.get('id') or '')
+        point = _point({'coordinates': [row.get('longitude'), row.get('latitude')]})
+        if not camera_id.isdecimal() or not point or not (54 <= point[1] <= 55.5 and -8.3 <= point[0] <= -5.3):
+            continue
+        features.append(_feature(point, {
+            'key': f'uk:ni:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(row.get('summary') or 'Traffic camera', 100),
+            'detail': 'Latest available still',
+            'snapshot_url': f'/northern-ireland-camera/{camera_id}', 'snapshot_refresh_ms': 60000,
+            'source': 'DfI Traffic Information and Control Centre · OGL',
+            'source_url': TRAFFICWATCH_BASE + f'cameras/static?id={camera_id}',
+        }))
+    for row in data['ROAD_WORKS']:
+        if not isinstance(row, dict):
+            continue
+        details = row.get('details') or {}
+        road_id = str(row.get('id') or '')
+        point = _point({'coordinates': [row.get('longitude'), row.get('latitude')]})
+        start, end = _trafficwatch_date(details.get('start')), _trafficwatch_date(details.get('end'))
+        if not road_id.isdecimal() or not point or start is None or end is None or not start <= today <= end:
+            continue
+        features.append(_feature(point, {
+            'key': f'uk:ni:roadworks:{road_id}', 'layer': 'construction',
+            'title': _clean(row.get('summary') or 'Roadworks', 125),
+            'detail': _clean(' · '.join(str(value or '') for value in
+                                      (details.get('locationSummary'), details.get('description'))), 280),
+            'source': 'DfI Traffic Information and Control Centre · OGL',
+            'source_url': TRAFFICWATCH_SOURCE,
+            'updated_at': row.get('lastUpdated') or '',
+        }))
+    for row in data['MESSAGE_SIGNS']:
+        if not isinstance(row, dict):
+            continue
+        point = _point({'coordinates': [row.get('longitude'), row.get('latitude')]})
+        details = row.get('details') or {}
+        message = _clean(details.get('message'), 180)
+        published = _trafficwatch_datetime(row.get('lastUpdated'))
+        if not point or not (54 <= point[1] <= 55.5 and -8.3 <= point[0] <= -5.3):
+            continue  # The same map also carries signs in the Republic of Ireland.
+        if not message or message.casefold() == 'sign not set' or published is None or not -300 <= now - published <= 1800:
+            continue
+        name = _clean(row.get('summary'), 80)
+        if not name:
+            continue
+        features.append(_feature(point, {
+            'key': f'uk:ni:sign:{name}:{point[0]:.5f}:{point[1]:.5f}', 'layer': 'signs',
+            'title': f'{name} · {message}', 'detail': message,
+            'source': 'DfI Traffic Information and Control Centre · OGL',
+            'source_url': TRAFFICWATCH_SOURCE,
+            'updated_at': row.get('lastUpdated') or '',
+        }))
+    return features
+
+
+def _trafficwatch_roads():
+    return _parse_trafficwatch(_trafficwatch_map_data())
+
+
+def northern_ireland_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{1,5}', str(camera_id)):
+        raise ValueError('Invalid TrafficWatchNI camera ID')
+    request = urllib.request.Request(TRAFFICWATCH_BASE + f'cameras/cctvMapPopup?id={camera_id}',
+                                     headers={'User-Agent': 'GlobeView/1.0 (public camera viewer)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        page = response.read(20_001)
+    if len(page) > 20_000:
+        raise ValueError('TrafficWatchNI camera page exceeded size limit')
+    match = re.search(r'<img[^>]+class="[^"]*cctvImage[^"]*"[^>]+src="(https://cctv\.trafficwatchni\.com/[A-Za-z0-9_-]+\.jpg\?cache=\d+)"',
+                      page.decode('utf-8'))
+    if not match:
+        raise FileNotFoundError('Camera still unavailable')
+    image_request = urllib.request.Request(match.group(1), headers={
+        'User-Agent': 'Mozilla/5.0', 'Referer': TRAFFICWATCH_SOURCE})
+    with urllib.request.urlopen(image_request, timeout=15) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'cctv.trafficwatchni.com':
+            raise ValueError('Unexpected camera redirect')
+        image = response.read(2_000_001)
+    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('TrafficWatchNI returned no JPEG still')
+    return image, 'image/jpeg'
 
 
 def _madrid_xml(filename):
@@ -2294,6 +2434,7 @@ _FETCHERS = {
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
+        'uk_ni_trafficwatch': _trafficwatch_roads,
         'uk_wales_incidents': lambda: _wales_feed('incidents'),
         'uk_wales_construction': lambda: _wales_feed('construction'),
         'uk_scotland_construction': _scotland_roadworks,

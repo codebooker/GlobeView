@@ -16,6 +16,42 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_trafficwatch_ni_maps_cameras_current_works_and_readable_signs(self):
+        now = dt.datetime(2026, 9, 27, 11, tzinfo=dt.timezone.utc).timestamp()
+        data = {
+            'CCTV_CAMERAS': [
+                {'id': '155', 'latitude': 54.6, 'longitude': -5.93, 'summary': 'Peters Hill'},
+                {'id': 'bad', 'latitude': 54.6, 'longitude': -5.93, 'summary': 'Invalid'},
+            ],
+            'ROAD_WORKS': [
+                {'id': '123', 'latitude': 54.7, 'longitude': -6.1, 'summary': 'Lane closure',
+                 'details': {'start': 'Sat, 26 Sep 2026', 'end': 'Mon, 28 Sep 2026',
+                             'description': '<p>Bridge repairs</p>'}},
+                {'id': '124', 'latitude': 54.7, 'longitude': -6.1, 'summary': 'Future works',
+                 'details': {'start': 'Mon, 28 Sep 2026', 'end': 'Tue, 29 Sep 2026'}},
+            ],
+            'MESSAGE_SIGNS': [
+                {'latitude': 54.6, 'longitude': -5.9, 'summary': 'M2/0101M',
+                 'lastUpdated': 'Sun, 27 Sep 2026 11:55', 'details': {'message': 'SLOW DOWN\n'}},
+                {'latitude': 54.6, 'longitude': -5.9, 'summary': 'M2/0102M',
+                 'lastUpdated': 'Sun, 27 Sep 2026 11:55', 'details': {'message': 'Sign not set'}},
+                {'latitude': 54.6, 'longitude': -5.9, 'summary': 'M2/0103M',
+                 'lastUpdated': 'Sun, 27 Sep 2026 10:00', 'details': {'message': 'OLD TEXT'}},
+                {'latitude': 53.3, 'longitude': -6.2, 'summary': 'M50 Dublin',
+                 'lastUpdated': 'Sun, 27 Sep 2026 11:55', 'details': {'message': 'ROI SIGN'}},
+            ],
+        }
+        rows = feeds._parse_trafficwatch(data, now)
+        self.assertEqual([row['properties']['layer'] for row in rows],
+                         ['cameras', 'construction', 'signs'])
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/northern-ireland-camera/155')
+        self.assertIn('Bridge repairs', rows[1]['properties']['detail'])
+        self.assertEqual(rows[2]['properties']['detail'], 'SLOW DOWN')
+
+    def test_trafficwatch_camera_id_is_validated_before_fetch(self):
+        with self.assertRaises(ValueError):
+            feeds.northern_ireland_camera_snapshot('https://example.org/')
+
     def test_south_tyrol_roads_require_current_publication_and_active_record(self):
         now = dt.datetime(2026, 9, 27, 11, 30, tzinfo=dt.timezone.utc).timestamp()
         root = ET.fromstring('''<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0"
