@@ -43,6 +43,10 @@ GIPOD_SOURCE = ('https://www.vlaanderen.be/datavindplaats/catalogus/'
                 'geplande-innames-en-mobiliteitshinder-publieke-geo-informatie-uit-gipod')
 NDW_BASE = 'https://opendata.ndw.nu/'
 NDW_SOURCE = 'https://docs.ndw.nu/producten/werkzaamhedenenevenementen/'
+DGT_BASE = 'https://nap.dgt.es/datex2/v3/dgt/'
+DGT_CAMERAS_SOURCE = 'https://nap.dgt.es/es/dataset/camaras-dgt-datex2-v3-7'
+DGT_INCIDENTS_SOURCE = 'https://nap.dgt.es/es/dataset/incidencias-dgt-datex2-v3-7'
+DGT_SIGNS_SOURCE = 'https://nap.dgt.es/es/dataset/paneles-dgt-tiempo-real-datex2-v3-7'
 AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
@@ -79,6 +83,8 @@ _GIPOD_TILE_LOCKS = {}
 _GIPOD_CACHE_LOCK = threading.Lock()
 _AUTOBAHN_CACHE = {service: {'until': 0, 'roads': {}, 'lock': threading.Lock()}
                    for service in ('roadworks', 'warning', 'closure')}
+_DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Lock()}
+                       for service in ('cameras', 'sign_locations')}
 
 
 def _get_json(url, fintraffic=False):
@@ -118,6 +124,34 @@ def _get_gzip_xml(url, max_compressed=4 * 1024 * 1024, max_uncompressed=12 * 102
     if len(body) > max_uncompressed:
         raise ValueError('Expanded road feed exceeded size limit')
     return ET.fromstring(body)
+
+
+def _get_dgt_xml(url):
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)',
+        'Accept': 'application/xml', 'Accept-Encoding': 'gzip'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        compressed = response.headers.get('Content-Encoding') == 'gzip'
+        body = response.read((2 if compressed else 8) * 1024 * 1024 + 1)
+    if len(body) > (2 if compressed else 8) * 1024 * 1024:
+        raise ValueError('DGT publication exceeded size limit')
+    if compressed:
+        with gzip.GzipFile(fileobj=io.BytesIO(body)) as archive:
+            body = archive.read(8 * 1024 * 1024 + 1)
+        if len(body) > 8 * 1024 * 1024:
+            raise ValueError('DGT publication exceeded expanded size limit')
+    return ET.fromstring(body)
+
+
+def _dgt_static_xml(service, url):
+    cache = _DGT_METADATA_CACHE[service]
+    with cache['lock']:
+        now = time.time()
+        if cache['root'] is not None and now < cache['until']:
+            return cache['root']
+        root = _get_dgt_xml(url)
+        cache.update({'root': root, 'until': now + 3600})
+        return root
 
 
 def _get_csv(url):
@@ -1695,12 +1729,175 @@ def _autobahn_service(service):
         return [feature for rows in cache['roads'].values() for feature in rows]
 
 
+def _dgt_publication_time(root, max_age, now=None):
+    now = time.time() if now is None else now
+    if root.tag.rsplit('}', 1)[-1] != 'payload':
+        raise ValueError('DGT publication is invalid')
+    published_text = root.findtext('{*}publicationTime')
+    published = _timestamp(published_text)
+    if published is None or not -600 <= now - published <= max_age:
+        raise ValueError('DGT publication is stale')
+    return published_text
+
+
+def _dgt_point(node):
+    coordinates = node.find('.//{*}pointCoordinates')
+    if coordinates is None:
+        return None
+    try:
+        lat = float(coordinates.findtext('{*}latitude'))
+        lon = float(coordinates.findtext('{*}longitude'))
+    except (TypeError, ValueError):
+        return None
+    return [lon, lat] if -19 <= lon <= 5 and 27 <= lat <= 45 else None
+
+
+def _dgt_devices(root, device_type):
+    result = {}
+    for device in root.findall('{*}device'):
+        device_id = device.get('id')
+        if (not device_id or not device_id.isdigit()
+                or device.findtext('{*}typeOfDevice') != device_type):
+            continue
+        point = _dgt_point(device)
+        if point:
+            result[device_id] = (device, point)
+    return result
+
+
+def _parse_dgt_cameras(root, now=None):
+    published = _dgt_publication_time(root, 3 * 3600, now)
+    features = []
+    for device_id, (device, point) in _dgt_devices(root, 'camera').items():
+        image_url = device.findtext('.//{*}deviceUrl') or ''
+        if not re.fullmatch(r'https://etraffic\.dgt\.es/camarasEtraffic/\d+\.jpg', image_url):
+            continue
+        road = _clean(device.findtext('.//{*}roadName'), 40)
+        province = _clean(device.findtext('.//{*}province'), 55)
+        km = _clean(device.findtext('.//{*}kilometerPoint'), 16)
+        features.append(_feature(point, {
+            'key': f'es:dgt:camera:{device_id}', 'layer': 'cameras',
+            'title': f'Traffic camera · {road}' if road else 'Traffic camera',
+            'detail': ' · '.join(part for part in (f'km {km}' if km else '', province,
+                                              'Latest available still') if part),
+            'snapshot_url': image_url, 'snapshot_refresh_ms': 120000,
+            'source': 'Spain DGT · CC BY', 'source_url': DGT_CAMERAS_SOURCE,
+            'updated_at': published,
+        }))
+    if not features:
+        raise ValueError('DGT camera catalog contains no usable images')
+    return features
+
+
+def _dgt_cameras():
+    root = _dgt_static_xml('cameras', DGT_BASE + 'DevicePublication/camaras_datex2_v37.xml')
+    return _parse_dgt_cameras(root)
+
+
+def _parse_dgt_incidents(root, now=None):
+    now = time.time() if now is None else now
+    published = _dgt_publication_time(root, 20 * 60, now)
+    features = []
+    situations = root.findall('{*}situation')
+    if not situations:
+        raise ValueError('DGT situation publication has no situations')
+    causes = {'roadMaintenance': 'Roadworks', 'accident': 'Crash',
+              'vehicleObstruction': 'Vehicle obstruction',
+              'environmentalObstruction': 'Road obstruction',
+              'infrastructureDamageObstruction': 'Damaged road infrastructure',
+              'abnormalTraffic': 'Traffic disruption', 'publicEvent': 'Public event'}
+    for situation in situations:
+        for record in situation.findall('{*}situationRecord'):
+            record_id = record.get('id')
+            if not record_id or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}', record_id):
+                continue
+            status = record.findtext('.//{*}validityStatus')
+            start = _timestamp(record.findtext('.//{*}overallStartTime'))
+            end = _timestamp(record.findtext('.//{*}overallEndTime'))
+            if status != 'active' or (start is not None and start > now + 600) or (end is not None and end <= now):
+                continue
+            point = _dgt_point(record)
+            if not point:
+                continue
+            cause = record.findtext('.//{*}causeType') or ''
+            kind = 'construction' if cause == 'roadMaintenance' or record.find('.//{*}roadMaintenanceType') is not None else 'incidents'
+            label = causes.get(cause, 'Road incident')
+            road = _clean(record.findtext('.//{*}roadName'), 40)
+            municipality = _clean(record.findtext('.//{*}municipality'), 70)
+            province = _clean(record.findtext('.//{*}province'), 55)
+            management = _clean(record.findtext('.//{*}roadOrCarriagewayOrLaneManagementType'), 65)
+            management = re.sub(r'([a-z])([A-Z])', r'\1 \2', management).replace('_', ' ').lower()
+            detail = ' · '.join(part for part in (management, municipality, province) if part)
+            features.append(_feature(point, {
+                'key': f'es:dgt:incident:{record_id}', 'layer': kind,
+                'title': f'{label} · {road}' if road else label, 'detail': detail,
+                'source': 'Spain DGT · CC BY', 'source_url': DGT_INCIDENTS_SOURCE,
+                'updated_at': published,
+            }))
+    return features
+
+
+def _dgt_incidents():
+    root = _get_dgt_xml(DGT_BASE + 'SituationPublication/datex2_v37.xml')
+    return _parse_dgt_incidents(root)
+
+
+def _parse_dgt_signs(locations, statuses, now=None):
+    now = time.time() if now is None else now
+    _dgt_publication_time(locations, 3 * 3600, now)
+    _dgt_publication_time(statuses, 20 * 60, now)
+    devices = _dgt_devices(locations, 'vms')
+    features = []
+    for controller in statuses.findall('{*}vmsControllerStatus'):
+        reference = controller.find('.//{*}vmsControllerReference')
+        device_id = reference.get('id') if reference is not None else None
+        if device_id not in devices:
+            continue
+        messages = []
+        for message in controller.iter():
+            if message.tag.rsplit('}', 1)[-1] != 'vmsMessage':
+                continue
+            set_text = message.findtext('{*}timeLastSet')
+            set_at = _timestamp(set_text)
+            if set_at is None or not -600 <= now - set_at <= 24 * 3600:
+                continue
+            lines = [_clean(line.text, 120) for line in message.iter()
+                     if line.tag.rsplit('}', 1)[-1] == 'textLine' and line.text and line.text.strip()]
+            text = ' / '.join(dict.fromkeys(line for line in lines if line))
+            if text and re.search(r'[A-Za-zÀ-ÿ0-9]', text):
+                messages.append((set_at, set_text, text))
+        if not messages:
+            continue
+        device, point = devices[device_id]
+        road = _clean(device.findtext('.//{*}roadName'), 40)
+        province = _clean(device.findtext('.//{*}province'), 55)
+        latest = max(messages, key=lambda item: item[0])
+        message_text = ' / '.join(dict.fromkeys(item[2] for item in messages))[:280]
+        features.append(_feature(point, {
+            'key': f'es:dgt:sign:{device_id}', 'layer': 'signs',
+            'title': f'Road message sign · {road}' if road else 'Road message sign',
+            'detail': ' · '.join(part for part in (message_text, province) if part),
+            'source': 'Spain DGT · CC BY', 'source_url': DGT_SIGNS_SOURCE,
+            'updated_at': latest[1],
+        }))
+    return features
+
+
+def _dgt_signs():
+    locations = _dgt_static_xml('sign_locations', DGT_BASE + 'DevicePublication/vms_datex2_v37.xml')
+    statuses = _get_dgt_xml(DGT_BASE + 'VmsPublication/datex2_v37.xml')
+    return _parse_dgt_signs(locations, statuses)
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
         'fi_traffic_sensors': lambda: _fintraffic_sensors('tms'),
         'fi_weather_sensors': lambda: _fintraffic_sensors('weather'),
+        'es_dgt_cameras': _dgt_cameras,
+        'es_dgt_incidents': _dgt_incidents,
+        'es_dgt_signs': _dgt_signs,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,

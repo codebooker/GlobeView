@@ -16,6 +16,64 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_dgt_cameras_require_current_catalog_and_official_image(self):
+        now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()
+        root = ET.fromstring('''<payload><publicationTime>2026-09-27T09:00:00Z</publicationTime>
+          <device id="62"><typeOfDevice>camera</typeOfDevice><pointCoordinates>
+            <latitude>42.304092</latitude><longitude>-0.4282263</longitude>
+          </pointCoordinates><roadName>A-23</roadName><province>HUESCA</province>
+            <deviceUrl>https://etraffic.dgt.es/camarasEtraffic/168408.jpg</deviceUrl></device>
+          <device id="63"><typeOfDevice>camera</typeOfDevice><pointCoordinates>
+            <latitude>42.3</latitude><longitude>-0.4</longitude>
+          </pointCoordinates><deviceUrl>https://other.example/camera.jpg</deviceUrl></device>
+        </payload>''')
+        rows = feeds._parse_dgt_cameras(root, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'],
+                         'https://etraffic.dgt.es/camarasEtraffic/168408.jpg')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [-0.4282263, 42.304092])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_dgt_cameras(root, now + 4 * 3600)
+
+    def test_dgt_incidents_separate_active_works_from_road_events(self):
+        now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()
+        root = ET.fromstring('''<payload><publicationTime>2026-09-27T09:39:00Z</publicationTime>
+          <situation><situationRecord id="work-1"><validityStatus>active</validityStatus>
+            <overallStartTime>2026-09-27T08:00:00Z</overallStartTime>
+            <causeType>roadMaintenance</causeType><roadName>N-400</roadName>
+            <pointCoordinates><latitude>39.99</latitude><longitude>-3.60</longitude></pointCoordinates>
+          </situationRecord><situationRecord id="crash-1"><validityStatus>active</validityStatus>
+            <causeType>accident</causeType><roadName>A-6</roadName>
+            <pointCoordinates><latitude>40.2</latitude><longitude>-4.1</longitude></pointCoordinates>
+          </situationRecord><situationRecord id="ended"><validityStatus>active</validityStatus>
+            <overallEndTime>2026-09-27T09:00:00Z</overallEndTime>
+            <causeType>accident</causeType><pointCoordinates>
+              <latitude>40.3</latitude><longitude>-4.2</longitude>
+            </pointCoordinates></situationRecord></situation></payload>''')
+        rows = feeds._parse_dgt_incidents(root, now)
+        self.assertEqual([row['properties']['layer'] for row in rows], ['construction', 'incidents'])
+        self.assertEqual(rows[0]['properties']['key'], 'es:dgt:incident:work-1')
+        self.assertIn('Crash', rows[1]['properties']['title'])
+
+    def test_dgt_signs_join_current_display_with_device_location(self):
+        now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()
+        locations = ET.fromstring('''<payload><publicationTime>2026-09-27T09:00:00Z</publicationTime>
+          <device id="61441"><typeOfDevice>vms</typeOfDevice><roadName>M-607</roadName>
+            <pointCoordinates><latitude>40.5</latitude><longitude>-3.7</longitude></pointCoordinates>
+          </device></payload>''')
+        statuses = ET.fromstring('''<payload><publicationTime>2026-09-27T09:39:00Z</publicationTime>
+          <vmsControllerStatus><vmsControllerReference id="61441"/><vmsMessage><vmsMessage>
+            <timeLastSet>2026-09-27T09:35:00Z</timeLastSet>
+            <textLine><textLine><textLine>VELOCIDAD CONTROLADA POR RADAR</textLine></textLine></textLine>
+          </vmsMessage></vmsMessage></vmsControllerStatus></payload>''')
+        rows = feeds._parse_dgt_signs(locations, statuses, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'es:dgt:sign:61441')
+        self.assertIn('VELOCIDAD CONTROLADA POR RADAR', rows[0]['properties']['detail'])
+        stale = ET.fromstring(ET.tostring(statuses).replace(
+            b'2026-09-27T09:35:00Z', b'2026-09-26T08:35:00Z'))
+        self.assertEqual(feeds._parse_dgt_signs(locations, stale, now), [])
+
     def test_fintraffic_traffic_and_weather_sensors_require_recent_readings(self):
         now = dt.datetime(2026, 9, 27, 9, 30, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'type': 'FeatureCollection', 'features': [
