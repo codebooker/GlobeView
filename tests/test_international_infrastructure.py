@@ -67,6 +67,8 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['properties']['updated_at'], '2026-09-27T23:20:00+00:00')
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_cyprus_waze_alerts(root, now + 3600)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_cyprus_waze_alerts(root, now - 9 * 60)
 
     def test_gdynia_signs_show_text_from_each_display_page(self):
         devices = [{'id': 5, 'location': {'type': 'Point', 'coordinates': [18.48, 54.52]}}]

@@ -3587,8 +3587,9 @@ def _cyprus_roads():
 def _parse_cyprus_waze_alerts(root, now=None):
     now = time.time() if now is None else now
     published = _timestamp(root.findtext('.//{*}publicationTime'))
+    # The publisher's clock has been observed roughly five minutes ahead of UTC.
     if (not root.tag.endswith('}d2LogicalModel') or published is None
-            or not -300 <= now - published <= 20 * 60):
+            or not -600 <= now - published <= 20 * 60):
         raise ValueError('Cyprus Waze publication is stale or invalid')
     features = []
     seen = set()
