@@ -96,7 +96,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['layer'], 'construction')
 
-    def test_madrid_cameras_use_official_image_url(self):
+    def test_madrid_cameras_use_same_origin_image_proxy(self):
         root = ET.fromstring('''<kml xmlns="http://earth.google.com/kml/2.2"><Document>
           <Placemark><ExtendedData><Data name="Numero"><Value>06303</Value></Data>
             <Data name="Nombre"><Value>Plaza de Castilla</Value></Data></ExtendedData>
@@ -104,8 +104,18 @@ class InfrastructureTests(unittest.TestCase):
         </Document></kml>''')
         rows = feeds._parse_madrid_cameras(root, NOW)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['properties']['snapshot_url'],
-                         'https://informo.madrid.es/cameras/Camara06303.jpg')
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
+
+    def test_madrid_camera_proxy_validates_id_and_image(self):
+        class Response(io.BytesIO):
+            url = 'https://informo.madrid.es/cameras/Camara06303.jpg'
+        with self.assertRaises(ValueError):
+            feeds.madrid_camera_snapshot('../bad')
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
+            self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'not an image')):
+            with self.assertRaises(ValueError):
+                feeds.madrid_camera_snapshot('06303')
 
     def test_madrid_signs_join_locations_and_preserve_alternating_phases(self):
         locations = [{'nombre': 'CPMV10051', 'longitud': '-3.7', 'latitud': '40.4'}]
@@ -194,6 +204,26 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['geometry']['coordinates'], [-0.4282263, 42.304092])
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)
+
+    def test_dgt_madrid_omits_offline_placeholder(self):
+        class Response:
+            def __init__(self, url):
+                self.url = url
+                self.headers = {'Content-Type': 'image/jpeg',
+                                'Content-Length': '32634' if url.endswith('/923.jpg') else '125668'}
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+        items = [feeds._feature([-3.7, 40.4], {
+            'key': f'es:dgt:camera:{number}', 'layer': 'cameras',
+            'snapshot_url': f'https://etraffic.dgt.es/camarasEtraffic/{number}.jpg',
+        }) for number in (923, 929)]
+        previous = dict(feeds._DGT_MADRID_CAMERA_HEALTH)
+        try:
+            feeds._DGT_MADRID_CAMERA_HEALTH['until'] = 0
+            with patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
+                self.assertEqual(feeds._dgt_madrid_unavailable_cameras(items), {'es:dgt:camera:923'})
+        finally:
+            feeds._DGT_MADRID_CAMERA_HEALTH.update(previous)
 
     def test_dgt_incidents_separate_active_works_from_road_events(self):
         now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()

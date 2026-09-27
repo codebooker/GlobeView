@@ -450,7 +450,7 @@ def _parse_madrid_cameras(root, published):
             'key': f'es:madrid:camera:{camera_id}', 'layer': 'cameras',
             'title': _clean(data.get('Nombre'), 110) or f'Madrid road camera {camera_id}',
             'detail': 'Latest available still · normally updated every 5 min',
-            'snapshot_url': f'https://informo.madrid.es/cameras/Camara{camera_id}.jpg',
+            'snapshot_url': f'/madrid-camera/{camera_id}',
             'snapshot_refresh_ms': 300000,
             'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_CAMERAS_SOURCE,
             'updated_at': published,
@@ -461,6 +461,21 @@ def _parse_madrid_cameras(root, published):
 def _madrid_cameras():
     root, published = _madrid_xml('CCTV.kml')
     return _parse_madrid_cameras(root, published)
+
+
+def madrid_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{4,6}', str(camera_id)):
+        raise ValueError('Invalid Madrid camera ID')
+    request = urllib.request.Request(
+        f'https://informo.madrid.es/cameras/Camara{camera_id}.jpg',
+        headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'informo.madrid.es':
+            raise ValueError('Unexpected Madrid camera redirect')
+        image = response.read(2_000_001)
+    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Madrid camera returned no JPEG still')
+    return image, 'image/jpeg'
 
 
 def _parse_madrid_signs(locations, root, published):
@@ -2202,9 +2217,45 @@ def _parse_dgt_cameras(root, now=None):
     return features
 
 
+_DGT_MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
+
+
+def _dgt_madrid_unavailable_cameras(features):
+    """DGT serves a 200 JPEG reading 'IMAGEN NO DISPONIBLE' for offline feeds."""
+    now = time.time()
+    if now < _DGT_MADRID_CAMERA_HEALTH['until']:
+        return _DGT_MADRID_CAMERA_HEALTH['unavailable']
+    madrid = [item for item in features if
+              -3.9 <= item['geometry']['coordinates'][0] <= -3.45 and
+              40.25 <= item['geometry']['coordinates'][1] <= 40.65]
+
+    def unavailable(item):
+        url = item['properties']['snapshot_url']
+        request = urllib.request.Request(url, method='HEAD', headers={
+            'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+        try:
+            with urllib.request.urlopen(request, timeout=6) as response:
+                if urllib.parse.urlsplit(response.url).hostname != 'etraffic.dgt.es':
+                    return False
+                return (response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg'
+                        or response.headers.get('Content-Length') == '32634')
+        except urllib.error.HTTPError as error:
+            return error.code == 404
+        except (OSError, ValueError):
+            return False
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+        unavailable_ids = {item['properties']['key'] for item, bad in
+                           zip(madrid, executor.map(unavailable, madrid)) if bad}
+    _DGT_MADRID_CAMERA_HEALTH.update(until=now + 1800, unavailable=unavailable_ids)
+    return unavailable_ids
+
+
 def _dgt_cameras():
     root = _dgt_static_xml('cameras', DGT_BASE + 'DevicePublication/camaras_datex2_v37.xml')
-    return _parse_dgt_cameras(root)
+    features = _parse_dgt_cameras(root)
+    unavailable = _dgt_madrid_unavailable_cameras(features)
+    return [item for item in features if item['properties']['key'] not in unavailable]
 
 
 def _parse_dgt_incidents(root, now=None):
