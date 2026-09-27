@@ -67,6 +67,26 @@ class InternationalEmergencyTests(unittest.TestCase):
         self.assertEqual(len(feeds.parse_queensland(root, now)), 1)
         self.assertEqual(feeds.parse_queensland(root, now + dt.timedelta(days=1)), [])
 
+    def test_burgenland_maps_only_current_exact_municipalities(self):
+        def operation(place, code='B0'):
+            return (f'<div class="row operation"><div class="avatar">{code}</div>'
+                    f'<div class="small"><i class="fa-location-dot"></i> {place}</div>'
+                    '<div class="small"><i class="fa-alarm-clock"></i> 09:14</div></div>')
+        page = ('<html><head><meta charset="utf-8"></head><body>'
+                '<div id="current-pane"><div class="district-operations">'
+                '<div class="col fw-bold">Mattersburg</div>'
+                + operation('Forchtenstein') + operation('Unknown hamlet') + '</div></div>'
+                '<div id="twelve-hours-pane">' + operation('Eisenstadt') + '</div>'
+                'Zuletzt aktualisiert am 27.09.2026, 09:20 Uhr</body></html>')
+        now = dt.datetime(2026, 9, 27, 7, 21, tzinfo=dt.timezone.utc)
+        items = feeds.parse_burgenland(page, now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['title'], 'B0 · Forchtenstein')
+        self.assertEqual((items[0]['lon'], items[0]['lat']), (16.3431, 47.7111))
+        self.assertEqual(items[0]['observed'], '2026-09-27T07:14:00Z')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds.parse_burgenland(page, now + dt.timedelta(minutes=30))
+
 
 if __name__ == '__main__':
     unittest.main()

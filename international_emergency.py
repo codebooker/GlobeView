@@ -3,7 +3,9 @@
 import concurrent.futures
 import datetime as dt
 import html
+from html.parser import HTMLParser
 import json
+from pathlib import Path
 import re
 import threading
 import time
@@ -18,6 +20,7 @@ VIC_URL = 'https://data.emergency.vic.gov.au/Show?pageId=getIncidentJSON'
 QLD_URL = 'https://publiccontent-gis-psba-qld-gov-au.s3.amazonaws.com/content/Feeds/BushfireCurrentIncidents/bushfireAlert_capau.xml'
 NZ_URL = 'https://alerthub.civildefence.govt.nz/atom/pwp'
 ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods'
+BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
 _ATOM = '{http://www.w3.org/2005/Atom}'
 _CAP = '{urn:oasis:names:tc:emergency:cap:1.2}'
 _LOCK = threading.Lock()
@@ -42,6 +45,15 @@ def _xml(url):
     if len(body) > 8 * 1024 * 1024:
         raise ValueError('Emergency feed exceeded 8 MB')
     return ET.fromstring(body)
+
+
+def _html(url):
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public emergency feed reader)', 'Accept': 'text/html'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        body = response.read(1024 * 1024 + 1)
+    if len(body) > 1024 * 1024:
+        raise ValueError('Emergency dispatch page exceeded 1 MB')
+    return body
 
 
 def _clean(value, limit=300):
@@ -269,12 +281,112 @@ def parse_england(payload):
         return [item for item in executor.map(build, rows[:250]) if item]
 
 
+class _BurgenlandOperations(HTMLParser):
+    """Read only the dispatch page's ongoing operations tab."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.district = ''
+        self.operation = None
+        self.rows = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'wbr'}:
+            return
+        attrs = dict(attrs)
+        classes = set(attrs.get('class', '').split())
+        pane = attrs.get('id') == 'current-pane' or bool(self.stack and self.stack[-1]['pane'])
+        frame = {'tag': tag, 'classes': classes, 'pane': pane, 'text': [], 'icons': set()}
+        self.stack.append(frame)
+        if pane and 'district-operations' in classes:
+            self.district = ''
+        if pane and 'operation' in classes:
+            self.operation = {'district': self.district}
+
+    def handle_data(self, data):
+        if self.stack:
+            self.stack[-1]['text'].append(data)
+
+    def handle_endtag(self, tag):
+        if not self.stack:
+            return
+        frame = self.stack.pop()
+        if frame['tag'] != tag:
+            return
+        value = ' '.join(''.join(frame['text']).split())
+        classes = frame['classes']
+        if frame['pane']:
+            if 'fw-bold' in classes and 'col' in classes and self.operation is None:
+                self.district = value
+            if self.operation is not None:
+                if 'avatar' in classes:
+                    self.operation['code'] = value
+                if 'small' in classes and 'fa-location-dot' in frame['icons']:
+                    self.operation['place'] = value
+                if 'small' in classes and 'fa-alarm-clock' in frame['icons']:
+                    self.operation['time'] = value
+                if 'operation' in classes:
+                    self.rows.append(self.operation)
+                    self.operation = None
+        if self.stack:
+            self.stack[-1]['text'].append(value)
+            self.stack[-1]['icons'].update(frame['icons'])
+            if tag == 'i':
+                self.stack[-1]['icons'].update(classes)
+
+
+@lru_cache(maxsize=1)
+def _burgenland_municipalities():
+    path = Path(__file__).with_name('burgenland-municipalities.json')
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def parse_burgenland(page, now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    page = page.decode('utf-8', 'replace') if isinstance(page, bytes) else str(page)
+    stamp = re.search(r'Zuletzt aktualisiert am\s*(\d{2}\.\d{2}\.\d{4}),\s*(\d{2}:\d{2})', page)
+    if not stamp:
+        raise ValueError('Burgenland dispatch update time missing')
+    published = dt.datetime.strptime(' '.join(stamp.groups()), '%d.%m.%Y %H:%M').replace(tzinfo=ZoneInfo('Europe/Vienna'))
+    published_utc = published.astimezone(dt.timezone.utc)
+    if published_utc < now - dt.timedelta(minutes=20) or published_utc > now + dt.timedelta(minutes=5):
+        raise ValueError('Burgenland dispatch page is stale')
+    parser = _BurgenlandOperations()
+    parser.feed(page)
+    if 'id="current-pane"' not in page:
+        raise ValueError('Burgenland ongoing dispatch tab missing')
+    towns = _burgenland_municipalities()
+    output = []
+    for row in parser.rows[:100]:
+        place, code, clock = (row.get(key, '').strip() for key in ('place', 'code', 'time'))
+        point = towns.get(place.casefold())
+        if not point or not re.fullmatch(r'[A-Z]{1,4}\d{0,2}', code) or not re.fullmatch(r'\d{2}:\d{2}', clock):
+            continue
+        try:
+            observed_local = dt.datetime.combine(published.date(), dt.time.fromisoformat(clock), published.tzinfo)
+        except ValueError:
+            continue
+        if observed_local > published + dt.timedelta(minutes=5):
+            observed_local -= dt.timedelta(days=1)
+        if observed_local < published - dt.timedelta(days=1):
+            continue
+        observed = observed_local.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+        district = row.get('district', '')
+        source = 'LSZ Burgenland'
+        output.append(_item(f'burgenland:{district}:{place}:{code}:{observed}', *point,
+                            f'{code} · {place}', f'Ongoing fire brigade dispatch · {district} · municipality center, approximate location',
+                            source, BURGENLAND_URL, observed, 'fire' if code.startswith('B') else 'warning'))
+    return output
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
     'queensland': lambda: parse_queensland(_xml(QLD_URL)),
     'nz_alerts': fetch_nz,
     'england_floods': lambda: parse_england(_json(ENGLAND_URL)),
+    'burgenland_fire': lambda: parse_burgenland(_html(BURGENLAND_URL)),
 }
 
 

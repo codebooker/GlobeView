@@ -779,7 +779,7 @@
       : type === 'nws_alerts' ? 'Weather alerts: <a href="https://api.weather.gov/alerts/active">National Weather Service</a>'
       : type === 'world_alerts' ? 'Weather alerts: <a href="https://api.weather.gc.ca/collections/weather-alerts">Environment and Climate Change Canada</a> (<a href="https://eccc-msc.github.io/open-data/licence/readme_en/">licence</a>) / <a href="https://alerts.metservice.com/cap/rss">© Meteorological Service of New Zealand Limited</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>)'
       : type === 'fires' ? 'Wildfires: <a href="https://www.gdacs.org/">Global Disaster Alert and Coordination System, GDACS</a>'
-      : type === 'international' ? 'Emergency reports: <a href="https://www.rfs.nsw.gov.au/">NSW RFS</a> / <a href="https://www.fire.qld.gov.au/">Queensland Fire</a> / <a href="https://www.emergency.vic.gov.au/">VicEmergency</a> / <a href="https://www.civildefence.govt.nz/">NZ NEMA</a> / <a href="https://environment.data.gov.uk/flood-monitoring/doc/reference">Environment Agency</a>'
+      : type === 'international' ? 'Emergency reports: <a href="https://www.rfs.nsw.gov.au/">NSW RFS</a> / <a href="https://www.fire.qld.gov.au/">Queensland Fire</a> / <a href="https://www.emergency.vic.gov.au/">VicEmergency</a> / <a href="https://www.civildefence.govt.nz/">NZ NEMA</a> / <a href="https://environment.data.gov.uk/flood-monitoring/doc/reference">Environment Agency</a> / <a href="https://einsatz.lsz-b.at/">LSZ Burgenland</a>'
       : type === 'floods' || type === 'volcanoes' ? 'Hazards: <a href="https://www.gdacs.org/">Global Disaster Alert and Coordination System, GDACS</a>'
       : type === 'ports' ? 'Ports: <a href="https://msi.nga.mil/Publications/WPI">NGA World Port Index, 2024 snapshot</a>'
       : type === 'scans' ? 'Scan reports: <a href="https://isc.sans.edu/">SANS Internet Storm Center</a> / <a href="https://stat.ripe.net/">RIPEstat</a>' : '';
@@ -2289,7 +2289,7 @@
       setPoints('international', features, records);
       if (data.sourceErrors?.length) {
         console.warn('Some international emergency feeds are unavailable:', data.sourceErrors);
-        const names = { nsw_rfs: 'NSW', victoria: 'Victoria', queensland: 'Queensland', nz_alerts: 'New Zealand', england_floods: 'England floods' };
+        const names = { nsw_rfs: 'NSW', victoria: 'Victoria', queensland: 'Queensland', nz_alerts: 'New Zealand', england_floods: 'England floods', burgenland_fire: 'Burgenland' };
         const failed = data.sourceErrors.map(error => names[String(error).split(':')[0]]).filter(Boolean);
         showStatus(`${failed.join(', ') || 'Some regional feeds'} temporarily unavailable; other reports loaded.`, true, 6000);
       }
