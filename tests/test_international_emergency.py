@@ -166,5 +166,36 @@ class InternationalEmergencyTests(unittest.TestCase):
             feeds.parse_portugal(payload, now)
 
 
+    def test_sweden_police_maps_recent_reports_at_area_centers(self):
+        now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc)
+        event = {'id': 654486, 'datetime': '2026-09-27 9:00:24 +02:00',
+                 'type': 'Trafikolycka, vilt', 'summary': 'Do not copy this summary',
+                 'url': '/aktuellt/handelser/2026/september/27/traffic-report/',
+                 'location': {'name': 'Kronobergs län', 'gps': '56.71834,14.411467'}}
+        rows = feeds.parse_sweden_police([event, event,
+            {**event, 'id': 2, 'type': 'Sammanfattning natt'},
+            {**event, 'id': 3, 'datetime': '2026-09-25 20:00:24 +02:00'},
+            {**event, 'id': 4, 'url': 'https://example.com/private'},
+            {**event, 'id': 5, 'type': 'Brand', 'location': {'name': 'Skåne län', 'gps': '55.990257,13.595769'}}], now)
+        self.assertEqual([row['id'] for row in rows], ['se:police:654486', 'se:police:5'])
+        self.assertEqual((rows[0]['lat'], rows[0]['lon']), (56.71834, 14.411467))
+        self.assertEqual([row['category'] for row in rows], ['traffic', 'fire'])
+        self.assertIn('approximate area center', rows[0]['detail'])
+        self.assertNotIn(event['summary'], str(rows))
+        self.assertEqual(rows[0]['sourceUrl'], 'https://polisen.se' + event['url'])
+
+    def test_sweden_police_uses_one_request_during_cooldown(self):
+        previous = dict(feeds._SWEDEN_POLICE_CACHE)
+        try:
+            feeds._SWEDEN_POLICE_CACHE.update(until=0, items=None)
+            with patch.object(feeds, '_json', return_value=[]) as fetch, \
+                    patch.object(feeds.time, 'time', return_value=1000):
+                self.assertEqual(feeds._sweden_police(), [])
+                self.assertEqual(feeds._sweden_police(), [])
+                fetch.assert_called_once_with(feeds.SWEDEN_POLICE_URL)
+        finally:
+            feeds._SWEDEN_POLICE_CACHE.update(previous)
+
+
 if __name__ == '__main__':
     unittest.main()

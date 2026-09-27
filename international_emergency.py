@@ -24,6 +24,7 @@ BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
 ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
 PORTUGAL_SOURCE = 'https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto'
 SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
+SWEDEN_POLICE_URL = 'https://polisen.se/api/events'
 PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/services/'
                 'OcorrenciasSite/FeatureServer/0/query?where=1%3D1&outFields='
                 'ID_oc%2CNumero%2CEstadoAgrupado%2CNatureza%2CConcelho%2CRegiao%2C'
@@ -33,10 +34,13 @@ _ATOM = '{http://www.w3.org/2005/Atom}'
 _CAP = '{urn:oasis:names:tc:emergency:cap:1.2}'
 _LOCK = threading.Lock()
 _CACHE = {'until': 0, 'value': None, 'sources': {}, 'source_times': {}}
+_REFRESH_LOCK = threading.Lock()
+_SWEDEN_POLICE_LOCK = threading.Lock()
+_SWEDEN_POLICE_CACHE = {'until': 0, 'items': None}
 
 
 def _get(url):
-    request = urllib.request.Request(url, headers={'User-Agent': 'GlobalMap/1.0 (public emergency feed reader)', 'Accept': 'application/json, application/atom+xml, application/xml'})
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public emergency feed reader)', 'Accept': 'application/json, application/atom+xml, application/xml'})
     with urllib.request.urlopen(request, timeout=15) as response:
         return response.read(8 * 1024 * 1024 + 1)
 
@@ -571,6 +575,72 @@ def parse_sweden_vma(payload, now=None):
     return output
 
 
+def parse_sweden_police(payload, now=None):
+    """Map recent public police notices to their published area centroids."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(payload, list) or len(payload) > 500:
+        raise ValueError('Swedish police events response is invalid')
+    output = []
+    seen = set()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        event_id = row.get('id')
+        if not isinstance(event_id, int) or event_id <= 0 or event_id in seen:
+            continue
+        try:
+            # The API emits both one- and two-digit hours ("9:18" and "20:00").
+            observed = dt.datetime.strptime(str(row['datetime']), '%Y-%m-%d %H:%M:%S %z')
+            if observed.tzinfo is None or not now - dt.timedelta(hours=24) <= observed <= now + dt.timedelta(minutes=5):
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        event_type = _clean(row.get('type'), 60)
+        if not event_type or event_type.startswith('Sammanfattning') or event_type in {'Övrigt', 'Information', 'Trafikkontroll'}:
+            continue
+        location = row.get('location')
+        if not isinstance(location, dict):
+            continue
+        match = re.fullmatch(r'\s*([0-9]{1,2}\.[0-9]+)\s*,\s*([0-9]{1,2}\.[0-9]+)\s*', str(location.get('gps') or ''))
+        if not match:
+            continue
+        lat, lon = float(match[1]), float(match[2])
+        if not (55 <= lat <= 70 and 10 <= lon <= 25):
+            continue
+        path = str(row.get('url') or '')
+        if not re.fullmatch(r'/aktuellt/handelser/[a-z0-9/.-]{1,250}/', path):
+            continue
+        seen.add(event_id)
+        category = ('fire' if 'brand' in event_type.casefold() else
+                    'traffic' if 'trafikolycka' in event_type.casefold() else 'police')
+        area = _clean(location.get('name'), 80)
+        output.append(_item(f'se:police:{event_id}', lon, lat,
+                            f'Police report · {event_type}',
+                            f'{area} · approximate area center' if area else 'Approximate area center',
+                            'Swedish Police · public events API', 'https://polisen.se' + path,
+                            observed.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z'), category))
+    return output
+
+
+def _sweden_police():
+    # The Police require at least ten seconds between requests and no more than 60/hour.
+    # One process-wide ten-minute cache also prevents concurrent visitors from polling it.
+    with _SWEDEN_POLICE_LOCK:
+        now = time.time()
+        if now < _SWEDEN_POLICE_CACHE['until']:
+            if _SWEDEN_POLICE_CACHE['items'] is None:
+                raise ValueError('Swedish police events are temporarily unavailable')
+            return _SWEDEN_POLICE_CACHE['items']
+        _SWEDEN_POLICE_CACHE['until'] = now + 600
+        try:
+            items = parse_sweden_police(_json(SWEDEN_POLICE_URL))
+        except Exception:
+            _SWEDEN_POLICE_CACHE['items'] = None
+            raise
+        _SWEDEN_POLICE_CACHE['items'] = items
+        return items
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
@@ -581,10 +651,16 @@ _LOADERS = {
     'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
     'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
     'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),
+    'sweden_police': _sweden_police,
 }
 
 
 def international_emergency_snapshot():
+    with _REFRESH_LOCK:
+        return _international_emergency_snapshot()
+
+
+def _international_emergency_snapshot():
     with _LOCK:
         if _CACHE['value'] is not None and time.time() < _CACHE['until']:
             return _CACHE['value']
