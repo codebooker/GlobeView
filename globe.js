@@ -956,6 +956,14 @@
       img.loading = 'lazy';
       img.src = snapshot;
       root.append(img);
+      const refreshMs = Number(meta.item.expando?.snapshotRefreshMs);
+      if (refreshMs >= 60000) {
+        const refresh = window.setInterval(() => {
+          const separator = snapshot.includes('?') ? '&' : '?';
+          img.src = `${snapshot}${separator}v=${Date.now()}`;
+        }, refreshMs);
+        popup.on('close', () => window.clearInterval(refresh));
+      }
     }
     if (!(detail?.video_enabled || meta.item.expando?.videoEnabled)) return;
     const button = textElement('button', 'popup-play', '▶ Play live camera');
@@ -1166,7 +1174,8 @@
       root.append(button);
     }
     if (type === 'cameras' && meta.snapshotUrl) {
-      attachCameraMedia(root, { item: { expando: { snapshotUrl: meta.snapshotUrl } } }, null, popup);
+      attachCameraMedia(root, { item: { expando: { snapshotUrl: meta.snapshotUrl,
+        snapshotRefreshMs: meta.snapshotRefreshMs } } }, null, popup);
       return;
     }
     if (!meta.region || !meta.item) return;
@@ -1293,7 +1302,8 @@
         detail: [p.detail, p.updated_at ? `Updated ${p.updated_at}` : ''].filter(Boolean).join(' · '),
         source: p.source || 'Public road authority', sourceUrl: p.source_url,
         signImage: type === 'signs' ? p.image_data || '' : '',
-        snapshotUrl: type === 'cameras' ? p.snapshot_url || '' : ''
+        snapshotUrl: type === 'cameras' ? p.snapshot_url || '' : '',
+        snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0
       });
       features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && /warning/i.test(p.title || '') }));
     }

@@ -57,6 +57,22 @@ class InfrastructureTests(unittest.TestCase):
         self.assertIn('www.cita.lu', fetch.call_args.args[0])
         sleep.assert_called_once_with(0.5)
 
+    def test_luxembourg_camera_catalog_uses_geolocated_official_stills(self):
+        root = ET.fromstring('''<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+          <Placemark id="camera_6006"><name>A6 - Camera 6006</name>
+            <Point><coordinates>5.962785,49.636012,0</coordinates></Point></Placemark>
+          <Placemark id="camera_bad"><Point><coordinates>5.9,49.6,0</coordinates></Point></Placemark>
+          <Placemark id="camera_11"><Point><coordinates>9.9,49.6,0</coordinates></Point></Placemark>
+        </Document></kml>''')
+        rows = feeds._parse_luxembourg_cameras(root)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [5.962785, 49.636012])
+        self.assertEqual(rows[0]['properties']['snapshot_url'],
+                         'https://www.cita.lu/info_trafic/cameras/images/cccam_6006.jpg')
+        self.assertEqual(rows[0]['properties']['snapshot_refresh_ms'], 120000)
+        with self.assertRaisesRegex(ValueError, 'no usable cameras'):
+            feeds._parse_luxembourg_cameras(ET.fromstring('<kml xmlns="http://www.opengis.net/kml/2.2"/>'))
+
     def test_norway_roads_only_include_active_main_records(self):
         published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
         base = {'geometry': {'type': 'Point', 'coordinates': [10.7, 59.9]},

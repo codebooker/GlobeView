@@ -59,6 +59,8 @@ NORWAY_WFS_URL = 'https://ogckart-sn1.atlas.vegvesen.no/datex_3_1/ows'
 NORWAY_SOURCE = 'https://www.vegvesen.no/trafikk/kart'
 LUXEMBOURG_ROADS_URL = 'https://cita.lu/info_trafic/datex/situationrecord36'
 LUXEMBOURG_ROADS_SOURCE = 'https://data.public.lu/en/datasets/cita-evenements-trafic-en-datex-ii-v3-6/'
+LUXEMBOURG_CAMERAS_URL = 'https://www.cita.lu/kml/cameras.kml'
+LUXEMBOURG_CAMERAS_SOURCE = 'https://data.public.lu/en/datasets/cita-cameras-autoroute/'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -887,6 +889,35 @@ def _luxembourg_roads():
     return _parse_luxembourg_roads(root)
 
 
+def _parse_luxembourg_cameras(root):
+    if root.tag != '{http://www.opengis.net/kml/2.2}kml':
+        raise ValueError('Luxembourg camera catalog is not KML')
+    features = []
+    for camera in root.findall('.//{*}Placemark'):
+        match = re.fullmatch(r'camera_(\d{1,8})', camera.get('id', ''))
+        coordinates = camera.findtext('.//{*}Point/{*}coordinates', default='').split(',')
+        point = _point({'coordinates': coordinates})
+        if not match or not point or not (5.5 <= point[0] <= 6.6 and 49.35 <= point[1] <= 50.2):
+            continue
+        name = _clean(camera.findtext('{*}name'), 90)
+        camera_id = match.group(1)
+        features.append(_feature(point, {
+            'key': f'lu:cita:camera:{camera_id}', 'layer': 'cameras',
+            'title': name or f'Motorway camera {camera_id}',
+            'detail': 'Recent still image',
+            'snapshot_url': f'https://www.cita.lu/info_trafic/cameras/images/cccam_{camera_id}.jpg',
+            'snapshot_refresh_ms': 120000,
+            'source': 'Luxembourg CITA · CC0 catalog', 'source_url': LUXEMBOURG_CAMERAS_SOURCE,
+        }))
+    if not features:
+        raise ValueError('Luxembourg camera catalog contains no usable cameras')
+    return features
+
+
+def _luxembourg_cameras():
+    return _parse_luxembourg_cameras(_get_xml(LUXEMBOURG_CAMERAS_URL))
+
+
 def _lambert93_to_lonlat(x, y):
     """Convert the sensor reference's RGF93 / Lambert-93 metres to map coordinates."""
     a, flattening = 6378137.0, 1 / 298.257222101
@@ -1461,6 +1492,7 @@ _FETCHERS = {
         'uk_scotland_construction': _scotland_roadworks,
         'fr_national_roads': _france_roads,
         'lu_cita_roads': _luxembourg_roads,
+        'lu_cita_cameras': _luxembourg_cameras,
         'fr_traffic_sensors': _france_sensors,
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
