@@ -165,12 +165,12 @@ def _norway_wfs(layer, cql_filter=None):
     return _get_json(f'{NORWAY_WFS_URL}?{urllib.parse.urlencode(params)}')
 
 
-def _norway_publication_current(items, now):
+def _norway_publication_current(items, now, max_age=30 * 60):
     if not items:
         return True
     timestamp = str((items[0].get('properties') or {}).get('endJsonTime') or '')
     published = _timestamp(re.sub(r'([+-]\d{2})(\d{2})$', r'\1:\2', timestamp))
-    if published is None or not -300 <= now - published <= 30 * 60:
+    if published is None or not -300 <= now - published <= max_age:
         raise ValueError('Norwegian WFS publication is stale or invalid')
     return True
 
@@ -178,7 +178,7 @@ def _norway_publication_current(items, now):
 def _parse_norway_roads(payload, now=None):
     now = time.time() if now is None else now
     rows = payload.get('features') or []
-    _norway_publication_current(rows, now)
+    _norway_publication_current(rows, now, max_age=75 * 60)
     features = []
     for item in rows:
         p = item.get('properties') or {}

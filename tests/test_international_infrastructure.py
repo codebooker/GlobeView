@@ -29,8 +29,9 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['layer'], 'construction')
         self.assertEqual(rows[0]['properties']['key'], 'no:road:event-1')
+        self.assertEqual(len(feeds._parse_norway_roads({'features': [base]}, NOW + 3600)), 1)
         with self.assertRaises(ValueError):
-            feeds._parse_norway_roads({'features': [base]}, NOW + 3600)
+            feeds._parse_norway_roads({'features': [base]}, NOW + 2 * 3600)
 
     def test_norway_cameras_require_available_official_image(self):
         published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
