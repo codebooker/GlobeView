@@ -74,17 +74,17 @@
     govair: { label: 'Government aircraft', color: '#c9a96b', glyph: '✈', minZoom: 0, refreshMs: 45000 },
     civair: { label: 'Civil aircraft', color: '#f3f5f4', glyph: '✈', minZoom: 0, refreshMs: 45000 },
     cameras: { label: 'Traffic camera', color: '#78ad92', glyph: '◉', minZoom: 10, refreshMs: 90000 },
-    signs: { label: 'Message sign', color: '#bda168', glyph: '▣', minZoom: 11, refreshMs: 90000 },
-    incidents: { label: 'Road incident', color: '#c78276', glyph: '!', minZoom: 11, refreshMs: 30000 },
-    construction: { label: 'Construction', color: '#bd986b', glyph: '◆', minZoom: 11, refreshMs: 120000 },
-    emergency: { label: 'Emergency call', color: '#c47673', glyph: '+', minZoom: 11, refreshMs: 30000 },
-    international: { label: 'International emergency report', color: '#c47673', glyph: '!', minZoom: 0, refreshMs: 300000 },
-    sensors: { label: 'Road sensor', color: '#7b9eb7', glyph: 'S', minZoom: 11, refreshMs: 300000 },
+    signs: { label: 'Message sign', color: '#bda168', glyph: '▣', minZoom: 10, refreshMs: 90000 },
+    incidents: { label: 'Road incident', color: '#c78276', glyph: '!', minZoom: 10, refreshMs: 30000 },
+    construction: { label: 'Construction', color: '#bd986b', glyph: '◆', minZoom: 10, refreshMs: 120000 },
+    emergency: { label: 'Emergency call', color: '#c47673', glyph: '+', minZoom: 10, refreshMs: 30000 },
+    international: { label: 'International emergency report', color: '#c47673', glyph: '!', minZoom: 10, refreshMs: 300000 },
+    sensors: { label: 'Road sensor', color: '#7b9eb7', glyph: 'S', minZoom: 10, refreshMs: 300000 },
     temperature: { label: 'Temperature station', color: '#c49375', glyph: '°', minZoom: 10, refreshMs: 300000 },
-    lpr: { label: 'Plate reader', color: '#a18cba', glyph: '◎', minZoom: 11, refreshMs: 300000 },
+    lpr: { label: 'Plate reader', color: '#a18cba', glyph: '◎', minZoom: 10, refreshMs: 300000 },
     power: { label: 'Power outage', color: '#bb84a1', glyph: 'ϟ', minZoom: 9, refreshMs: 300000 },
     vessels: { label: 'Live vessel', color: '#78aaa9', glyph: '▲', minZoom: 5, refreshMs: 15000 },
-    webcams: { label: 'Public webcam', color: '#90a9bc', glyph: '◉', minZoom: 0, refreshMs: 86400000 },
+    webcams: { label: 'Public webcam', color: '#90a9bc', glyph: '◉', minZoom: 10, refreshMs: 86400000 },
     cyclones: { label: 'Tropical cyclone', color: '#b8a2c5', glyph: '◎', minZoom: 0, refreshMs: 900000 },
     earthquakes: { label: 'Earthquake', color: '#d1b16e', glyph: '◆', minZoom: 0, refreshMs: 120000 },
     nws_alerts: { label: 'NWS alert', color: '#e3b96c', glyph: '!', minZoom: 0, refreshMs: 120000 },
@@ -151,7 +151,8 @@
   let basemapLabelPaint = [];
   let globeProjection = true;
   let terrainEnabled = false;
-  let rotationEnabled = false;
+  let rotationEnabled = !window.matchMedia('(prefers-reduced-motion: reduce)').matches &&
+    !new URLSearchParams(location.search).has('z');
   let rotationFrame = 0;
   let rotationTime = 0;
   let cyberFocus = false;
@@ -351,7 +352,7 @@
   const map = new maplibregl.Map({
     container: 'map', style: STYLE_URL, center: INITIAL.center, zoom: INITIAL.zoom,
     minZoom: 0, maxZoom: 19, maxPitch: 75, renderWorldCopies: false,
-    attributionControl: false, antialias: false, fadeDuration: 150
+    attributionControl: false, antialias: false, fadeDuration: 0
   });
   map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: '<a href="https://maplibre.org/">MapLibre</a>' }), 'bottom-right');
   // MapLibre initially opens compact attribution so users can discover it.
@@ -1562,8 +1563,29 @@
     aircraftFollowButton.textContent = next ? 'Following · pause' : 'Follow aircraft';
     if (next && trackedAircraft?.lastPosition) {
       const { lon, lat } = trackedAircraft.lastPosition;
-      map.easeTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 7), duration: 700, essential: true });
+      map.easeTo({ center: [lon, lat], offset: mobilePanelOffset(aircraftTrackPanel),
+        zoom: Math.max(map.getZoom(), 7), duration: 700, essential: true });
     }
+  }
+
+  function mobilePanelOffset(panel) {
+    if (window.innerWidth > 700 || panel.hidden) return [0, 0];
+    const mapBox = map.getCanvas().getBoundingClientRect();
+    const panelTop = panel.getBoundingClientRect().top - mapBox.top;
+    const targetY = Math.max(55, Math.min(mapBox.height * 0.45, panelTop - 30));
+    return [0, targetY - mapBox.height / 2];
+  }
+
+  function keepTrackedAircraftClearOfPanel() {
+    if (window.innerWidth > 700 || !trackedAircraft?.lastPosition || aircraftTrackPanel.hidden) return;
+    const { lon, lat } = trackedAircraft.lastPosition;
+    const point = map.project([lon, lat]);
+    const mapBox = map.getCanvas().getBoundingClientRect();
+    const cardBox = aircraftTrackPanel.getBoundingClientRect();
+    if (point.x + mapBox.left < cardBox.left - 24 || point.x + mapBox.left > cardBox.right + 24 ||
+        point.y + mapBox.top < cardBox.top - 28) return;
+    map.easeTo({ center: [lon, lat], offset: mobilePanelOffset(aircraftTrackPanel),
+      duration: 450, essential: true });
   }
 
   function pauseTrackingForNavigation() {
@@ -1627,7 +1649,8 @@
       : `Updated ${aircraftAgeLabel(age)}`;
     updateTrackedMarker();
     if (trackingFollow && !trackedAircraft.stale && (initial || !previous || Math.abs(lat - previous.lat) + Math.abs(lon - previous.lon) > 0.002)) {
-      map.easeTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 7), duration: initial ? 950 : 650, essential: true });
+      map.easeTo({ center: [lon, lat], offset: mobilePanelOffset(aircraftTrackPanel),
+        zoom: Math.max(map.getZoom(), 7), duration: initial ? 950 : 650, essential: true });
     }
   }
 
@@ -1697,6 +1720,7 @@
     const bounds = new maplibregl.LngLatBounds();
     for (const point of points) bounds.extend([anchor + ((((point[0] - anchor) + 540) % 360) - 180), point[1]]);
     const desktop = window.innerWidth > 900;
+    if (!desktop) map.once('moveend', keepTrackedAircraftClearOfPanel);
     map.fitBounds(bounds, { padding: desktop
       ? { top: 90, right: 310, bottom: 75, left: document.body.classList.contains('panel-collapsed') ? 45 : 310 }
       : { top: 75, right: 45, bottom: window.innerWidth < 701 ? 180 : 75, left: 45 },
@@ -1721,6 +1745,7 @@
     const degreesPerPixel = 360 / (512 * 2 ** zoom);
     const centerLon = (Math.min(...lons) + Math.max(...lons)) / 2 - panelWidth / 2 * degreesPerPixel * 0.35;
     const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+    if (window.innerWidth <= 700) map.once('moveend', keepTrackedAircraftClearOfPanel);
     map.easeTo({ center: [centerLon, centerLat], zoom, bearing: 0, pitch: 0,
       duration: 950, essential: true });
   }
@@ -1996,14 +2021,27 @@
     const east = Math.max(...positions.map(point => point[0]));
     const south = Math.min(...positions.map(point => point[1]));
     const north = Math.max(...positions.map(point => point[1]));
+    const selectedId = selectedCycloneId;
+    if (window.innerWidth <= 700) map.once('moveend', () => {
+      if (selectedCycloneId !== selectedId || cycloneGuidancePanel.hidden) return;
+      const point = map.project(stormCoordinates);
+      const canvas = map.getCanvas();
+      const panelTop = cycloneGuidancePanel.getBoundingClientRect().top - canvas.getBoundingClientRect().top;
+      if (point.y > panelTop - 38) {
+        map.easeTo({ center: stormCoordinates, offset: mobilePanelOffset(cycloneGuidancePanel),
+          duration: 450, essential: true });
+      }
+    });
     if (east - west > 180) {
       map.easeTo({ center: stormCoordinates, zoom: 4, duration: 800, essential: true });
       return;
     }
     const wide = map.getCanvas().clientWidth > 700;
+    const panelBottomPadding = Math.ceil(map.getCanvas().getBoundingClientRect().bottom -
+      cycloneGuidancePanel.getBoundingClientRect().top + 24);
     map.fitBounds([[west, south], [east, north]], {
       padding: wide ? { top: 110, right: 365, bottom: 70, left: 320 }
-        : { top: 75, right: 24, bottom: 250, left: 24 },
+        : { top: 75, right: 24, bottom: Math.max(250, panelBottomPadding), left: 24 },
       maxZoom: 5.8, duration: 800, essential: true,
     });
   }
@@ -2955,6 +2993,7 @@
       if (trackedAircraft?.lastPosition) updateTrackedMarker();
       if (terrainEnabled) applyTerrain();
       styleReady = true;
+      resumeRotation();
       arcgisQueryKeys.clear();
       for (const type of Object.keys(enabled)) updateToggle(type);
       if (Object.keys(ARCGIS).some(type => enabled[type])) scheduleViewportLoad();
@@ -3042,6 +3081,7 @@
   map.on('mouseleave', 'gm-radio-points', () => { map.getCanvas().style.cursor = ''; });
 
   const rotationToggle = document.getElementById('rotation-toggle');
+  rotationToggle.setAttribute('aria-pressed', String(rotationEnabled));
   function stopRotation() {
     if (!rotationEnabled) return;
     rotationEnabled = false;

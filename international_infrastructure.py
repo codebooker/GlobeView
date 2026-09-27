@@ -10,12 +10,16 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
+from zoneinfo import ZoneInfo
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
 NPG_BASE = 'https://northernpowergrid.opendatasoft.com'
+SSEN_OUTAGES_URL = 'https://external.distribution.prd.ssen.co.uk/opendataportal-prd/v4/api/getallfaults'
+WALES_RSS_BASE = 'https://traffic.wales/feeds'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -40,6 +44,15 @@ def _get_json(url, fintraffic=False):
             if len(body) > 12 * 1024 * 1024:
                 raise ValueError('Infrastructure feed exceeded 12 MB after decompression')
     return json.loads(body)
+
+
+def _get_xml(url):
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/rss+xml, application/xml'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        body = response.read(2 * 1024 * 1024 + 1)
+    if len(body) > 2 * 1024 * 1024:
+        raise ValueError('Road feed exceeded 2 MB')
+    return ET.fromstring(body)
 
 
 def _clean(value, limit=280):
@@ -156,6 +169,47 @@ def _tfl_disruptions():
     return features
 
 
+def _wales_feed(layer):
+    feed_name = 'roadworks' if layer == 'construction' else 'incidents-events'
+    root = _get_xml(f'{WALES_RSS_BASE}/{feed_name}/rss.xml')
+    now = dt.datetime.now(dt.timezone.utc)
+    features = []
+    for item in root.findall('./channel/item'):
+        coordinates = item.findtext('{http://www.georss.org/georss}point') or ''
+        try:
+            lat, lon = (float(value) for value in coordinates.split())
+        except (TypeError, ValueError):
+            continue
+        point = _point({'coordinates': [lon, lat]})
+        if not point:
+            continue
+        description = item.findtext('description') or ''
+        if layer == 'construction':
+            start_match = re.search(r'Start time:\s*(\d{2}/\d{2}/\d{4}\s+\d{1,2}:\d{2})', description, re.I)
+            end_match = re.search(r'End Date:\s*(\d{2}/\d{2}/\d{4}\s+\d{1,2}:\d{2})', description, re.I)
+            if not start_match or not end_match:
+                continue
+            try:
+                zone = ZoneInfo('Europe/London')
+                start = dt.datetime.strptime(start_match.group(1), '%d/%m/%Y %H:%M').replace(tzinfo=zone).astimezone(dt.timezone.utc)
+                end = dt.datetime.strptime(end_match.group(1), '%d/%m/%Y %H:%M').replace(tzinfo=zone).astimezone(dt.timezone.utc)
+            except ValueError:
+                continue
+            if not start <= now <= end:
+                continue
+        source_url = item.findtext('link') or ''
+        if not source_url.startswith('https://traffic.wales/'):
+            source_url = 'https://traffic.wales/'
+        reference = _clean(item.findtext('guid') or source_url, 100)
+        features.append(_feature(point, {
+            'key': f'uk:wales:{layer}:{reference}', 'layer': layer,
+            'title': _clean(item.findtext('title') or 'Traffic Wales road event'),
+            'detail': _clean(description, 280), 'source': 'Traffic Wales',
+            'source_url': source_url, 'updated_at': item.findtext('pubDate') or '',
+        }))
+    return features
+
+
 def _ods(base, dataset, where):
     rows = []
     while True:
@@ -223,14 +277,45 @@ def _npg_outages():
     return features
 
 
+def _ssen_outages():
+    data = _get_json(SSEN_OUTAGES_URL)
+    if not isinstance(data, dict) or not isinstance(data.get('faults'), list):
+        raise ValueError('SSEN returned an invalid outage payload')
+    features = []
+    seen = set()
+    for row in data['faults']:
+        if not isinstance(row, dict):
+            continue
+        reference = str(row.get('reference') or '').strip()
+        location = row.get('location') or {}
+        point = _point({'coordinates': [location.get('longitude'), location.get('latitude')]}) if isinstance(location, dict) else None
+        if not reference or reference in seen or not point:
+            continue
+        seen.add(reference)
+        features.append(_feature(point, {
+            'key': f'uk:ssen:{reference}', 'provider': 'SSEN Distribution',
+            'area_name': _clean(row.get('title') or 'Power cut'),
+            'customers_affected': row.get('customerCount') or 0,
+            'status': 'Power cut',
+            'reason': _clean(row.get('message') or row.get('type'), 180),
+            'etr': row.get('estimatedRestorationTimeUtc') or '',
+            'source_label': 'SSEN PowerTrack · CC BY 4.0',
+            'source_url': 'https://powertrack.ssen.co.uk/powertrack',
+            'source_updated': data.get('timestampUtc') or '',
+        }))
+    return features
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
+        'uk_wales_incidents': lambda: _wales_feed('incidents'),
+        'uk_wales_construction': lambda: _wales_feed('construction'),
     },
-    'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages},
+    'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages},
 }
 
 

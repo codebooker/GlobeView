@@ -1,0 +1,19 @@
+# Europe feed rollout
+
+Start with the UK and Ireland. A map marker is added only when an authority publishes a usable location and the record is current. Public map pages, historical incident files, and sign locations alone are not treated as live feeds.
+
+| Area | Feed | Current status / next source |
+| --- | --- | --- |
+| England | Emergency reports | Environment Agency flood warnings are mapped. [Fire incident records](https://www.gov.uk/government/statistics/fire-statistics-incident-level-datasets) are historical; a public live dispatch feed has not been verified. |
+| England | Power cuts | [UK Power Networks](https://ukpowernetworks.opendatasoft.com/explore/dataset/ukpn-live-faults/), [Northern Powergrid](https://northernpowergrid.opendatasoft.com/explore/dataset/live-power-cuts-data/), and [SSEN PowerTrack](https://data.ssen.co.uk/@ssen-distribution/realtime_outage_dataset) are mapped in their service areas. Other distribution operators remain to be checked. |
+| London | Road incidents and works | [TfL disruptions](https://api.tfl.gov.uk/Road/all/Disruption) are mapped. TfL's [Jam Cams and live message signs](https://tfl.gov.uk/info-for/open-data-users/our-open-data) require registration for the live syndication feeds. |
+| England trunk roads | Closures and signs | [National Highways](https://developer.data.nationalhighways.co.uk/) offers road/lane closures and current digital sign messages after free account registration and API subscription. Its published limit is 10 calls per key per minute. |
+| Wales | Road incidents and works | [Traffic Wales RSS](https://traffic.wales/developers) is mapped for motorway/trunk-road events, with current work windows enforced. Camera images and DATEX II sign messages require [approval](https://traffic.wales/developers). |
+| Scotland | Roads, signs, cameras | [Traffic Scotland](https://www.traffic.gov.scot/traffic-scotland-developer-hub) has DATEX II roadworks/events/sign messages and camera images for approved registered subscribers. |
+| Northern Ireland | Cameras and roads | [TrafficWatch NI](https://www.trafficwatchni.com/twni/cameras) publishes camera images on its public site. A reusable camera catalog/feed and reuse terms still need verification. |
+| UK and Ireland | Plate-reader locations | The existing [DeFlock/OpenStreetMap](https://deflock.me/) layer covers community-mapped devices where reported. It is not a live plate-read feed or a complete inventory. No official comprehensive public ANPR location feed has been verified. |
+| Republic of Ireland | Emergency calls | [Dublin Fire Brigade activity logs](https://data.gov.ie/dataset?tags=emergency-services) are annual historical data; no public live dispatch feed has been verified. |
+| Republic of Ireland | Power cuts | [ESB PowerCheck](https://www.esbnetworks.ie/services/power-outages/check-my-power-status/powercheck-guidelines) publishes a live customer map. A documented reusable outage API and terms have not been verified. |
+| Republic of Ireland | Cameras, signs, works | [TII's traffic map](https://traffic.tii.ie/list/cameras) shows cameras. Its [open DATEX II directory](https://data.tii.ie/Datasets/Its/DatexII/) lists planned/unplanned events and sign locations/settings under CC BY 4.0, but current files could not be accessed in verification. [MapRoad](https://datacatalogue.gov.ie/dataset/maproad-roadworks-licensing-system) has a national roadworks API that is explicitly not open data. |
+
+Next integration candidates are the approved National Highways, TfL, Traffic Scotland, and Traffic Wales feeds if credentials or subscriber approval are obtained. For Ireland, verify TII's current DATEX II access and ESB's reuse terms before adding markers.

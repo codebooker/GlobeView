@@ -1,5 +1,8 @@
 import unittest
+import datetime as dt
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import international_infrastructure as feeds
 
@@ -60,6 +63,34 @@ class InfrastructureTests(unittest.TestCase):
             result = feeds._tfl_disruptions()
         self.assertEqual([x['properties']['layer'] for x in result], ['construction', 'incidents'])
 
+    def test_wales_roadworks_only_include_current_geolocated_works(self):
+        local_now = dt.datetime.now(ZoneInfo('Europe/London'))
+        start = (local_now - dt.timedelta(days=1)).strftime('%d/%m/%Y %H:%M')
+        end = (local_now + dt.timedelta(days=1)).strftime('%d/%m/%Y %H:%M')
+        future = (local_now + dt.timedelta(days=2)).strftime('%d/%m/%Y %H:%M')
+        feed = ET.fromstring(f'''<rss xmlns:georss="http://www.georss.org/georss"><channel>
+          <item><guid>active</guid><title>A55 works</title><link>https://traffic.wales/road-traffic-alerts/1</link>
+            <description>Start time: {start}, End Date: {end}</description><georss:point>53.2 -3.1</georss:point></item>
+          <item><guid>future</guid><title>Future works</title>
+            <description>Start time: {future}, End Date: {end}</description><georss:point>53.3 -3.2</georss:point></item>
+          <item><guid>missing</guid><title>No location</title>
+            <description>Start time: {start}, End Date: {end}</description></item>
+        </channel></rss>''')
+        with patch.object(feeds, '_get_xml', return_value=feed):
+            result = feeds._wales_feed('construction')
+        self.assertEqual([x['properties']['key'] for x in result], ['uk:wales:construction:active'])
+        self.assertEqual(result[0]['geometry']['coordinates'], [-3.1, 53.2])
+
+    def test_wales_incident_feed_maps_current_rss_items(self):
+        feed = ET.fromstring('''<rss xmlns:georss="http://www.georss.org/georss"><channel>
+          <item><guid>incident-1</guid><title>A55 collision</title><description>Lane blocked</description>
+            <link>https://traffic.wales/road-traffic-alerts/2</link><georss:point>53.1 -3.0</georss:point></item>
+        </channel></rss>''')
+        with patch.object(feeds, '_get_xml', return_value=feed):
+            result = feeds._wales_feed('incidents')
+        self.assertEqual(result[0]['properties']['layer'], 'incidents')
+        self.assertEqual(result[0]['properties']['source'], 'Traffic Wales')
+
     def test_power_filters_restored_and_future_outages_and_deduplicates(self):
         uk_rows = [
             {'incidentreference': 'a', 'geopoint': {'lon': 0.1, 'lat': 51.5},
@@ -75,6 +106,19 @@ class InfrastructureTests(unittest.TestCase):
                                                      (npg_rows, '2026-09-26T12:00:00Z')]), patch.object(feeds.time, 'time', return_value=NOW):
             self.assertEqual([x['properties']['key'] for x in feeds._ukpn_outages()], ['uk:ukpn:a'])
             self.assertEqual([x['properties']['key'] for x in feeds._npg_outages()], ['uk:npg:x'])
+
+    def test_ssen_powertrack_uses_current_geolocated_faults(self):
+        payload = {'timestampUtc': '2026-09-27T12:00:00Z', 'faults': [
+            {'reference': 'UA123', 'title': 'GU20 Area', 'location': {'longitude': -0.65, 'latitude': 51.36},
+             'customerCount': 29, 'estimatedRestorationTimeUtc': '2026-09-27T18:00:00Z'},
+            {'reference': 'UA123', 'location': {'longitude': -0.66, 'latitude': 51.35}},
+            {'reference': 'UA124', 'location': None},
+        ]}
+        with patch.object(feeds, '_get_json', return_value=payload):
+            result = feeds._ssen_outages()
+        self.assertEqual([x['properties']['key'] for x in result], ['uk:ssen:UA123'])
+        self.assertEqual(result[0]['properties']['customers_affected'], 29)
+        self.assertEqual(result[0]['properties']['source_updated'], '2026-09-27T12:00:00Z')
 
 
 if __name__ == '__main__':
