@@ -21,6 +21,7 @@ QLD_URL = 'https://publiccontent-gis-psba-qld-gov-au.s3.amazonaws.com/content/Fe
 NZ_URL = 'https://alerthub.civildefence.govt.nz/atom/pwp'
 ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods'
 BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
+ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
 _ATOM = '{http://www.w3.org/2005/Atom}'
 _CAP = '{urn:oasis:names:tc:emergency:cap:1.2}'
 _LOCK = threading.Lock()
@@ -380,6 +381,51 @@ def parse_burgenland(page, now=None):
     return output
 
 
+def parse_iceland(payload, now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(payload, list):
+        raise ValueError('Iceland CAP response is not a list')
+    output = []
+    for row in payload[:150]:
+        if not isinstance(row, dict) or row.get('msgtype') not in {'Alert', 'Update'}:
+            continue
+        identifier = str(row.get('identifier') or '')
+        expiry = _iso(row.get('expires'))
+        sent = _iso(row.get('sent'))
+        if not identifier or not expiry or not sent:
+            continue
+        if dt.datetime.fromisoformat(expiry.replace('Z', '+00:00')) <= now:
+            continue
+        if dt.datetime.fromisoformat(sent.replace('Z', '+00:00')) > now + dt.timedelta(minutes=10):
+            continue
+        polygons = row.get('polygon') or []
+        if isinstance(polygons, str):
+            polygons = [polygons]
+        points = []
+        for polygon in polygons[:10]:
+            for pair in str(polygon).split()[:1000]:
+                try:
+                    lat, lon = map(float, pair.split(','))
+                except ValueError:
+                    continue
+                if _valid(lon, lat):
+                    points.append((lon, lat))
+        if len(points) > 1 and points[0] == points[-1]:
+            points.pop()
+        if not points:
+            continue
+        lon = sum(point[0] for point in points) / len(points)
+        lat = sum(point[1] for point in points) / len(points)
+        event = row.get('event_en') or 'Hazard alert'
+        headline = row.get('headline_en') or event
+        detail = row.get('description_en') or event
+        output.append(_item(f'iceland:{identifier}:{row.get("area_id", "")}', lon, lat,
+                            headline, detail,
+                            f'Icelandic Meteorological Office · downloaded {now.date().isoformat()} UTC',
+                            'https://en.vedur.is/', sent, 'warning'))
+    return output
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
@@ -387,6 +433,7 @@ _LOADERS = {
     'nz_alerts': fetch_nz,
     'england_floods': lambda: parse_england(_json(ENGLAND_URL)),
     'burgenland_fire': lambda: parse_burgenland(_html(BURGENLAND_URL)),
+    'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
 }
 
 

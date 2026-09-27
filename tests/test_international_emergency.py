@@ -87,6 +87,19 @@ class InternationalEmergencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds.parse_burgenland(page, now + dt.timedelta(minutes=30))
 
+    def test_iceland_cap_maps_active_polygon_and_excludes_cleared_alerts(self):
+        now = dt.datetime(2026, 9, 27, 8, tzinfo=dt.timezone.utc)
+        row = {'identifier': 'imo-1', 'area_id': 14, 'msgtype': 'Alert',
+               'sent': '2026-09-27T07:30:00Z', 'expires': '2026-09-28T00:00:00Z',
+               'headline_en': 'Landslide warning', 'description_en': 'Avoid steep slopes.',
+               'polygon': ['66.0,-23.0 66.0,-22.0 65.0,-22.0 66.0,-23.0']}
+        items = feeds.parse_iceland([row, {**row, 'identifier': 'imo-2', 'msgtype': 'Cancel'}], now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['id'], 'iceland:imo-1:14')
+        self.assertAlmostEqual(items[0]['lon'], -22.333333, places=5)
+        self.assertIn('downloaded 2026-09-27', items[0]['source'])
+        self.assertEqual(feeds.parse_iceland([{**row, 'expires': '2026-09-27T07:00:00Z'}], now), [])
+
 
 if __name__ == '__main__':
     unittest.main()
