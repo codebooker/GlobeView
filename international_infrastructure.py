@@ -2962,6 +2962,47 @@ def _ndw_roads():
     return _parse_ndw_roads(_get_gzip_xml(NDW_BASE + 'actueel_beeld.xml.gz'))
 
 
+def _parse_ndw_bridge_openings(root, now=None):
+    now = time.time() if now is None else now
+    payload = next((item for item in root.iter()
+                    if item.tag.rsplit('}', 1)[-1] == 'payload'
+                    and item.get(_DATEX_TYPE, '').endswith('SituationPublication')), None)
+    if payload is None:
+        raise ValueError('NDW bridge opening publication is invalid')
+    published = payload.findtext('{*}publicationTime')
+    observed = _timestamp(published)
+    if observed is None or not -600 <= now - observed <= 20 * 60:
+        raise ValueError('NDW bridge opening publication is stale')
+    features = []
+    for situation in payload.findall('{*}situation'):
+        for record in situation.findall('{*}situationRecord'):
+            if record.findtext('{*}generalNetworkManagementType') != 'bridgeSwingInOperation':
+                continue
+            start = _timestamp(record.findtext('.//{*}overallStartTime'))
+            end = _timestamp(record.findtext('.//{*}overallEndTime'))
+            if start is None or end is None or not start <= now <= end or end - start > 3 * 3600:
+                continue
+            point = _ndw_record_point(record)
+            if point is None:
+                continue
+            identifier = str(record.get('id') or '')
+            if not re.fullmatch(r'[A-Za-z0-9_-]{5,120}', identifier):
+                continue
+            end_label = dt.datetime.fromtimestamp(end, dt.timezone.utc).strftime('%H:%M UTC')
+            features.append(_feature(point, {
+                'key': f'nl:ndw:bridge:{identifier}', 'layer': 'incidents',
+                'title': 'Scheduled bridge opening · Netherlands',
+                'detail': f'Road traffic may pause until {end_label} · schedule, not a confirmed closure',
+                'source': 'NDW Open Data · bridge schedule', 'source_url': NDW_BASE,
+                'updated_at': published,
+            }))
+    return features
+
+
+def _ndw_bridge_openings():
+    return _parse_ndw_bridge_openings(_get_gzip_xml(NDW_BASE + 'planningsfeed_brugopeningen.xml.gz'))
+
+
 def _parse_ndw_signs(root, now=None):
     now = time.time() if now is None else now
     payloads = [item for item in root if item.tag.rsplit('}', 1)[-1] == 'payload']
@@ -4055,6 +4096,7 @@ _FETCHERS = {
         'be_brussels_counters': _brussels_counters,
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
+        'nl_ndw_bridge_openings': _ndw_bridge_openings,
         'nl_ndw_signs': _ndw_signs,
         'ch_zurich_roadworks': _zurich_roadworks,
         'ch_zurich_sensors': _zurich_sensors,

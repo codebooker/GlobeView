@@ -1120,6 +1120,37 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             feeds._parse_ndw_roads(root, NOW + 3600)
 
+    def test_ndw_bridge_schedule_only_shows_current_short_windows(self):
+        root = ET.fromstring('''<messageContainer xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <payload xsi:type="sit:SituationPublication">
+            <publicationTime>2026-09-26T18:00:00Z</publicationTime>
+            <situation><situationRecord id="BMS01_bridge_1">
+              <generalNetworkManagementType>bridgeSwingInOperation</generalNetworkManagementType>
+              <overallStartTime>2026-09-26T17:58:00Z</overallStartTime>
+              <overallEndTime>2026-09-26T18:04:00Z</overallEndTime>
+              <pointCoordinates><latitude>52.35</latitude><longitude>4.85</longitude></pointCoordinates>
+            </situationRecord></situation>
+            <situation><situationRecord id="BMS01_future">
+              <generalNetworkManagementType>bridgeSwingInOperation</generalNetworkManagementType>
+              <overallStartTime>2026-09-26T19:00:00Z</overallStartTime>
+              <overallEndTime>2026-09-26T19:06:00Z</overallEndTime>
+              <pointCoordinates><latitude>52.36</latitude><longitude>4.86</longitude></pointCoordinates>
+            </situationRecord></situation>
+            <situation><situationRecord id="BMS01_long">
+              <generalNetworkManagementType>bridgeSwingInOperation</generalNetworkManagementType>
+              <overallStartTime>2026-09-26T16:00:00Z</overallStartTime>
+              <overallEndTime>2026-09-26T20:00:00Z</overallEndTime>
+              <pointCoordinates><latitude>52.37</latitude><longitude>4.87</longitude></pointCoordinates>
+            </situationRecord></situation>
+          </payload>
+        </messageContainer>''')
+        rows = feeds._parse_ndw_bridge_openings(root, NOW)
+        self.assertEqual([item['properties']['key'] for item in rows],
+                         ['nl:ndw:bridge:BMS01_bridge_1'])
+        self.assertIn('schedule, not a confirmed closure', rows[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_ndw_bridge_openings(root, NOW + 3600)
+
     def test_ndw_signs_keep_only_working_displays(self):
         image = base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'0' * 400).decode()
         root = ET.fromstring(f'''<messageContainer xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
