@@ -6,6 +6,7 @@ import csv
 import datetime as dt
 import email.utils
 import gzip
+import hashlib
 import html
 import io
 import json
@@ -51,6 +52,8 @@ DGT_SIGNS_SOURCE = 'https://nap.dgt.es/es/dataset/paneles-dgt-tiempo-real-datex2
 SCT_BASE = 'https://www.gencat.cat/transit/opendata/'
 SCT_INCIDENTS_SOURCE = 'https://analisi.transparenciacatalunya.cat/Transport/Incid-ncies-vi-ries-en-temps-real-a-Catalunya/uyam-bs37'
 SCT_CAMERAS_SOURCE = 'https://analisi.transparenciacatalunya.cat/Transport/C-meres-de-tr-nsit-a-les-carreteres-de-Catalunya/3tzz-6b9y'
+POLAND_ROADS_URL = 'https://www.archiwum.gddkia.gov.pl/dane/zima_html/utrdane.xml'
+POLAND_ROADS_SOURCE = 'https://www.gov.pl/web/gddkia/dane-xml'
 AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
@@ -192,6 +195,7 @@ def _clean(value, limit=280):
 def _timestamp(value):
     try:
         timestamp = re.sub(r'(\.\d{6})\d+(?=Z|[+-]\d{2}:\d{2}$)', r'\1', str(value))
+        timestamp = re.sub(r'([+-]\d{2})(\d{2})$', r'\1:\2', timestamp)
         parsed = dt.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=dt.timezone.utc)
@@ -2015,6 +2019,48 @@ def _sct_cameras():
     return _parse_sct_cameras(_sct_xml('cameres.xml'))
 
 
+def _parse_poland_roads(root, now=None):
+    now = time.time() if now is None else now
+    published = _timestamp(root.attrib.get('gen'))
+    if root.tag != 'utrudnienia' or published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('Poland GDDKiA road publication is stale or invalid')
+    features = []
+    for event in root.findall('utr'):
+        kind = event.findtext('typ')
+        if kind not in {'U', 'W', 'I', 'K'}:
+            continue
+        start = _timestamp(event.findtext('data_powstania'))
+        end = _timestamp(event.findtext('data_likwidacji'))
+        if start is None or end is None or not start <= now <= end:
+            continue
+        try:
+            lat, lon = float(event.findtext('geo_lat')), float(event.findtext('geo_long'))
+        except (TypeError, ValueError):
+            continue
+        if not 48.8 <= lat <= 55.2 or not 14 <= lon <= 24.3:
+            continue
+        road = _clean(event.findtext('nr_drogi'), 18)
+        section = _clean(event.findtext('nazwa_odcinka'), 90)
+        description = _clean(event.findtext('objazd'), 210)
+        effect = _clean(event.findtext('skutki'), 90)
+        code = _clean(event.findtext('rodzaj/poz'), 12)
+        category = 'Roadworks' if kind == 'U' else 'Road incident'
+        label = ' · '.join(part for part in (road, category) if part)
+        detail = ' · '.join(part for part in (section, description, effect if effect != description else '') if part)
+        identity = '|'.join((kind, road, str(lat), str(lon), event.findtext('data_powstania') or '', code))
+        event_id = hashlib.sha1(identity.encode('utf-8')).hexdigest()[:16]
+        features.append(_feature([lon, lat], {
+            'key': f'pl:gddkia:{event_id}', 'layer': 'construction' if kind == 'U' else 'incidents',
+            'title': label, 'detail': detail, 'source': 'Poland GDDKiA',
+            'source_url': POLAND_ROADS_SOURCE, 'updated_at': root.attrib['gen'],
+        }))
+    return features
+
+
+def _poland_roads():
+    return _parse_poland_roads(_get_xml(POLAND_ROADS_URL, max_bytes=2 * 1024 * 1024))
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -2026,6 +2072,7 @@ _FETCHERS = {
         'es_dgt_signs': _dgt_signs,
         'es_sct_incidents': _sct_incidents,
         'es_sct_cameras': _sct_cameras,
+        'pl_gddkia_roads': _poland_roads,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,

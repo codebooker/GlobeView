@@ -16,6 +16,30 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_poland_road_events_require_fresh_publication_and_active_dates(self):
+        now = dt.datetime(2026, 9, 27, 10, 50, tzinfo=dt.timezone.utc).timestamp()
+        root = ET.fromstring('''<utrudnienia gen="2026-09-27T12:48:00+0200">
+          <utr><typ>U</typ><nr_drogi>A1</nr_drogi><geo_lat>54.13</geo_lat><geo_long>18.67</geo_long>
+            <nazwa_odcinka>Rusocin</nazwa_odcinka><objazd>Lane works</objazd><rodzaj><poz>U33</poz></rodzaj>
+            <data_powstania>2026-09-27T08:00:00+0200</data_powstania>
+            <data_likwidacji>2026-09-28T18:00:00+0200</data_likwidacji></utr>
+          <utr><typ>W</typ><nr_drogi>A4</nr_drogi><geo_lat>50.11</geo_lat><geo_long>21.68</geo_long>
+            <objazd>Collision</objazd><data_powstania>2026-09-27T12:15:00+0200</data_powstania>
+            <data_likwidacji>2026-09-27T14:15:00+0200</data_likwidacji></utr>
+          <utr><typ>U</typ><nr_drogi>S7</nr_drogi><geo_lat>52.1</geo_lat><geo_long>20.1</geo_long>
+            <data_powstania>2026-09-28T08:00:00+0200</data_powstania>
+            <data_likwidacji>2026-09-29T18:00:00+0200</data_likwidacji></utr>
+          <utr><typ>I</typ><nr_drogi>S3</nr_drogi><geo_lat>52.1</geo_lat><geo_long>15.2</geo_long>
+            <data_powstania>2026-09-26T08:00:00+0200</data_powstania>
+            <data_likwidacji>2026-09-26T18:00:00+0200</data_likwidacji></utr>
+        </utrudnienia>''')
+        rows = feeds._parse_poland_roads(root, now)
+        self.assertEqual([row['properties']['layer'] for row in rows], ['construction', 'incidents'])
+        self.assertEqual(rows[0]['geometry']['coordinates'], [18.67, 54.13])
+        self.assertIn('Collision', rows[1]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_poland_roads(root, now + 21 * 60)
+
     def test_sct_roadworks_and_incidents_are_separate(self):
         root = ET.fromstring('''<FeatureCollection><featureMember><event>
           <geom><Point><coordinates>2.16,41.67</coordinates></Point></geom>
