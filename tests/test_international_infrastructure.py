@@ -122,6 +122,34 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_france_roads(stale, now)
 
+    def test_france_sensor_reference_and_fresh_measurements(self):
+        self.assertAlmostEqual(feeds._lambert93_to_lonlat(700000, 6600000)[0], 3, places=5)
+        self.assertAlmostEqual(feeds._lambert93_to_lonlat(700000, 6600000)[1], 46.5, places=5)
+        header = ';'.join(['code_pme', 'source', 'source_2', 'code_insee_commune', 'axe',
+                           'pr_debut', 'abscisse_debut', 'pr_fin', 'abscisse_fin',
+                           'sens_gestionnaire', 'sens_cardinal', 'sens_migratoire',
+                           'sens_giratoire', 'longueur', 'nb_voies', 'x_deb', 'y_deb',
+                           'x_fin', 'y_fin', 'code_traficolor'])
+        row = ['station-1', 'DIR', '42', 'N7', 'marker', '0', 'marker', '0', '1',
+               'NORD_SUD', 'Y', '', '0', '0', '700000', '6600000', '700000', '6600000', 'CODE']
+        references = feeds._parse_france_sensor_references(header + '\n' + ';'.join(row))
+        self.assertEqual(references['station-1'][1], 'N7')
+        now = dt.datetime(2026, 9, 27, 12, 30, tzinfo=dt.timezone.utc).timestamp()
+        xml = '''<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0">
+          <payloadPublication><publicationTime>2026-09-27T12:20:00Z</publicationTime>
+          <siteMeasurements><measurementSiteReference id="station-1"/>
+            <measurementTimeDefault>2026-09-27T12:25:00Z</measurementTimeDefault>
+            <measuredValue><basicData><vehicleFlow><vehicleFlowRate>320</vehicleFlowRate></vehicleFlow></basicData></measuredValue>
+            <measuredValue><basicData><averageVehicleSpeed><speed>106</speed></averageVehicleSpeed></basicData></measuredValue>
+          </siteMeasurements></payloadPublication></d2LogicalModel>'''
+        result = feeds._parse_france_sensors(ET.fromstring(xml), references, now)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['properties']['layer'], 'sensors')
+        self.assertEqual(result[0]['properties']['detail'], '106 km/h · 320 vehicles/h')
+        stale = ET.fromstring(xml.replace('2026-09-27T12:20:00Z', '2026-09-27T10:20:00Z'))
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_france_sensors(stale, references, now)
+
     def test_power_filters_restored_and_future_outages_and_deduplicates(self):
         uk_rows = [
             {'incidentreference': 'a', 'geopoint': {'lon': 0.1, 'lat': 51.5},

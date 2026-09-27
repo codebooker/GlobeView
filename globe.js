@@ -1940,14 +1940,39 @@
       paths = boxes.map(box => `${path}?${new URLSearchParams({ bbox: box.join(','), limit: '10000' })}`);
     }
     try {
-      const payloads = await Promise.all(paths.map(async url => {
+      const franceSensorsVisible = type === 'sensors' && regionVisible({ bounds: {
+        minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } }, currentBounds());
+      const northAmericaSensorsVisible = type !== 'sensors' || regionVisible({ bounds: {
+        minLon: -170, maxLon: -50, minLat: 15, maxLat: 72 } }, currentBounds());
+      const staticPromise = northAmericaSensorsVisible ? Promise.all(paths.map(async url => {
         const response = await fetch(url, { signal: controller.signal });
         if (!response.ok) throw new Error(`${POINT[type].label}: ${response.status}`);
         return response.json();
-      }));
+      })) : Promise.resolve([{}]);
+      const francePromise = franceSensorsVisible
+        ? fetchInternationalRoad('sensors', currentBounds(), controller.signal) : Promise.resolve(null);
+      const [staticResult, franceResult] = await Promise.allSettled([staticPromise, francePromise]);
+      if (staticResult.status === 'rejected' && (franceResult.status === 'rejected' || !franceResult.value)) {
+        throw staticResult.reason;
+      }
+      const payloads = staticResult.status === 'fulfilled' ? staticResult.value : [];
       const data = type === 'lpr' ? { elements: payloads.flatMap(payload => payload.elements || []) } : payloads[0];
       if (controller.signal.aborted || !enabled[type]) return;
-      const { features, records } = convertStatic(type, data);
+      const { features, records } = convertStatic(type, data || {});
+      if (franceResult.status === 'fulfilled' && franceResult.value) {
+        for (const item of franceResult.value.features || []) {
+          const [lon, lat] = item.geometry?.coordinates || [];
+          const p = item.properties || {};
+          if (!validCoordinate(lat, lon) || !p.key) continue;
+          const ref = String(p.key);
+          features.push(feature(type, ref, lon, lat));
+          records.set(ref, { title: p.title || 'Road sensor',
+            detail: [p.detail, p.updated_at ? `Updated ${p.updated_at}` : ''].filter(Boolean).join(' · '),
+            source: p.source || 'Public road authority', sourceUrl: p.source_url });
+        }
+      } else if (franceResult.status === 'rejected' && !controller.signal.aborted) {
+        console.warn('French road sensors:', franceResult.reason);
+      }
       setPoints(type, features, records);
     } catch (error) {
       if (controller.signal.aborted) return;

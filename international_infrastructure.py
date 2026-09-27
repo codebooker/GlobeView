@@ -7,6 +7,7 @@ import gzip
 import html
 import io
 import json
+import math
 import re
 import threading
 import time
@@ -31,6 +32,9 @@ FRANCE_ROADS_URL = ('https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/'
                     'publicationsDIR/Evenementiel-DIR/grt/RRN/content.xml')
 FRANCE_ROADS_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                        'evenements-routiers-sur-le-reseau-routier-national-non-concede')
+FRANCE_SENSOR_BASE = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/'
+FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
+                        'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -40,6 +44,7 @@ _CACHE = {
 }
 _STALE_SECONDS = 900
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
+_FRANCE_SENSOR_REFERENCES = {'until': 0, 'points': {}}
 
 
 def _get_json(url, fintraffic=False):
@@ -495,6 +500,110 @@ def _france_roads():
     return _parse_france_roads(_get_xml(FRANCE_ROADS_URL, max_bytes=8 * 1024 * 1024))
 
 
+def _lambert93_to_lonlat(x, y):
+    """Convert the sensor reference's RGF93 / Lambert-93 metres to map coordinates."""
+    a, flattening = 6378137.0, 1 / 298.257222101
+    eccentricity = math.sqrt(2 * flattening - flattening * flattening)
+
+    def t(latitude):
+        sine = math.sin(latitude)
+        return math.tan(math.pi / 4 - latitude / 2) * (
+            (1 + eccentricity * sine) / (1 - eccentricity * sine)) ** (eccentricity / 2)
+
+    def m(latitude):
+        sine = math.sin(latitude)
+        return math.cos(latitude) / math.sqrt(1 - eccentricity ** 2 * sine ** 2)
+
+    north, south, origin = map(math.radians, (49, 44, 46.5))
+    exponent = math.log(m(north) / m(south)) / math.log(t(north) / t(south))
+    factor = m(north) / (exponent * t(north) ** exponent)
+    origin_radius = a * factor * t(origin) ** exponent
+    radius = math.hypot(x - 700000, origin_radius - (y - 6600000))
+    angle = math.atan2(x - 700000, origin_radius - (y - 6600000))
+    target_t = (radius / (a * factor)) ** (1 / exponent)
+    latitude = math.pi / 2 - 2 * math.atan(target_t)
+    for _ in range(8):
+        sine = math.sin(latitude)
+        latitude = math.pi / 2 - 2 * math.atan(target_t * (
+            (1 - eccentricity * sine) / (1 + eccentricity * sine)) ** (eccentricity / 2))
+    return [3 + math.degrees(angle / exponent), math.degrees(latitude)]
+
+
+def _parse_france_sensor_references(csv_text):
+    rows = csv.reader(io.StringIO(csv_text), delimiter=';')
+    next(rows, None)
+    points = {}
+    for row in rows:
+        # The published header includes code_insee_commune, but all current data rows omit it.
+        if len(row) not in (19, 20):
+            continue
+        offset = len(row) - 19
+        try:
+            x1, y1, x2, y2 = (float(row[index + offset]) for index in (14, 15, 16, 17))
+        except (ValueError, IndexError):
+            continue
+        point = _point({'coordinates': _lambert93_to_lonlat((x1 + x2) / 2, (y1 + y2) / 2)})
+        if point and -6 <= point[0] <= 10 and 41 <= point[1] <= 52:
+            points[row[0]] = (point, _clean(row[3 + offset], 24))
+    return points
+
+
+def _parse_france_sensors(root, references, now=None):
+    now = time.time() if now is None else now
+    published = _timestamp(root.findtext('.//d:publicationTime', namespaces=_DATEX_NS))
+    if published is None or not -600 <= now - published <= 45 * 60:
+        raise ValueError('French traffic sensor publication is stale or invalid')
+    features = []
+    for item in root.findall('.//d:siteMeasurements', _DATEX_NS):
+        reference = item.find('d:measurementSiteReference', _DATEX_NS)
+        station = reference.get('id') if reference is not None else None
+        if station not in references:
+            continue
+        measured_at = item.findtext('d:measurementTimeDefault', namespaces=_DATEX_NS)
+        measured = _timestamp(measured_at)
+        if measured is None or not -600 <= now - measured <= 30 * 60:
+            continue
+        try:
+            speed = float(item.findtext('.//d:averageVehicleSpeed/d:speed', namespaces=_DATEX_NS))
+        except (TypeError, ValueError):
+            speed = None
+        try:
+            flow = float(item.findtext('.//d:vehicleFlow/d:vehicleFlowRate', namespaces=_DATEX_NS))
+        except (TypeError, ValueError):
+            flow = None
+        speed = speed if speed is not None and math.isfinite(speed) and 0 < speed <= 200 else None
+        flow = flow if flow is not None and math.isfinite(flow) and 0 <= flow <= 10000 else None
+        if speed is None and not flow:
+            continue
+        point, road = references[station]
+        detail = ' · '.join(filter(None, [f'{speed:.0f} km/h' if speed is not None else '',
+                                          f'{flow:.0f} vehicles/h' if flow is not None else '']))
+        features.append(_feature(point, {
+            'key': f'fr:sensor:{station}', 'layer': 'sensors',
+            'title': f'{road} · road sensor' if road else 'Road sensor', 'detail': detail,
+            'source': 'Bison Futé / DIR · Licence Ouverte 2.0',
+            'source_url': FRANCE_SENSOR_SOURCE, 'updated_at': measured_at,
+        }))
+    return features
+
+
+def _france_sensors():
+    now = time.time()
+    if now >= _FRANCE_SENSOR_REFERENCES['until']:
+        request = urllib.request.Request(FRANCE_SENSOR_BASE + 'refDir.csv', headers={
+            'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'text/csv'})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            body = response.read(2 * 1024 * 1024 + 1)
+        if len(body) > 2 * 1024 * 1024:
+            raise ValueError('French sensor reference exceeded 2 MB')
+        references = _parse_france_sensor_references(body.decode('utf-8-sig'))
+        if not references:
+            raise ValueError('French sensor reference has no usable locations')
+        _FRANCE_SENSOR_REFERENCES.update({'until': now + 12 * 3600, 'points': references})
+    return _parse_france_sensors(_get_xml(FRANCE_SENSOR_BASE + 'qtvDir.xml'),
+                                 _FRANCE_SENSOR_REFERENCES['points'], now)
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -505,6 +614,7 @@ _FETCHERS = {
         'uk_wales_construction': lambda: _wales_feed('construction'),
         'uk_scotland_construction': _scotland_roadworks,
         'fr_national_roads': _france_roads,
+        'fr_traffic_sensors': _france_sensors,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},
@@ -537,7 +647,7 @@ def _snapshot(kind):
 
 
 def road_snapshot(layer, bbox=None):
-    if layer not in {'signs', 'incidents', 'construction'}:
+    if layer not in {'signs', 'incidents', 'construction', 'sensors'}:
         raise ValueError('Unknown road layer')
     snapshot = _snapshot('roads')
     features = [item for rows in snapshot['sources'].values() for item in rows if item['properties']['layer'] == layer]
