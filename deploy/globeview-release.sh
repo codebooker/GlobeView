@@ -40,6 +40,7 @@ if [[ ! -d "$release/.venv" ]]; then
     mv "$build" "$release"
     trap - EXIT
 fi
+chmod 0750 "$release"
 
 previous=""
 if [[ -d "$CURRENT" ]]; then previous="$(readlink -f "$CURRENT")"; fi
