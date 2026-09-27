@@ -64,6 +64,9 @@ NGED_OUTAGES_URL = ('https://connecteddata.nationalgrid.co.uk/dataset/'
                     'd6672e1e-c684-4cea-bb78-c7e5248b62a2/resource/'
                     '292f788f-4339-455b-8cc0-153e14509d4d/download/power_outage_ext.csv')
 SSEN_OUTAGES_URL = 'https://external.distribution.prd.ssen.co.uk/opendataportal-prd/v4/api/getallfaults'
+LIANDER_OUTAGES_URL = ('https://services1.arcgis.com/v6W5HAVrpgSg3vts/ArcGIS/rest/services/'
+                       'IStoringen_Productie_V7/FeatureServer/0/query')
+LIANDER_OUTAGES_SOURCE = 'https://data.overheid.nl/dataset/storingsdata-liander-actuele-storingen'
 WALES_RSS_BASE = 'https://traffic.wales/feeds'
 NATIONAL_HIGHWAYS_ROADWORKS_DATASET = ('https://www.data.gov.uk/dataset/'
                                        '5b3267d8-4307-4eef-a9af-3a4c28224694/'
@@ -2199,6 +2202,67 @@ def _nged_outages(now=None):
     return features
 
 
+def _parse_liander_outages(payload, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(payload, dict) or payload.get('error') or not isinstance(payload.get('features'), list):
+        raise ValueError('Liander returned an invalid outage payload')
+    if payload.get('exceededTransferLimit'):
+        raise ValueError('Liander outage response was incomplete')
+    features = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        fields = row.get('attributes') or {}
+        center = row.get('centroid') or {}
+        try:
+            outage_id = int(fields['STORING_NUMMER'])
+            lon, lat = float(center['x']), float(center['y'])
+            reported = float(fields['STORING_DATUM_GEMELD']) / 1000
+            updated = float(fields['STORING_SERVICE_UPDATE']) / 1000
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if (outage_id in seen or not 3 <= lon <= 8 or not 50 <= lat <= 54
+                or fields.get('STORING_TYPE') != 'S'
+                or fields.get('STORING_ENERGIESOORT') != 'Elektriciteit'
+                or fields.get('STORING_DATUM_EIND') is not None
+                or not str(fields.get('STORING_STATUS') or '').strip()
+                or str(fields['STORING_STATUS']).casefold() == 'opgelost'
+                or not -300 <= now - reported <= 7 * 86400
+                or not -300 <= now - updated <= 86400):
+            continue
+        seen.add(outage_id)
+        impact = _clean(fields.get('STORING_GETROFFEN_KLANTEN'), 30)
+        features.append(_feature([lon, lat], {
+            'key': f'nl:liander:{outage_id}', 'provider': 'Liander',
+            'area_name': _clean(fields.get('STORING_GETROFFEN_PLAATSEN'), 100) or 'Liander service area',
+            'customers_affected': (impact if re.fullmatch(r'<\s*\d+', impact)
+                                   else int(impact) if impact.isdecimal() else 0),
+            'status': 'Unplanned power outage',
+            'reason': _clean(fields.get('STORING_STATUS'), 80) + ' · approximate area center',
+            'etr': '', 'source_label': 'Liander · CC BY 4.0',
+            'source_url': LIANDER_OUTAGES_SOURCE,
+            'source_updated': dt.datetime.fromtimestamp(updated, dt.timezone.utc).isoformat().replace('+00:00', 'Z'),
+        }))
+    return features
+
+
+def _liander_outages():
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
+    where = ("STORING_TYPE = 'S' AND STORING_ENERGIESOORT = 'Elektriciteit' "
+             "AND STORING_DATUM_EIND IS NULL AND STORING_STATUS <> 'opgelost' "
+             f"AND STORING_DATUM_GEMELD >= timestamp '{cutoff:%Y-%m-%d %H:%M:%S}'")
+    query = urllib.parse.urlencode({
+        'where': where, 'outFields': ','.join((
+            'STORING_NUMMER', 'STORING_TYPE', 'STORING_ENERGIESOORT', 'STORING_STATUS',
+            'STORING_DATUM_GEMELD', 'STORING_DATUM_EIND', 'STORING_SERVICE_UPDATE',
+            'STORING_GETROFFEN_KLANTEN', 'STORING_GETROFFEN_PLAATSEN')),
+        'returnGeometry': 'false', 'returnCentroid': 'true', 'outSR': 4326,
+        'resultRecordCount': 2000, 'f': 'json',
+    })
+    return _parse_liander_outages(_get_json(f'{LIANDER_OUTAGES_URL}?{query}'))
+
+
 _DATEX_NS = {'d': 'http://datex2.eu/schema/2/2_0'}
 _DATEX_TYPE = '{http://www.w3.org/2001/XMLSchema-instance}type'
 _FRANCE_WORK_TYPES = {'MaintenanceWorks', 'ConstructionWorks'}
@@ -4000,7 +4064,7 @@ _FETCHERS = {
         'no_travel_times': _norway_travel_times,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
-              'nged': _nged_outages},
+              'nged': _nged_outages, 'nl_liander': _liander_outages},
 }
 
 

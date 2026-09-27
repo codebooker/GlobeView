@@ -1471,6 +1471,34 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(result[0]['properties']['etr'], '2026-09-27T13:00:00Z')
         self.assertEqual(result[0]['properties']['source_label'], 'Supported by NGED Open Data')
 
+    def test_liander_power_cuts_exclude_resolved_and_stale_records(self):
+        now = 1790542800
+        fields = {'STORING_NUMMER': 8371446, 'STORING_TYPE': 'S',
+                  'STORING_ENERGIESOORT': 'Elektriciteit',
+                  'STORING_STATUS': 'monteur onderweg',
+                  'STORING_DATUM_GEMELD': (now - 3600) * 1000,
+                  'STORING_DATUM_EIND': None,
+                  'STORING_SERVICE_UPDATE': (now - 300) * 1000,
+                  'STORING_GETROFFEN_KLANTEN': '< 100',
+                  'STORING_GETROFFEN_PLAATSEN': 'AMSTERDAM'}
+        def outage(**changes):
+            return {'attributes': dict(fields, **changes),
+                    'centroid': {'x': 4.9, 'y': 52.37}}
+        payload = {'features': [outage(), outage(),
+                    outage(STORING_NUMMER=2, STORING_STATUS='opgelost'),
+                    outage(STORING_NUMMER=3, STORING_DATUM_EIND=now * 1000),
+                    outage(STORING_NUMMER=4, STORING_TYPE='P'),
+                    outage(STORING_NUMMER=5, STORING_ENERGIESOORT='Gas'),
+                    outage(STORING_NUMMER=6, STORING_SERVICE_UPDATE=(now - 90000) * 1000),
+                    outage(STORING_NUMMER=7, STORING_DATUM_GEMELD=(now - 8 * 86400) * 1000),
+                    dict(outage(STORING_NUMMER=8), centroid={'x': 0, 'y': 0})]}
+        rows = feeds._parse_liander_outages(payload, now)
+        self.assertEqual([row['properties']['key'] for row in rows], ['nl:liander:8371446'])
+        self.assertEqual(rows[0]['geometry']['coordinates'], [4.9, 52.37])
+        self.assertEqual(rows[0]['properties']['customers_affected'], '< 100')
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_liander_outages(dict(payload, exceededTransferLimit=True), now)
+
     def test_scottish_archive_maps_current_work_and_bounds_response(self):
         fields = ['ActivityStatus', 'Category', 'Longitude', 'Latitude', 'StartDateTimeUTC',
                   'EndDateTimeUTC', 'ActivityReference', 'Street', 'Town', 'TrafficManagement',

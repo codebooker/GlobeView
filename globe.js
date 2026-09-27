@@ -2155,7 +2155,7 @@
       const bounds = currentBounds();
       const urls = [];
       if (regionVisible({ bounds: { minLon: -170, maxLon: -50, minLat: 15, maxLat: 73 } }, bounds)) urls.push('/power-outages');
-      if (regionVisible({ bounds: { minLon: -11, maxLon: 3, minLat: 49, maxLat: 60 } }, bounds)) urls.push('/international-power');
+      if (regionVisible({ bounds: { minLon: -11, maxLon: 8, minLat: 49, maxLat: 60 } }, bounds)) urls.push('/international-power');
       const results = await Promise.allSettled(urls.map(async url => {
         const response = await fetch(url, { signal: controller.signal });
         if (!response.ok) throw new Error(`${url}: ${response.status}`);
@@ -2171,10 +2171,13 @@
         if (!item.geometry) continue;
         const p = item.properties || {};
         const ref = String(p.key || features.length);
-        const count = Number(p.customers_affected || 0);
+        const impact = String(p.customers_affected || '').trim();
+        const count = Number(impact);
+        const impactLabel = /^<\s*\d+$/.test(impact) ? `${impact} affected`
+          : Number.isFinite(count) && count > 0 ? `${count.toLocaleString()} affected` : 'Impact unreported';
         records.set(ref, {
           title: p.provider || 'Power outage',
-          detail: [p.area_name, count > 0 ? `${count.toLocaleString()} affected` : 'Impact unreported', p.outages ? `${p.outages} outages` : '', p.status, p.reason, p.etr ? `ETR ${p.etr}` : '', p.source_updated ? `Source updated ${p.source_updated}` : ''].filter(Boolean).join(' · '),
+          detail: [p.area_name, impactLabel, p.outages ? `${p.outages} outages` : '', p.status, p.reason, p.etr ? `ETR ${p.etr}` : '', p.source_updated ? `Source updated ${p.source_updated}` : ''].filter(Boolean).join(' · '),
           source: p.source_label || 'Utility outage feed', sourceUrl: p.source_url
         });
         let position = null;
