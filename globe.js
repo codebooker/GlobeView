@@ -955,16 +955,43 @@
       img.className = 'popup-media';
       img.alt = 'Latest road camera snapshot';
       img.loading = 'lazy';
-      img.src = snapshot;
+      let retries = 0;
+      let retryTimer;
+      const retryButton = textElement('button', 'popup-play', 'Retry camera image');
+      retryButton.type = 'button';
+      const loadImage = () => {
+        if (!popup.isOpen() || !img.isConnected) return;
+        const separator = snapshot.includes('?') ? '&' : '?';
+        img.src = `${snapshot}${separator}v=${Date.now()}`;
+      };
+      retryButton.addEventListener('click', () => {
+        retries = 0;
+        retryButton.remove();
+        loadImage();
+      });
+      img.addEventListener('load', () => {
+        retries = 0;
+        img.hidden = false;
+        retryButton.remove();
+      });
+      img.addEventListener('error', () => {
+        if (!popup.isOpen() || !img.isConnected) return;
+        if (retries++ === 0) retryTimer = window.setTimeout(loadImage, 1500);
+        else {
+          img.hidden = true;
+          if (!retryButton.isConnected) root.append(retryButton);
+        }
+      });
       root.append(img);
+      img.src = snapshot;
       const refreshMs = Number(meta.item.expando?.snapshotRefreshMs);
       if (refreshMs >= 60000) {
         const refresh = window.setInterval(() => {
-          const separator = snapshot.includes('?') ? '&' : '?';
-          img.src = `${snapshot}${separator}v=${Date.now()}`;
+          if (!retryButton.isConnected) loadImage();
         }, refreshMs);
         popup.on('close', () => window.clearInterval(refresh));
       }
+      popup.on('close', () => window.clearTimeout(retryTimer));
     }
     if (!(detail?.video_enabled || meta.item.expando?.videoEnabled)) return;
     const button = textElement('button', 'popup-play', '▶ Play live camera');

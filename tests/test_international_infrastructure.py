@@ -419,6 +419,11 @@ class InfrastructureTests(unittest.TestCase):
                 patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
             self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
         with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen',
+                             side_effect=[TimeoutError(), Response(b'\xff\xd8\xffimage')]) as open_image:
+            self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
+            self.assertEqual(open_image.call_count, 2)
+        with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'not an image')):
             with self.assertRaises(ValueError):
                 feeds.madrid_camera_snapshot('06303')
@@ -570,6 +575,11 @@ class InfrastructureTests(unittest.TestCase):
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
                 self.assertEqual(feeds._dgt_madrid_unavailable_cameras(items),
                                  {'es:dgt:camera:923', 'es:dgt:camera:1103', 'es:dgt:camera:1104'})
+            feeds._DGT_MADRID_CAMERA_HEALTH['until'] = 0
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
+                self.assertEqual(feeds._dgt_madrid_unavailable_cameras(items),
+                                 {item['properties']['key'] for item in items})
         finally:
             feeds._DGT_MADRID_CAMERA_HEALTH.update(previous)
 
@@ -583,6 +593,11 @@ class InfrastructureTests(unittest.TestCase):
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
             self.assertEqual(feeds.dgt_camera_snapshot('597'), (b'\xff\xd8\xffimage', 'image/jpeg'))
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen',
+                             side_effect=[TimeoutError(), Response(b'\xff\xd8\xffimage')]) as open_image:
+            self.assertEqual(feeds.dgt_camera_snapshot('597')[1], 'image/jpeg')
+            self.assertEqual(open_image.call_count, 2)
         placeholder = Response(b'\xff\xd8\xffimage')
         placeholder.headers = dict(Response.headers, **{'Content-Length': '32634'})
         with patch.object(feeds.time, 'time', return_value=NOW), \
