@@ -354,6 +354,41 @@
     minZoom: 0, maxZoom: 19, maxPitch: 75, renderWorldCopies: false,
     attributionControl: false, antialias: false, fadeDuration: 0
   });
+  const DEG_TO_RAD = Math.PI / 180;
+  function setGlobeFrontVector() {
+    const { lat, lng } = map.getCenter();
+    const latitude = lat * DEG_TO_RAD;
+    const longitude = lng * DEG_TO_RAD;
+    map.setGlobalStateProperty('globe-front-x', Math.cos(latitude) * Math.cos(longitude));
+    map.setGlobalStateProperty('globe-front-y', Math.cos(latitude) * Math.sin(longitude));
+    map.setGlobalStateProperty('globe-front-z', Math.sin(latitude));
+    map.setGlobalStateProperty('globe-horizon-enabled', globeProjection);
+  }
+  const globeFrontDot = ['+',
+    ['*', ['global-state', 'globe-front-x'], ['number', ['get', 'globe-x'], 0]],
+    ['*', ['global-state', 'globe-front-y'], ['number', ['get', 'globe-y'], 0]],
+    ['*', ['global-state', 'globe-front-z'], ['number', ['get', 'globe-z'], 0]]
+  ];
+  const globeHorizonFilter = ['any', ['==', ['global-state', 'globe-horizon-enabled'], false], ['>=', globeFrontDot, 0.008]];
+  function setPointLayerFilter(layerId, baseFilter = null) {
+    if (!map.getLayer(layerId)) return;
+    const filters = [globeHorizonFilter, ...(baseFilter ? [baseFilter] : [])];
+    map.setFilter(layerId, filters.length === 1 ? filters[0] : ['all', ...filters]);
+  }
+  function withGlobeVector(properties, lon, lat) {
+    const latitude = lat * DEG_TO_RAD;
+    const longitude = lon * DEG_TO_RAD;
+    return { ...properties, 'globe-x': Math.cos(latitude) * Math.cos(longitude),
+      'globe-y': Math.cos(latitude) * Math.sin(longitude), 'globe-z': Math.sin(latitude) };
+  }
+  function addGlobeVectorsToPoints(collection) {
+    for (const item of collection.features || []) {
+      if (item.geometry?.type !== 'Point') continue;
+      const [lon, lat] = item.geometry.coordinates;
+      item.properties = withGlobeVector(item.properties || {}, lon, lat);
+    }
+    return collection;
+  }
   map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: '<a href="https://maplibre.org/">MapLibre</a>' }), 'bottom-right');
   // MapLibre initially opens compact attribution so users can discover it.
   // Keep the Info bubble, but defer the source list until the user asks for it.
@@ -483,7 +518,7 @@
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible && selectedCycloneId ? 'visible' : 'none');
       }
       if (type === 'ports' && map.getLayer('gm-ports-points')) {
-        map.setFilter('gm-ports-points', map.getZoom() < 6
+        setPointLayerFilter('gm-ports-points', map.getZoom() < 6
           ? ['in', ['get', 'size'], ['literal', ['Large', 'Medium']]] : null);
       }
     } else if (type === 'traffic' && map.getLayer('gm-traffic-layer')) {
@@ -559,7 +594,7 @@
   }
 
   function feature(type, ref, lon, lat, extra = {}) {
-    return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: { ref, ...extra } };
+    return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: withGlobeVector({ ref, ...extra }, lon, lat) };
   }
 
   function setPoints(type, features, records) {
@@ -811,12 +846,14 @@
       }
     };
     map.addLayer(pointLayer);
+    setPointLayerFilter(`${sourceId}-points`);
     if (type === 'scans') map.addLayer({
       id: 'gm-scans-top-points', type: 'symbol', source: sourceId, maxzoom: 3.5,
       filter: ['<=', ['get', 'rank'], 10],
       layout: { 'icon-image': 'gm-scans-top-icon', 'icon-size': 1.06,
         'icon-allow-overlap': true, 'icon-ignore-placement': true, visibility: 'none' },
     });
+    if (type === 'scans') setPointLayerFilter('gm-scans-top-points', ['<=', ['get', 'rank'], 10]);
     for (const layerId of type === 'scans' ? ['gm-scans-points', 'gm-scans-top-points']
       : [`${sourceId}-points`]) {
       map.on('mouseenter', layerId, () => { if (!cyberFocus || type === 'scans') map.getCanvas().style.cursor = 'pointer'; });
@@ -861,6 +898,7 @@
       filter: ['==', ['geometry-type'], 'Point'],
       layout: { 'icon-image': 'gm-power-icon', 'icon-allow-overlap': true, 'icon-ignore-placement': true, visibility: 'none' }
     });
+    setPointLayerFilter('gm-power-points', ['==', ['geometry-type'], 'Point']);
     for (const id of ['gm-power-fill', 'gm-power-line', 'gm-power-points']) {
       map.on('click', id, event => {
         const item = event.features?.[0];
@@ -1490,8 +1528,8 @@
     const route = trackedAircraft?.route;
     const position = trackedAircraft?.lastPosition;
     if (!route || !position || cyberFocus) { source.setData(EMPTY); return; }
-    const airportPoint = (place, role) => ({ type: 'Feature', properties: { role, code: place.code },
-      geometry: { type: 'Point', coordinates: [place.lon, place.lat] } });
+    const airportPoint = (place, role) => feature('aircraft-route', `${role}:${place.code}`, place.lon, place.lat,
+      { role, code: place.code });
     const segment = (from, to, role) => ({ type: 'Feature', properties: { role },
       geometry: { type: 'LineString', coordinates: [[from.lon, from.lat],
         [from.lon + ((((to.lon - from.lon) + 540) % 360) - 180), to.lat]] } });
@@ -1948,7 +1986,13 @@
           detail: [p.area_name, count > 0 ? `${count.toLocaleString()} affected` : 'Impact unreported', p.outages ? `${p.outages} outages` : '', p.status, p.reason, p.etr ? `ETR ${p.etr}` : '', p.source_updated ? `Source updated ${p.source_updated}` : ''].filter(Boolean).join(' · '),
           source: p.source_label || 'Utility outage feed', sourceUrl: p.source_url
         });
-        features.push({ type: 'Feature', geometry: item.geometry, properties: { ref, color: POINT.power.color } });
+        let position = null;
+        if (item.geometry.type === 'Point') position = item.geometry.coordinates;
+        else if (item.geometry.type === 'MultiPoint') position = item.geometry.coordinates[0];
+        const properties = position
+          ? withGlobeVector({ ref, color: POINT.power.color }, Number(position[0]), Number(position[1]))
+          : { ref, color: POINT.power.color };
+        features.push({ type: 'Feature', geometry: item.geometry, properties });
       }
       refs.set('power', records);
       map.getSource('gm-power')?.setData({ type: 'FeatureCollection', features });
@@ -2649,6 +2693,7 @@
         if (!response.ok) throw new Error(`${ARCGIS[type].label}: ${response.status}`);
         const data = await response.json();
         if (!enabled[type] || requests.get(type) !== controller) return;
+        if (ARCGIS[type].kind === 'point') addGlobeVectorsToPoints(data);
         map.getSource(`gm-arcgis-${type}`)?.setData(data);
         setCount(type, data.features.length);
       } catch (error) {
@@ -2686,6 +2731,7 @@
         count: results.reduce((sum, result) => sum + result.count, 0), too_many: results.some(result => result.too_many) };
       if (data.too_many) data.features = [];
       if (!enabled[type] || requests.get(type) !== controller) return;
+      if (ARCGIS[type].kind === 'point') addGlobeVectorsToPoints(data);
       map.getSource(`gm-arcgis-${type}`)?.setData(data);
       setCount(type, data.too_many ? null : data.features.length);
       if (data.too_many) showStatus(`${ARCGIS[type].label}: ${data.count.toLocaleString()} features here. Zoom in to see them.`, false, 5000);
@@ -2726,16 +2772,13 @@
   }
 
   function updateLocation() {
-    const { lat, lng } = map.getCenter();
-    document.getElementById('view-coordinates').textContent = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lng).toFixed(1)}°${lng >= 0 ? 'E' : 'W'}`;
-    document.getElementById('view-name').textContent = map.getZoom() < 3.5 ? 'World view' : `Zoom ${map.getZoom().toFixed(1)}`;
     cyberMapKey.classList.toggle('detail', map.getZoom() >= 3.5);
   }
 
   function syncAircraftElevation() {
     for (const type of ['govair', 'civair']) {
       const groundLayer = `gm-${type}-points`;
-      if (map.getLayer(groundLayer)) map.setFilter(groundLayer, terrainEnabled
+      if (map.getLayer(groundLayer)) setPointLayerFilter(groundLayer, terrainEnabled
         ? ['<=', ['coalesce', ['get', 'altitude_m'], 0], 0] : null);
       if (styleReady) updateToggle(type);
     }
@@ -2789,6 +2832,7 @@
 
   map.on('style.load', () => {
     try {
+      setGlobeFrontVector();
       basemapGeometryLayers = map.getStyle().layers
         .filter(layer => layer.type !== 'symbol' && layer.type !== 'background')
         .map(layer => ({ id: layer.id, visibility: layer.layout?.visibility || 'visible' }));
@@ -2944,10 +2988,12 @@
       map.addLayer({ id: 'gm-aircraft-route-airports', type: 'circle', source: 'gm-aircraft-route',
         filter: ['==', ['geometry-type'], 'Point'],
         paint: { 'circle-radius': 5, 'circle-color': '#f4ca73', 'circle-stroke-color': '#16242b', 'circle-stroke-width': 2 } });
+      setPointLayerFilter('gm-aircraft-route-airports', ['==', ['geometry-type'], 'Point']);
       map.addLayer({ id: 'gm-aircraft-route-labels', type: 'symbol', source: 'gm-aircraft-route',
         filter: ['==', ['geometry-type'], 'Point'],
         layout: { 'text-field': ['get', 'code'], 'text-size': 12, 'text-offset': [0, -1.4], 'text-allow-overlap': true },
         paint: { 'text-color': '#fff8db', 'text-halo-color': '#142229', 'text-halo-width': 2 } });
+      setPointLayerFilter('gm-aircraft-route-labels', ['==', ['geometry-type'], 'Point']);
       map.addLayer({ id: 'gm-aircraft-trail-line', type: 'line', source: 'gm-aircraft-trail',
         paint: { 'line-color': '#79d8c8', 'line-width': ['interpolate', ['linear'], ['zoom'], 2, 2.5, 10, 4],
           'line-opacity': 0.94 } });
@@ -2958,18 +3004,21 @@
         paint: { 'circle-radius': 20, 'circle-color': '#f0c979', 'circle-opacity': 0.12,
           'circle-stroke-color': '#f0c979', 'circle-stroke-width': 2,
           'circle-stroke-opacity': ['case', ['boolean', ['get', 'stale'], false], 0.45, 0.95] } });
+      setPointLayerFilter('gm-tracked-halo');
       map.addLayer({ id: 'gm-tracked-plane', type: 'symbol', source: 'gm-tracked-aircraft',
         layout: { 'icon-image': 'gm-tracked-icon', 'icon-size': 1.28,
           'icon-allow-overlap': true, 'icon-ignore-placement': true,
           'icon-rotate': ['coalesce', ['get', 'heading'], 0] },
         paint: { 'icon-opacity': ['case', ['boolean', ['get', 'stale'], false], 0.55, 1] } });
+      setPointLayerFilter('gm-tracked-plane');
       map.addSource('gm-radio', { type: 'geojson', data: { type: 'FeatureCollection', features: [...radioStations.values()].map(station => ({
-        type: 'Feature', properties: { id: station.id }, geometry: { type: 'Point', coordinates: [station.lon, station.lat] },
+        type: 'Feature', properties: withGlobeVector({ id: station.id }, station.lon, station.lat), geometry: { type: 'Point', coordinates: [station.lon, station.lat] },
       })) }, attribution: '<a href="https://www.radio-browser.info/">Radio Browser</a>' });
       map.addLayer({ id: 'gm-radio-points', type: 'circle', source: 'gm-radio', layout: { visibility: 'none' },
         paint: { 'circle-color': '#b2eaca', 'circle-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 5, 3, 11, 4],
           'circle-stroke-color': '#173632', 'circle-stroke-width': 1,
           'circle-opacity': 0.92 } });
+      setPointLayerFilter('gm-radio-points');
       for (const [type, config] of Object.entries(ARCGIS)) {
         const source = `gm-arcgis-${type}`;
         map.addSource(source, { type: 'geojson', data: EMPTY, attribution: ARCGIS_ATTRIBUTION });
@@ -2985,6 +3034,7 @@
         else map.addLayer({ ...common, type: 'circle',
           paint: { 'circle-color': config.color, 'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 4, 12, 7],
             'circle-stroke-color': '#172a30', 'circle-stroke-width': 1.5, 'circle-opacity': 0.95 } });
+        if (config.kind === 'point') setPointLayerFilter(`${source}-layer`);
       }
       if (trackedAircraft?.lastPosition) updateTrackedMarker();
       if (terrainEnabled) applyTerrain();
@@ -3013,6 +3063,7 @@
     } catch (error) { console.error(error); showStatus('Road coverage catalog is unavailable.', true); }
   });
   map.on('move', updateLocation);
+  map.on('move', setGlobeFrontVector);
   map.on('move', positionRadioTarget);
   map.on('moveend', () => {
     if (!rotationEnabled) scheduleViewportLoad();
@@ -3145,6 +3196,7 @@
     globeProjection = next;
     rotationToggle.disabled = !next;
     event.currentTarget.setAttribute('aria-pressed', String(next));
+    setGlobeFrontVector();
     showStatus(next ? 'Spherical globe view' : 'Flat map view', false, 2400);
   });
   const terrainToggle = document.getElementById('terrain-toggle');
