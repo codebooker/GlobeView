@@ -15,7 +15,9 @@ from global_feeds import AircraftRateLimited, aircraft_route, aircraft_snapshot,
 from hazard_feeds import hazard_snapshot
 from cyber_feeds import cyber_snapshot
 from international_emergency import international_emergency_snapshot
-from international_infrastructure import road_snapshot as international_road_snapshot, power_snapshot as international_power_snapshot
+from international_infrastructure import (road_snapshot as international_road_snapshot,
+                                          power_snapshot as international_power_snapshot,
+                                          zurich_sensor_sample)
 from radio_catalog import catalog_snapshot as radio_catalog_snapshot, record_station_click
 from cyclone_guidance import guidance_snapshot as cyclone_guidance_snapshot
 from trip_routing import RouteBusy, RouteNotFound, RouteTooLong, RouteUnavailable, parse_point as parse_route_point, route_snapshot
@@ -1014,6 +1016,7 @@ RATE_LIMITS = {
     '/trip-route': 20,
     '/cyber': 30,
     '/sensors': 10,
+    '/international-sensor-sample': 10,
     '/lpr': 30,
     '/temperature-stations': 10,
 }
@@ -19137,6 +19140,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_international_emergency(parsed)
         elif parsed.path == '/international-roads':
             self._handle_international_roads(parsed)
+        elif parsed.path == '/international-sensor-sample':
+            self._handle_international_sensor_sample(parsed)
         elif parsed.path == '/international-power':
             self._handle_international_power(parsed)
         elif parsed.path == '/power-outages':
@@ -20212,6 +20217,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as error:
             self._log_exception('international-roads', error)
             self.send_error(502, 'International road feed unavailable')
+
+    def _handle_international_sensor_sample(self, parsed):
+        collector_id = urllib.parse.parse_qs(parsed.query).get('id', [''])[0]
+        if not re.fullmatch(r'M\d{4}', collector_id):
+            self.send_error(400, 'Invalid sensor ID')
+            return
+        try:
+            body, _, _ = API_RESPONSE_CACHE.get_or_load(
+                f'ch-zurich-sensor:v1:{collector_id}',
+                lambda: (json.dumps(zurich_sensor_sample(collector_id)).encode(), 'application/json'),
+                ttl=30, stale_ttl=60, persist=False, wait_timeout=10)
+            self._write_bytes(200, body, 'application/json', cache_control='no-store')
+        except Exception as error:
+            self._log_exception('international-sensor-sample', error)
+            self.send_error(503, 'Recent sensor reading unavailable')
 
     def _handle_international_power(self, parsed):
         try:

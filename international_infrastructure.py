@@ -50,6 +50,11 @@ ZURICH_ROADWORKS_URL = ('https://maps.zh.ch/wfs/TbaBaustellenZHWFS?SERVICE=WFS&R
                         '&VERSION=2.0.0&TYPENAMES=ms:baustellen-uebersicht'
                         '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
 ZURICH_ROADWORKS_SOURCE = 'https://data.stadt-zuerich.ch/dataset/d991a4a2-32ea-4f7a-93b5-0f31a016d71c'
+ZURICH_COUNTERS_URL = ('https://maps.zh.ch/wfs/TBAVMSZHWFS?SERVICE=WFS&REQUEST=GetFeature'
+                       '&VERSION=2.0.0&TYPENAMES=ms:verkehrszaehlstellen'
+                       '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
+ZURICH_COUNTER_CONFIG_URL = 'https://vdp.zh.ch/pws/public-service/readCollectorsCfg'
+ZURICH_COUNTER_SOURCE = 'https://datenkatalog.statistik.zh.ch/datasets/692@tiefbauamt-kanton-zuerich'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -191,6 +196,69 @@ def _zurich_roadworks():
     if data.get('type') != 'FeatureCollection':
         raise ValueError('Zurich roadworks feed is invalid')
     return _parse_zurich_roadworks(data.get('features') or [])
+
+
+def _parse_zurich_sensors(locations, collectors):
+    active = {str(item.get('uID', {}).get('id') or ''): item for item in collectors
+              if item.get('collectorStatus') == 'ACTIVE'}
+    features = []
+    for item in locations:
+        properties = item.get('properties') or {}
+        point = _point(item.get('geometry'))
+        if not point or not (8.3 <= point[0] <= 9.1 and 47.1 <= point[1] <= 47.8):
+            continue
+        try:
+            collector_id = f'M{int(properties.get("messst_nr")):04d}'
+        except (TypeError, ValueError):
+            continue
+        if collector_id not in active:
+            continue
+        name = _clean(active[collector_id].get('name'), 100)
+        year = properties.get('dtv_bezugsjahr')
+        daily = properties.get('dtv')
+        detail = (f'{int(year)} average: {int(daily):,} vehicles/day'
+                  if isinstance(year, (int, float)) and isinstance(daily, (int, float))
+                  and 2000 <= year <= 2100 and daily >= 0 else 'Active traffic counter')
+        features.append(_feature(point, {
+            'key': f'ch:zh:sensor:{collector_id}', 'layer': 'sensors',
+            'title': name or f'Zurich traffic counter {collector_id}',
+            'detail': detail, 'sensor_id': collector_id,
+            'source': 'Kanton Zürich Tiefbauamt · CC BY 4.0',
+            'source_url': ZURICH_COUNTER_SOURCE,
+        }))
+    return features
+
+
+def _zurich_sensors():
+    locations = _get_json(ZURICH_COUNTERS_URL)
+    collectors = _get_json(ZURICH_COUNTER_CONFIG_URL)
+    if locations.get('type') != 'FeatureCollection' or not isinstance(collectors, list):
+        raise ValueError('Zurich sensor catalog is invalid')
+    return _parse_zurich_sensors(locations.get('features') or [], collectors)
+
+
+def zurich_sensor_sample(collector_id):
+    if not re.fullmatch(r'M\d{4}', collector_id):
+        raise ValueError('Invalid Zurich collector ID')
+    url = f'https://vdp.zh.ch/pws/public-service/readOnlineVbvData/{collector_id}?sampleOnly=true'
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)',
+        'Accept': 'application/stream+json'})
+    with urllib.request.urlopen(request, timeout=8) as response:
+        sample = json.loads(response.readline(8192))
+    if sample.get('uID', {}).get('id') != collector_id:
+        raise ValueError('Zurich sensor response ID mismatch')
+    observed = float(sample.get('effectiveTime')) / 1000
+    if not -60 <= time.time() - observed <= 300:
+        raise ValueError('Zurich sensor sample is stale')
+    vehicle_classes = {
+        'PW': 'Passenger car', 'PWA': 'Car with trailer', 'MR': 'Motorcycle',
+        'BUS': 'Bus', 'LIEF': 'Delivery van', 'LW': 'Truck', 'LZ': 'Road train', 'SZ': 'Semi-trailer',
+    }
+    vehicle_code = str(sample.get('swiss10Class') or '').removeprefix('SWISS10_')
+    return {'observed_at': dt.datetime.fromtimestamp(observed, dt.timezone.utc).isoformat(),
+            'vehicle': vehicle_classes.get(vehicle_code, 'Vehicle'),
+            'lane': str((sample.get('uID', {}).get('sub') or {}).get('id') or '')[:8]}
 
 
 def _fintraffic_messages(layer):
@@ -1157,6 +1225,7 @@ _FETCHERS = {
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_signs': _ndw_signs,
         'ch_zurich_roadworks': _zurich_roadworks,
+        'ch_zurich_sensors': _zurich_sensors,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},

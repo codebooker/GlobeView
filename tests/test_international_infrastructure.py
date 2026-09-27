@@ -16,6 +16,34 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_zurich_sensors_join_active_counters_by_station_number(self):
+        locations = [
+            {'geometry': {'type': 'Point', 'coordinates': [8.48, 47.45]},
+             'properties': {'messst_nr': 113, 'dtv': 8068, 'dtv_bezugsjahr': 2025}},
+            {'geometry': {'type': 'Point', 'coordinates': [8.49, 47.46]},
+             'properties': {'messst_nr': 114}},
+        ]
+        collectors = [
+            {'uID': {'id': 'M0113'}, 'name': 'Regensdorf: Niederhaslistrasse',
+             'collectorStatus': 'ACTIVE'},
+            {'uID': {'id': 'M0114'}, 'name': 'Inactive counter', 'collectorStatus': 'DISABLED'},
+        ]
+        rows = feeds._parse_zurich_sensors(locations, collectors)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['sensor_id'], 'M0113')
+        self.assertIn('8,068 vehicles/day', rows[0]['properties']['detail'])
+
+    def test_zurich_live_sensor_sample_is_recent_and_bounded(self):
+        payload = {'uID': {'id': 'M0113', 'sub': {'id': '1'}},
+                   'effectiveTime': str(NOW * 1000), 'swiss10Class': 'SWISS10_PW'}
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=io.BytesIO(
+                (feeds.json.dumps(payload) + '\n').encode())), patch.object(feeds.time, 'time', return_value=NOW):
+            sample = feeds.zurich_sensor_sample('M0113')
+        self.assertEqual(sample['vehicle'], 'Passenger car')
+        self.assertEqual(sample['lane'], '1')
+        with self.assertRaises(ValueError):
+            feeds.zurich_sensor_sample('../M0113')
+
     def test_zurich_roadworks_show_only_current_works_without_contact_details(self):
         current = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [8.8, 47.5]},
                    'properties': {'strassenbez': '831', 'kmvon': '0.240',

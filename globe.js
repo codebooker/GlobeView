@@ -1136,6 +1136,28 @@
       return;
     }
     if (meta.sourceUrl) appendLink(root, 'View source ↗', meta.sourceUrl);
+    if (type === 'sensors' && meta.sensorId) {
+      const live = textElement('span', 'popup-detail', 'Checking for a recent vehicle detection…');
+      root.append(live);
+      const controller = new AbortController();
+      popup.on('close', () => controller.abort());
+      fetch(`/international-sensor-sample?${new URLSearchParams({ id: meta.sensorId })}`, {
+        signal: controller.signal
+      }).then(async response => {
+        if (!response.ok) throw new Error(`Sensor sample: ${response.status}`);
+        return response.json();
+      }).then(sample => {
+        if (!popup.isOpen()) return;
+        const observed = new Date(sample.observed_at);
+        live.textContent = `Recent detection: ${sample.vehicle} · ${observed.toLocaleTimeString([], {
+          hour: 'numeric', minute: '2-digit'
+        })}${sample.lane ? ` · lane ${sample.lane}` : ''}`;
+      }).catch(error => {
+        if (controller.signal.aborted || !popup.isOpen()) return;
+        console.warn('Zurich sensor sample:', error);
+        live.textContent = 'No recent vehicle detection available.';
+      });
+    }
     if (type === 'cyclones') showCycloneGuidance(ref, meta, coordinates, popup);
     if (type === 'ports') {
       const button = textElement('button', 'popup-play', 'Check sea conditions');
@@ -1950,7 +1972,7 @@
       paths = boxes.map(box => `${path}?${new URLSearchParams({ bbox: box.join(','), limit: '10000' })}`);
     }
     try {
-      const franceSensorsVisible = type === 'sensors' && regionVisible({ bounds: {
+      const internationalSensorsVisible = type === 'sensors' && regionVisible({ bounds: {
         minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } }, currentBounds());
       const northAmericaSensorsVisible = type !== 'sensors' || regionVisible({ bounds: {
         minLon: -170, maxLon: -50, minLat: 15, maxLat: 72 } }, currentBounds());
@@ -1959,18 +1981,18 @@
         if (!response.ok) throw new Error(`${POINT[type].label}: ${response.status}`);
         return response.json();
       })) : Promise.resolve([{}]);
-      const francePromise = franceSensorsVisible
+      const internationalPromise = internationalSensorsVisible
         ? fetchInternationalRoad('sensors', currentBounds(), controller.signal) : Promise.resolve(null);
-      const [staticResult, franceResult] = await Promise.allSettled([staticPromise, francePromise]);
-      if (staticResult.status === 'rejected' && (franceResult.status === 'rejected' || !franceResult.value)) {
+      const [staticResult, internationalResult] = await Promise.allSettled([staticPromise, internationalPromise]);
+      if (staticResult.status === 'rejected' && (internationalResult.status === 'rejected' || !internationalResult.value)) {
         throw staticResult.reason;
       }
       const payloads = staticResult.status === 'fulfilled' ? staticResult.value : [];
       const data = type === 'lpr' ? { elements: payloads.flatMap(payload => payload.elements || []) } : payloads[0];
       if (controller.signal.aborted || !enabled[type]) return;
       const { features, records } = convertStatic(type, data || {});
-      if (franceResult.status === 'fulfilled' && franceResult.value) {
-        for (const item of franceResult.value.features || []) {
+      if (internationalResult.status === 'fulfilled' && internationalResult.value) {
+        for (const item of internationalResult.value.features || []) {
           const [lon, lat] = item.geometry?.coordinates || [];
           const p = item.properties || {};
           if (!validCoordinate(lat, lon) || !p.key) continue;
@@ -1978,10 +2000,11 @@
           features.push(feature(type, ref, lon, lat));
           records.set(ref, { title: p.title || 'Road sensor',
             detail: [p.detail, p.updated_at ? `Updated ${p.updated_at}` : ''].filter(Boolean).join(' · '),
-            source: p.source || 'Public road authority', sourceUrl: p.source_url });
+            source: p.source || 'Public road authority', sourceUrl: p.source_url,
+            sensorId: p.sensor_id || '' });
         }
-      } else if (franceResult.status === 'rejected' && !controller.signal.aborted) {
-        console.warn('French road sensors:', franceResult.reason);
+      } else if (internationalResult.status === 'rejected' && !controller.signal.aborted) {
+        console.warn('International road sensors:', internationalResult.reason);
       }
       setPoints(type, features, records);
     } catch (error) {
