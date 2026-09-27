@@ -1,6 +1,7 @@
 """Public road and electricity feeds outside North America, normalized for the map."""
 
 import concurrent.futures
+import base64
 import csv
 import datetime as dt
 import gzip
@@ -39,6 +40,8 @@ GIPOD_POINT_URL = ('https://geo.api.vlaanderen.be/GIPOD/ogc/features/v1/'
                    'collections/HINDER_PUNT/items')
 GIPOD_SOURCE = ('https://www.vlaanderen.be/datavindplaats/catalogus/'
                 'geplande-innames-en-mobiliteitshinder-publieke-geo-informatie-uit-gipod')
+NDW_BASE = 'https://opendata.ndw.nu/'
+NDW_SOURCE = 'https://docs.ndw.nu/producten/werkzaamhedenenevenementen/'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -81,6 +84,20 @@ def _get_xml(url, max_bytes=2 * 1024 * 1024):
     return ET.fromstring(body)
 
 
+def _get_gzip_xml(url, max_compressed=4 * 1024 * 1024, max_uncompressed=12 * 1024 * 1024):
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/gzip'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        compressed = response.read(max_compressed + 1)
+    if len(compressed) > max_compressed:
+        raise ValueError('Compressed road feed exceeded size limit')
+    with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as archive:
+        body = archive.read(max_uncompressed + 1)
+    if len(body) > max_uncompressed:
+        raise ValueError('Expanded road feed exceeded size limit')
+    return ET.fromstring(body)
+
+
 def _get_csv(url):
     request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public outage feed reader)', 'Accept': 'text/csv'})
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -96,7 +113,8 @@ def _clean(value, limit=280):
 
 def _timestamp(value):
     try:
-        parsed = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        timestamp = re.sub(r'(\.\d{6})\d+(?=Z|[+-]\d{2}:\d{2}$)', r'\1', str(value))
+        parsed = dt.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=dt.timezone.utc)
         return parsed.timestamp()
@@ -864,6 +882,139 @@ def _gipod_roadworks(bbox):
             and south <= item['geometry']['coordinates'][1] <= north]
 
 
+def _ndw_record_point(record):
+    latitude = record.findtext('.//{*}pointCoordinates/{*}latitude')
+    longitude = record.findtext('.//{*}pointCoordinates/{*}longitude')
+    point = _point({'coordinates': [longitude, latitude]}) if latitude and longitude else None
+    if point is None:
+        line = record.find('.//{*}gmlLineString')
+        if line is None or line.get('srsName') != 'WGS 84':
+            return None
+        try:
+            numbers = [float(value) for value in line.findtext('{*}posList').split()]
+        except (AttributeError, ValueError):
+            return None
+        if len(numbers) < 2 or len(numbers) % 2:
+            return None
+        midpoint = (len(numbers) // 4) * 2
+        point = _point({'coordinates': [numbers[midpoint + 1], numbers[midpoint]]})
+    return point if point and 3.0 <= point[0] <= 7.4 and 50.6 <= point[1] <= 53.8 else None
+
+
+def _parse_ndw_roads(root, now=None):
+    now = time.time() if now is None else now
+    payload = next((item for item in root if item.get(_DATEX_TYPE, '').endswith('SituationPublication')), None)
+    if payload is None:
+        raise ValueError('NDW current traffic payload is missing')
+    published = _timestamp(payload.findtext('{*}publicationTime'))
+    if published is None or not -600 <= now - published <= 20 * 60:
+        raise ValueError('NDW current traffic publication is stale or invalid')
+    features = []
+    work_causes = {'roadMaintenance', 'constructionWork'}
+    work_types = {'MaintenanceWorks', 'ConstructionWorks'}
+    incident_types = {'Accident', 'VehicleObstruction', 'GeneralObstruction',
+                      'EnvironmentalObstruction', 'PoorEnvironmentConditions',
+                      'AbnormalTraffic', 'WeatherRelatedRoadConditions'}
+    management_types = {'RoadOrCarriagewayOrLaneManagement', 'ReroutingManagement',
+                        'SpeedManagement', 'GeneralNetworkManagement'}
+    labels = {'carriagewayClosures': 'Carriageway closed', 'laneClosures': 'Lane closed',
+              'roadClosed': 'Road closed', 'narrowLanes': 'Narrow lanes',
+              'lanesDeviated': 'Lanes diverted', 'hardShoulderRunningInOperation': 'Hard shoulder open'}
+    for situation in payload.findall('{*}situation'):
+        records = []
+        for record in situation.findall('{*}situationRecord'):
+            kind = record.get(_DATEX_TYPE, '').split(':')[-1]
+            if kind not in work_types | incident_types | management_types:
+                continue
+            if record.findtext('.//{*}validityStatus') not in {'active', 'definedByValidityTimeSpec'}:
+                continue
+            start = _timestamp(record.findtext('.//{*}overallStartTime'))
+            end = _timestamp(record.findtext('.//{*}overallEndTime'))
+            if (start is not None and start > now) or (end is not None and end < now):
+                continue
+            records.append(record)
+        if not records:
+            continue
+        point = next((p for record in records if (p := _ndw_record_point(record)) is not None), None)
+        if point is None:
+            continue
+        kinds = {record.get(_DATEX_TYPE, '').split(':')[-1] for record in records}
+        causes = {record.findtext('.//{*}causeType') for record in records}
+        is_work = bool(kinds & work_types or causes & work_causes)
+        layer = 'construction' if is_work else 'incidents'
+        management = [record.findtext('.//{*}roadOrCarriagewayOrLaneManagementType') for record in records]
+        details = list(dict.fromkeys(labels[value] for value in management if value in labels))
+        if not details:
+            details = ['Road maintenance'] if is_work else ['Traffic obstruction'] if 'VehicleObstruction' in kinds else []
+        title = ('Roadworks' if is_work else 'Crash' if 'Accident' in kinds else
+                 'Vehicle obstruction' if 'VehicleObstruction' in kinds else
+                 'Road restriction' if kinds & management_types else 'Road incident')
+        updated = max((record.findtext('{*}situationRecordVersionTime', default='') for record in records),
+                      default='')
+        features.append(_feature(point, {
+            'key': f'nl:ndw:{situation.get("id")}', 'layer': layer,
+            'title': f'{title} · Netherlands', 'detail': ' · '.join(details) or title,
+            'source': 'NDW Open Data', 'source_url': NDW_SOURCE, 'updated_at': updated,
+        }))
+    return features
+
+
+def _ndw_roads():
+    return _parse_ndw_roads(_get_gzip_xml(NDW_BASE + 'actueel_beeld.xml.gz'))
+
+
+def _parse_ndw_signs(root, now=None):
+    now = time.time() if now is None else now
+    payloads = [item for item in root if item.tag.rsplit('}', 1)[-1] == 'payload']
+    table = next((item for item in payloads if item.get(_DATEX_TYPE, '').endswith('VmsTablePublication')), None)
+    statuses = next((item for item in payloads if item.get(_DATEX_TYPE, '').endswith('VmsPublication')), None)
+    if table is None or statuses is None:
+        raise ValueError('NDW sign table or current status is missing')
+    published = _timestamp(statuses.findtext('{*}publicationTime'))
+    if published is None or not -600 <= now - published <= 20 * 60:
+        raise ValueError('NDW sign publication is stale or invalid')
+    controllers = {}
+    for controller in table.findall('.//{*}vmsController'):
+        identifier = controller.get('id')
+        latitude = controller.findtext('.//{*}pointCoordinates/{*}latitude')
+        longitude = controller.findtext('.//{*}pointCoordinates/{*}longitude')
+        point = _point({'coordinates': [longitude, latitude]}) if latitude and longitude else None
+        if identifier and point and 3.0 <= point[0] <= 7.4 and 50.6 <= point[1] <= 53.8:
+            controllers[identifier] = (point, _clean(controller.findtext('.//{*}value'), 70))
+    features = []
+    for status in statuses.findall('{*}vmsControllerStatus'):
+        reference = status.find('{*}vmsControllerReference')
+        identifier = reference.get('id') if reference is not None else None
+        if identifier not in controllers or status.findtext('.//{*}workingStatus') != 'working':
+            continue
+        lines = [_clean(item.text, 80) for item in status.findall('.//{*}textLine')]
+        lines = [line for line in lines if line]
+        image = status.findtext('.//{*}imageData') or ''
+        if not (500 <= len(image) <= 150000 and status.findtext('.//{*}imageFormat') == 'png'):
+            image = ''
+        else:
+            try:
+                if not base64.b64decode(image, validate=True).startswith(b'\x89PNG\r\n\x1a\n'):
+                    image = ''
+            except (ValueError, base64.binascii.Error):
+                image = ''
+        if not lines and not image:
+            continue
+        point, name = controllers[identifier]
+        features.append(_feature(point, {
+            'key': f'nl:ndw:sign:{identifier}', 'layer': 'signs',
+            'title': name or 'Digital road sign',
+            'detail': ' / '.join(lines) if lines else 'Current sign display',
+            'image_data': image, 'source': 'NDW Open Data · dynamic road signs',
+            'source_url': NDW_BASE, 'updated_at': status.findtext('{*}statusUpdateTime', default=''),
+        }))
+    return features
+
+
+def _ndw_signs():
+    return _parse_ndw_signs(_get_gzip_xml(NDW_BASE + 'dynamische_route_informatie_paneel.xml.gz'))
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -876,6 +1027,8 @@ _FETCHERS = {
         'fr_national_roads': _france_roads,
         'fr_traffic_sensors': _france_sensors,
         'be_flemish_roads': _belgium_roads,
+        'nl_ndw_roads': _ndw_roads,
+        'nl_ndw_signs': _ndw_signs,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},

@@ -1,4 +1,5 @@
 import unittest
+import base64
 import csv
 import datetime as dt
 import io
@@ -14,6 +15,52 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_ndw_current_road_situations_use_wgs84_and_validity(self):
+        root = ET.fromstring('''<messageContainer xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <payload xsi:type="sit:SituationPublication">
+            <publicationTime>2026-09-26T18:00:00.123456789Z</publicationTime>
+            <situation id="open"><situationRecord xsi:type="sit:RoadOrCarriagewayOrLaneManagement">
+              <validityStatus>definedByValidityTimeSpec</validityStatus>
+              <overallStartTime>2026-09-26T17:00:00Z</overallStartTime>
+              <causeType>roadMaintenance</causeType>
+              <roadOrCarriagewayOrLaneManagementType>laneClosures</roadOrCarriagewayOrLaneManagementType>
+              <gmlLineString srsName="WGS 84"><posList>52.0 5.0 52.1 5.1</posList></gmlLineString>
+            </situationRecord></situation>
+            <situation id="ended"><situationRecord xsi:type="sit:Accident">
+              <validityStatus>active</validityStatus><overallEndTime>2026-09-26T17:00:00Z</overallEndTime>
+              <pointCoordinates><latitude>52.2</latitude><longitude>5.2</longitude></pointCoordinates>
+            </situationRecord></situation>
+          </payload>
+        </messageContainer>''')
+        rows = feeds._parse_ndw_roads(root, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [5.1, 52.1])
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertIn('Lane closed', rows[0]['properties']['detail'])
+        with self.assertRaises(ValueError):
+            feeds._parse_ndw_roads(root, NOW + 3600)
+
+    def test_ndw_signs_keep_only_working_displays(self):
+        image = base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'0' * 400).decode()
+        root = ET.fromstring(f'''<messageContainer xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <payload xsi:type="vms:VmsTablePublication"><vmsControllerTable>
+            <vmsController id="good"><value>A2 sign</value><pointCoordinates><latitude>52.0</latitude><longitude>5.0</longitude></pointCoordinates></vmsController>
+            <vmsController id="broken"><pointCoordinates><latitude>52.1</latitude><longitude>5.1</longitude></pointCoordinates></vmsController>
+            <vmsController id="blank"><pointCoordinates><latitude>52.2</latitude><longitude>5.2</longitude></pointCoordinates></vmsController>
+          </vmsControllerTable></payload>
+          <payload xsi:type="vms:VmsPublication"><publicationTime>2026-09-26T18:00:00.123456789Z</publicationTime>
+            <vmsControllerStatus><vmsControllerReference id="good"/><workingStatus>working</workingStatus><imageFormat>png</imageFormat><imageData>{image}</imageData></vmsControllerStatus>
+            <vmsControllerStatus><vmsControllerReference id="broken"/><workingStatus>notWorking</workingStatus><textLine>Closed</textLine></vmsControllerStatus>
+            <vmsControllerStatus><vmsControllerReference id="blank"/><workingStatus>working</workingStatus></vmsControllerStatus>
+          </payload>
+        </messageContainer>''')
+        rows = feeds._parse_ndw_signs(root, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [5.0, 52.0])
+        self.assertEqual(rows[0]['properties']['image_data'], image)
+        with self.assertRaises(ValueError):
+            feeds._parse_ndw_signs(root, NOW + 3600)
+
     def test_opendatasoft_fetches_all_outage_pages(self):
         first = {'results': [{'id': i} for i in range(100)], 'total_count': 101}
         second = {'results': [{'id': 100}], 'total_count': 101}

@@ -1117,6 +1117,13 @@
     root.append(textElement('span', 'popup-kicker', meta.source || POINT[type].label), title);
     if (meta.detail) root.append(detail);
     if ((type === 'nws_alerts' || type === 'world_alerts') && meta.advice) root.append(textElement('span', 'popup-detail', meta.advice));
+    if (type === 'signs' && meta.signImage) {
+      const preview = document.createElement('img');
+      preview.className = 'popup-media sign-preview';
+      preview.alt = 'Current display on digital road sign';
+      preview.src = `data:image/png;base64,${meta.signImage}`;
+      root.append(preview);
+    }
     const point = map.project(coordinates);
     const visibleLeft = window.innerWidth > 900 && !document.body.classList.contains('panel-collapsed') ? 288 : 0;
     const anchor = point.x < visibleLeft + 180 ? 'left' : point.x > map.getCanvas().clientWidth - 180 ? 'right'
@@ -1203,7 +1210,8 @@
     const internationalVisible = ['signs', 'incidents', 'construction'].includes(type) && [
       { bounds: { minLon: 19, maxLon: 32, minLat: 59, maxLat: 71 } },
       { bounds: { minLon: -9, maxLon: 3, minLat: 49, maxLat: 61.5 } },
-      { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } }
+      { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } },
+      { bounds: { minLon: 3, maxLon: 7.4, minLat: 50.6, maxLat: 53.8 } }
     ].some(region => regionVisible(region, bounds));
     const internationalPromise = internationalVisible
       ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
@@ -1255,7 +1263,8 @@
       records.set(ref, {
         title: p.title || POINT[type].label,
         detail: [p.detail, p.updated_at ? `Updated ${p.updated_at}` : ''].filter(Boolean).join(' · '),
-        source: p.source || 'Public road authority', sourceUrl: p.source_url
+        source: p.source || 'Public road authority', sourceUrl: p.source_url,
+        signImage: type === 'signs' ? p.image_data || '' : ''
       });
       features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && /warning/i.test(p.title || '') }));
     }
