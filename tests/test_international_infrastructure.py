@@ -464,6 +464,32 @@ class InfrastructureTests(unittest.TestCase):
             result = feeds._tfl_disruptions()
         self.assertEqual([x['properties']['layer'] for x in result], ['construction', 'incidents'])
 
+    def test_london_geojson_catalog_resolves_disruption_details(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'id': 'TIMS-1', 'geometry': {'type': 'Point', 'coordinates': [-0.1, 51.5]}},
+            {'type': 'Feature', 'id': 'TIMS-2', 'geometry': {'type': 'Point', 'coordinates': [-0.2, 51.6]}},
+        ]}
+        details = [
+            {'id': 'TIMS-1', 'category': 'Works', 'status': 'Active',
+             'geography': {'coordinates': [-0.1, 51.5]}},
+            {'id': 'TIMS-2', 'category': 'Breakdowns', 'status': 'Active',
+             'geography': {'coordinates': [-0.2, 51.6]}},
+        ]
+        with patch.object(feeds, '_get_json', side_effect=[catalog, details]) as fetch:
+            result = feeds._tfl_disruptions()
+        self.assertEqual(fetch.call_args_list[1].args[0],
+                         f'{feeds.TFL_URL}/TIMS-1,TIMS-2')
+        self.assertEqual([x['properties']['layer'] for x in result], ['construction', 'incidents'])
+
+    def test_london_geojson_catalog_keeps_locations_when_details_fail(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'id': 'TIMS-1', 'geometry': {'type': 'Point', 'coordinates': [-0.1, 51.5]}}
+        ]}
+        with patch.object(feeds, '_get_json', side_effect=[catalog, OSError('upstream timeout')]):
+            result = feeds._tfl_disruptions()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['geometry']['coordinates'], [-0.1, 51.5])
+
     def test_wales_roadworks_only_include_current_geolocated_works(self):
         local_now = dt.datetime.now(ZoneInfo('Europe/London'))
         start = (local_now - dt.timedelta(days=1)).strftime('%d/%m/%Y %H:%M')

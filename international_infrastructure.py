@@ -697,8 +697,41 @@ def _fintraffic_sensors(kind):
 
 def _tfl_disruptions():
     data = _get_json(TFL_URL)
+    if isinstance(data, dict) and isinstance(data.get('features'), list):
+        # TfL sometimes serves a GeoJSON catalog rather than RoadDisruption records.
+        # Resolve its IDs in batches so works keep their category and current update.
+        rows = []
+        catalog = data['features']
+        for offset in range(0, min(len(catalog), 200), 40):
+            batch = catalog[offset:offset + 40]
+            ids = [str(item.get('id')) for item in batch if isinstance(item, dict)
+                   and re.fullmatch(r'[A-Za-z0-9_-]{1,80}', str(item.get('id') or ''))]
+            details = None
+            if ids:
+                try:
+                    details = _get_json(f'{TFL_URL}/{",".join(ids)}')
+                except (OSError, ValueError, json.JSONDecodeError):
+                    pass
+            if isinstance(details, list):
+                rows.extend(item for item in details if isinstance(item, dict))
+            else:
+                # Keep the geolocated active markers if the detail lookup fails.
+                for item in batch:
+                    if not isinstance(item, dict):
+                        continue
+                    rows.append({**(item.get('properties') or {}), 'id': item.get('id'),
+                                 'geography': item.get('geometry'), 'status': 'Active'})
+        for item in catalog[200:]:
+            if isinstance(item, dict):
+                rows.append({**(item.get('properties') or {}), 'id': item.get('id'),
+                             'geography': item.get('geometry'), 'status': 'Active'})
+        data = rows
+    if not isinstance(data, list):
+        raise ValueError('Unexpected TfL disruption response')
     features = []
     for item in data:
+        if not isinstance(item, dict):
+            continue
         point = _point(item.get('geography'))
         if not point or not str(item.get('status') or '').startswith('Active'):
             continue
