@@ -90,6 +90,10 @@ AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
+BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_geom/'
+BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
+                          'service=WFS&version=1.1.0&request=GetFeature&'
+                          'typeName=bm_traffic:traffic_live_geom&outputFormat=json&srsName=EPSG:4326')
 ZURICH_ROADWORKS_URL = ('https://maps.zh.ch/wfs/TbaBaustellenZHWFS?SERVICE=WFS&REQUEST=GetFeature'
                         '&VERSION=2.0.0&TYPENAMES=ms:baustellen-uebersicht'
                         '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
@@ -2312,6 +2316,64 @@ def _parse_france_sensors(root, references, now=None):
     return features
 
 
+def _parse_brussels_counters(payload, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list)
+            or (isinstance(payload.get('totalFeatures'), int)
+                and payload['totalFeatures'] > len(payload['features']))
+            or (isinstance(payload.get('numberReturned'), int)
+                and payload['numberReturned'] != len(payload['features']))):
+        raise ValueError('Brussels traffic-counter feed is incomplete or invalid')
+    features = []
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        properties = row.get('properties') or {}
+        if properties.get('is_active') != 1:
+            continue
+        station = str(properties.get('traverse_name') or '')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{2,40}', station):
+            continue
+        point = _point(row.get('geometry'))
+        if not point or not (4.2 <= point[0] <= 4.5 and 50.7 <= point[1] <= 51.0):
+            continue
+        measured_at = properties.get('end_time_1m_a')
+        measured = _timestamp(measured_at)
+        if measured is None or not -300 <= now - measured <= 15 * 60:
+            continue
+        try:
+            count = float(properties.get('count_1m_a'))
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(count) and 0 <= count <= 1000):
+            continue
+        try:
+            speed = float(properties.get('speed_1m_a'))
+        except (TypeError, ValueError):
+            speed = None
+        try:
+            occupancy = float(properties.get('occupancy_1m_a'))
+        except (TypeError, ValueError):
+            occupancy = None
+        detail = f'{count:.0f} {"vehicle" if count == 1 else "vehicles"}/min'
+        if speed is not None and math.isfinite(speed) and 0 < speed <= 200:
+            detail += f' · {speed:.0f} km/h average'
+        if occupancy is not None and math.isfinite(occupancy) and 0 <= occupancy <= 100:
+            detail += f' · {occupancy:.0f}% occupancy'
+        features.append(_feature(point, {
+            'key': f'be:brussels:counter:{station}', 'layer': 'sensors',
+            'title': 'Brussels traffic counter', 'detail': detail,
+            'source': 'Brussels Mobility · CC0', 'source_url': BRUSSELS_COUNTERS_SOURCE,
+            'updated_at': measured_at,
+        }))
+    return features
+
+
+def _brussels_counters():
+    return _parse_brussels_counters(_get_json(BRUSSELS_COUNTERS_URL))
+
+
 def _france_sensors():
     now = time.time()
     if now >= _FRANCE_SENSOR_REFERENCES['until']:
@@ -3750,6 +3812,7 @@ _FETCHERS = {
         'lu_cita_cameras': _luxembourg_cameras,
         'lu_cita_traffic': _luxembourg_traffic,
         'fr_traffic_sensors': _france_sensors,
+        'be_brussels_counters': _brussels_counters,
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_signs': _ndw_signs,

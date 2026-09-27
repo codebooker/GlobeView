@@ -17,6 +17,30 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_brussels_counters_only_map_recent_active_measurements(self):
+        now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
+        def counter(name, measured='2026-09-27T18:58:00Z', active=1, count=8, speed=42):
+            return {'type': 'Feature', 'geometry': {'type': 'Point',
+                    'coordinates': [4.35, 50.84]}, 'properties': {
+                        'traverse_name': name, 'is_active': active,
+                        'end_time_1m_a': measured, 'count_1m_a': count,
+                        'speed_1m_a': speed, 'occupancy_1m_a': 16}}
+        payload = {'type': 'FeatureCollection', 'totalFeatures': 5, 'features': [
+            counter('ARL_103'), counter('ARL_203', speed=-1),
+            counter('STALE', measured='2025-10-16T12:56:00Z'),
+            counter('INACTIVE', active=0), counter('../BAD')]}
+        rows = feeds._parse_brussels_counters(payload, now)
+        self.assertEqual([row['properties']['key'] for row in rows],
+                         ['be:brussels:counter:ARL_103', 'be:brussels:counter:ARL_203'])
+        self.assertEqual(rows[0]['properties']['layer'], 'sensors')
+        self.assertIn('8 vehicles/min · 42 km/h average', rows[0]['properties']['detail'])
+        self.assertNotIn('km/h', rows[1]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_brussels_counters(dict(payload, totalFeatures=6), now)
+        with patch.object(feeds, '_snapshot', return_value={
+                'sources': {'be_brussels_counters': rows}, 'errors': []}):
+            self.assertEqual(len(feeds.road_snapshot('sensors', (4.3, 50.8, 4.4, 50.9))['features']), 2)
+
     def test_vigo_cameras_reject_unavailable_stills_and_untrusted_urls(self):
         row = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-8.72, 42.23]},
                'properties': {'id': '05', 'nombre': 'Junction',
