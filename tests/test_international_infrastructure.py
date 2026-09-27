@@ -193,6 +193,29 @@ class InfrastructureTests(unittest.TestCase):
           </elementlocation></situationElement></situation></situationPublication>''')
         self.assertEqual(feeds._belgium_otap_road_names(root), {'123': 'E411 - A4'})
 
+    def test_gipod_only_maps_active_road_impacts_caused_by_work(self):
+        now = dt.datetime(2026, 9, 27, 12, 0, tzinfo=dt.timezone.utc).timestamp()
+
+        def item(key, effects, cause='/groundworks/123', start='2026-09-26T00:00:00Z',
+                 end='2026-09-28T00:00:00Z', status='Gevalideerd'):
+            return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [4.4, 50.85]},
+                    'properties': {'ZoneId': key, 'Consequences': effects,
+                                   'HindranceConsequenceOf': cause, 'HindranceStart': start,
+                                   'HindranceEnd': end, 'HindranceStatus': status,
+                                   'HindranceDescription': 'Brussels, Main Street: utility works'}}
+
+        rows = feeds._parse_gipod_roadworks([
+            item('road', 'Versmalde rijstroken;Parkeerverbod'),
+            item('pedestrian', 'Beperkte doorgang voor voetgangers'),
+            item('future', 'Versmalde rijstroken', start='2026-10-01T00:00:00Z'),
+            item('expired', 'Versmalde rijstroken', end='2026-09-26T00:00:00Z'),
+            item('event', 'Versmalde rijstroken', cause='/events/123'),
+            item('draft', 'Versmalde rijstroken', status='Ontwerp'),
+        ], now)
+        self.assertEqual([row['properties']['key'] for row in rows], ['be:gipod:road'])
+        self.assertEqual(rows[0]['properties']['title'], 'Road work · Brussels, Main Street')
+        self.assertIn('Versmalde rijstroken', rows[0]['properties']['detail'])
+
     def test_power_filters_restored_and_future_outages_and_deduplicates(self):
         uk_rows = [
             {'incidentreference': 'a', 'geopoint': {'lon': 0.1, 'lat': 51.5},

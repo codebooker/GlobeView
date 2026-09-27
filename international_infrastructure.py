@@ -35,6 +35,10 @@ FRANCE_ROADS_SOURCE = ('https://transport.data.gouv.fr/datasets/'
 FRANCE_SENSOR_BASE = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/'
 BELGIUM_ROADS_URL = 'https://www.verkeerscentrum.be/uitwisseling/datex2v3full'
 BELGIUM_ROADS_SOURCE = 'https://www.verkeerscentrum.be/data'
+GIPOD_POINT_URL = ('https://geo.api.vlaanderen.be/GIPOD/ogc/features/v1/'
+                   'collections/HINDER_PUNT/items')
+GIPOD_SOURCE = ('https://www.vlaanderen.be/datavindplaats/catalogus/'
+                'geplande-innames-en-mobiliteitshinder-publieke-geo-informatie-uit-gipod')
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -47,6 +51,9 @@ _CACHE = {
 _STALE_SECONDS = 900
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
 _FRANCE_SENSOR_REFERENCES = {'until': 0, 'points': {}}
+_GIPOD_TILE_CACHE = {}
+_GIPOD_TILE_LOCKS = {}
+_GIPOD_CACHE_LOCK = threading.Lock()
 
 
 def _get_json(url, fintraffic=False):
@@ -757,6 +764,106 @@ def _belgium_roads():
     return _parse_belgium_roads(feed, names)
 
 
+_GIPOD_ROAD_IMPACT = re.compile(
+    r'rijstro|rijrichting|rijweg|gemotoriseerd verkeer|wisselend verkeer|'
+    r'snelheidsbeperking|tweerichtingsverkeer', re.I)
+
+
+def _parse_gipod_roadworks(items, now=None):
+    now = time.time() if now is None else now
+    features = []
+    for item in items:
+        properties = item.get('properties') or {}
+        point = _point(item.get('geometry'))
+        if not point or not (2.5 <= point[0] <= 6.5 and 49.5 <= point[1] <= 51.6):
+            continue
+        if properties.get('HindranceStatus') != 'Gevalideerd':
+            continue
+        cause = properties.get('HindranceConsequenceOf') or ''
+        if '/groundworks/' not in cause and '/works/' not in cause:
+            continue
+        consequences = _clean(properties.get('Consequences'), 180)
+        if not _GIPOD_ROAD_IMPACT.search(consequences):
+            continue
+        start = _timestamp(properties.get('HindranceStart'))
+        end = _timestamp(properties.get('HindranceEnd'))
+        if start is None or end is None or start > now or end < now:
+            continue
+        zone = _clean(properties.get('ZoneId'), 80)
+        if not zone:
+            continue
+        description = _clean(properties.get('HindranceDescription'), 120)
+        place = _clean(description.split(':', 1)[0], 65)
+        details = [consequences.replace(';', ' · ')]
+        if description:
+            details.append(description)
+        features.append(_feature(point, {
+            'key': f'be:gipod:{zone}', 'layer': 'construction',
+            'title': f'Road work · {place}' if place else 'Road work · Flanders',
+            'detail': _clean(' · '.join(details), 280),
+            'source': 'GIPOD · Digitaal Vlaanderen · Modellicentie Gratis Hergebruik',
+            'source_url': properties.get('HindranceURI') if str(properties.get('HindranceURI') or '').startswith(
+                'https://gipod.api.vlaanderen.be/api/v1/mobility-hindrances/') else GIPOD_SOURCE,
+            'updated_at': properties.get('HindranceLastModifiedOn') or '',
+        }))
+    return features
+
+
+def _gipod_tile(key):
+    with _GIPOD_CACHE_LOCK:
+        cached = _GIPOD_TILE_CACHE.get(key)
+        if cached and cached['until'] > time.time():
+            return cached['items']
+        tile_lock = _GIPOD_TILE_LOCKS.setdefault(key, threading.Lock())
+    with tile_lock:
+        with _GIPOD_CACHE_LOCK:
+            cached = _GIPOD_TILE_CACHE.get(key)
+            if cached and cached['until'] > time.time():
+                return cached['items']
+        west, south = key[0] / 4, key[1] / 4
+        now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+        query_filter = (f"HindranceStart <= '{now}' AND HindranceEnd >= '{now}' AND "
+                        "(Consequences LIKE '%rij%' OR Consequences LIKE '%Rij%' OR Consequences LIKE '%verkeer%' "
+                        "OR Consequences LIKE '%Snelheidsbeperking%')")
+        items = []
+        for page in range(4):
+            query = urllib.parse.urlencode({
+                'f': 'json', 'limit': 500,
+                'bbox': f'{west:.2f},{south:.2f},{west + .25:.2f},{south + .25:.2f}',
+                'filter': query_filter, 'startIndex': page * 500,
+            })
+            data = _get_json(f'{GIPOD_POINT_URL}?{query}')
+            rows = data.get('features')
+            if not isinstance(rows, list):
+                raise ValueError('GIPOD returned no feature list')
+            items.extend(rows)
+            if not any(link.get('rel') == 'next' for link in data.get('links') or []):
+                break
+        else:
+            raise ValueError('GIPOD tile exceeded four pages')
+        with _GIPOD_CACHE_LOCK:
+            _GIPOD_TILE_CACHE[key] = {'until': time.time() + 300, 'items': items}
+        return items
+
+
+def _gipod_roadworks(bbox):
+    west, south, east, north = bbox
+    west, south, east, north = max(west, 2.5), max(south, 49.5), min(east, 6.5), min(north, 51.6)
+    if west >= east or south >= north:
+        return []
+    keys = [(x, y) for x in range(math.floor(west * 4), math.floor((east - 1e-9) * 4) + 1)
+            for y in range(math.floor(south * 4), math.floor((north - 1e-9) * 4) + 1)]
+    if not keys:
+        return []
+    if len(keys) > 24:
+        raise ValueError('GIPOD view is too wide; zoom closer')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(keys))) as executor:
+        pages = list(executor.map(_gipod_tile, keys))
+    features = _parse_gipod_roadworks(item for page in pages for item in page)
+    return [item for item in features if west <= item['geometry']['coordinates'][0] <= east
+            and south <= item['geometry']['coordinates'][1] <= north]
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -803,16 +910,25 @@ def _snapshot(kind):
 def road_snapshot(layer, bbox=None):
     if layer not in {'signs', 'incidents', 'construction', 'sensors'}:
         raise ValueError('Unknown road layer')
-    snapshot = _snapshot('roads')
-    features = [item for rows in snapshot['sources'].values() for item in rows if item['properties']['layer'] == layer]
     if bbox is not None:
         west, south, east, north = bbox
         if not (-180 <= west <= east <= 180 and -90 <= south <= north <= 90):
             raise ValueError('Invalid road bounds')
+    snapshot = _snapshot('roads')
+    features = [item for rows in snapshot['sources'].values() for item in rows if item['properties']['layer'] == layer]
+    errors = list(snapshot['errors'])
+    sources = list(snapshot['sources'])
+    if layer == 'construction' and bbox is not None:
+        try:
+            features.extend(_gipod_roadworks(bbox))
+            sources.append('be_gipod_roadworks')
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            errors.append(f'be_gipod_roadworks: {error}')
+    if bbox is not None:
         features = [item for item in features if west <= item['geometry']['coordinates'][0] <= east
                     and south <= item['geometry']['coordinates'][1] <= north]
-    return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': snapshot['errors'],
-            'sources': list(snapshot['sources'])}
+    return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': errors,
+            'sources': sources}
 
 
 def power_snapshot():
