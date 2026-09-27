@@ -36,6 +36,7 @@ if [[ ! -d "$release/.venv" ]]; then
     git --git-dir="$repo" archive "$sha" | tar -x -C "$build"
     python3 -m venv "$build/.venv"
     "$build/.venv/bin/pip" install --disable-pip-version-check --no-cache-dir --quiet --requirement "$build/requirements.txt"
+    chmod 2750 "$build"
     mv "$build" "$release"
     trap - EXIT
 fi
