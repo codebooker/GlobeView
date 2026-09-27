@@ -530,6 +530,31 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
                          'https://informo.madrid.es/cameras/Camara06303.jpg')
 
+    def test_madrid_camera_health_checks_image_body(self):
+        class Response(io.BytesIO):
+            def __init__(self, url, body):
+                super().__init__(body)
+                self.url = url
+                self.headers = {'Content-Type': 'image/jpeg', 'Content-Length': '120000',
+                                'Last-Modified': email.utils.formatdate(NOW - 120, usegmt=True)}
+
+        cameras = [{'properties': {'key': f'es:madrid:camera:{camera_id}'}}
+                   for camera_id in ('06303', '06304')]
+        previous = dict(feeds._MADRID_CAMERA_HEALTH)
+        try:
+            feeds._MADRID_CAMERA_HEALTH.update(until=0, unavailable=set())
+            def image(request, timeout):
+                self.assertNotEqual(request.get_method(), 'HEAD')
+                body = b'not a jpeg' if request.full_url.endswith('06304.jpg') else b'\xff\xd8\xffvalid'
+                return Response(request.full_url, body)
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=image):
+                self.assertEqual(feeds._madrid_unavailable_cameras(cameras),
+                                 {'es:madrid:camera:06304'})
+        finally:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_HEALTH.update(previous)
+
     def test_lyon_cameras_require_fresh_official_stills(self):
         observed = dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat()
         def camera(camera_id, url=None, updated=observed):

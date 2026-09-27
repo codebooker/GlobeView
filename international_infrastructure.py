@@ -678,11 +678,13 @@ def _madrid_unavailable_cameras(cameras):
         def unavailable(camera):
             key = camera['properties']['key']
             camera_id = key.rsplit(':', 1)[-1]
-            request = urllib.request.Request(_madrid_camera_url(camera_id), method='HEAD',
+            request = urllib.request.Request(_madrid_camera_url(camera_id),
                                              headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
             try:
                 with urllib.request.urlopen(request, timeout=8) as response:
-                    return key if not _madrid_camera_headers_available(response, now) else None
+                    usable = (_madrid_camera_headers_available(response, now)
+                              and response.read(3) == b'\xff\xd8\xff')
+                    return None if usable else key
             except (OSError, ValueError):
                 return key
 
