@@ -165,11 +165,14 @@ def _norway_wfs(layer, cql_filter=None):
     return _get_json(f'{NORWAY_WFS_URL}?{urllib.parse.urlencode(params)}')
 
 
+def _norway_timestamp(value):
+    return _timestamp(re.sub(r'([+-]\d{2})(\d{2})$', r'\1:\2', str(value or '')))
+
+
 def _norway_publication_current(items, now, max_age=30 * 60):
     if not items:
         return True
-    timestamp = str((items[0].get('properties') or {}).get('endJsonTime') or '')
-    published = _timestamp(re.sub(r'([+-]\d{2})(\d{2})$', r'\1:\2', timestamp))
+    published = _norway_timestamp((items[0].get('properties') or {}).get('endJsonTime'))
     if published is None or not -300 <= now - published <= max_age:
         raise ValueError('Norwegian WFS publication is stale or invalid')
     return True
@@ -242,6 +245,92 @@ def _parse_norway_cameras(payload, now=None):
 
 def _norway_cameras():
     return _parse_norway_cameras(_norway_wfs('CctvSimple'))
+
+
+def _parse_norway_weather(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') or []
+    _norway_publication_current(rows, now)
+    features = []
+    for item in rows:
+        p = item.get('properties') or {}
+        point = _point(item.get('geometry'))
+        observed = _norway_timestamp(p.get('measurementTime'))
+        if not point or not (4 <= point[0] <= 32 and 57 <= point[1] <= 72):
+            continue
+        if observed is None or not -300 <= now - observed <= 60 * 60:
+            continue
+        station_id = str(p.get('referenceId') or '')
+        if not station_id.isdecimal():
+            continue
+        readings = []
+        for field, label, unit in (('roadSurfaceTemperature', 'Road', '°C'),
+                                   ('airTemperature', 'Air', '°C'),
+                                   ('windSpeed', 'Wind', ' m/s'),
+                                   ('maximumWindSpeed', 'Gust', ' m/s'),
+                                   ('precipitationIntensity', 'Precipitation', ' mm/h')):
+            try:
+                value = float(p.get(field))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value) and -100 <= value <= 1000:
+                readings.append(f'{label} {value:g}{unit}')
+        if not readings:
+            continue
+        features.append(_feature(point, {
+            'key': f'no:weather:{station_id}', 'layer': 'sensors',
+            'title': _clean(p.get('locationDescription'), 120) or 'Road weather station',
+            'detail': ' · '.join(readings),
+            'updated_at': dt.datetime.fromtimestamp(observed, dt.timezone.utc).strftime('%d %b %H:%M UTC'),
+            'source': 'Statens vegvesen', 'source_url': NORWAY_SOURCE,
+        }))
+    return features
+
+
+def _norway_weather():
+    return _parse_norway_weather(_norway_wfs('WeatherSimple'))
+
+
+def _parse_norway_travel_times(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') or []
+    _norway_publication_current(rows, now)
+    features = []
+    for item in rows:
+        p = item.get('properties') or {}
+        coordinates = (item.get('geometry') or {}).get('coordinates') or []
+        if (item.get('geometry') or {}).get('type') != 'LineString' or not coordinates:
+            continue
+        point = _point({'coordinates': coordinates[len(coordinates) // 2]})
+        measured = _norway_timestamp(p.get('validAtTime'))
+        if not point or not (4 <= point[0] <= 32 and 57 <= point[1] <= 72):
+            continue
+        if measured is None or not -300 <= now - measured <= 20 * 60 or p.get('missingData') is not False:
+            continue
+        station_id = str(p.get('referenceId') or '')
+        try:
+            actual = float(p.get('actualTime'))
+            expected = float(p.get('expectedTime'))
+        except (TypeError, ValueError):
+            continue
+        if not station_id.isdecimal() or not (0 < actual < 86400 and 0 < expected < 86400):
+            continue
+        detail = f'Reported {actual / 60:.1f} min · expected {expected / 60:.1f} min'
+        status = str(p.get('trafficStatusValue') or '')
+        if status not in ('', 'unknown'):
+            detail += f' · {_clean(re.sub(r"(?<=[a-z])(?=[A-Z])", " ", status).capitalize(), 40)}'
+        features.append(_feature(point, {
+            'key': f'no:travel:{station_id}', 'layer': 'sensors',
+            'title': _clean(p.get('locationDescription'), 120) or 'Road travel time',
+            'detail': detail + ' · segment midpoint',
+            'updated_at': dt.datetime.fromtimestamp(measured, dt.timezone.utc).strftime('%d %b %H:%M UTC'),
+            'source': 'Statens vegvesen', 'source_url': NORWAY_SOURCE,
+        }))
+    return features
+
+
+def _norway_travel_times():
+    return _parse_norway_travel_times(_norway_wfs('TravelTimeSimple'))
 
 
 def _parse_zurich_roadworks(items, now=None):
@@ -1318,6 +1407,8 @@ _FETCHERS = {
         'ch_zurich_sensors': _zurich_sensors,
         'no_road_events': _norway_roads,
         'no_road_cameras': _norway_cameras,
+        'no_road_weather': _norway_weather,
+        'no_travel_times': _norway_travel_times,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},

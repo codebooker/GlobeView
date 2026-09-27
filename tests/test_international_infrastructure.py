@@ -46,6 +46,32 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['properties']['layer'], 'cameras')
         self.assertEqual(rows[0]['properties']['snapshot_url'], base['properties']['stillImageUrl'])
 
+    def test_norway_weather_requires_recent_station_measurement(self):
+        published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
+        base = {'geometry': {'type': 'Point', 'coordinates': [10.7, 59.9]},
+                'properties': {'endJsonTime': published, 'measurementTime': published,
+                               'referenceId': '100018', 'roadSurfaceTemperature': '2.5',
+                               'windSpeed': '3.3'}}
+        rows = feeds._parse_norway_weather({'features': [base]}, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertIn('Road 2.5°C', rows[0]['properties']['detail'])
+        stale = {**base, 'properties': {**base['properties'], 'measurementTime':
+                 dt.datetime.fromtimestamp(NOW - 3601, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')}}
+        self.assertEqual(feeds._parse_norway_weather({'features': [stale]}, NOW), [])
+
+    def test_norway_travel_time_rejects_missing_data_and_uses_segment_midpoint(self):
+        published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
+        base = {'geometry': {'type': 'LineString', 'coordinates': [[10.6, 59.8], [10.7, 59.9], [10.8, 60.0]]},
+                'properties': {'endJsonTime': published, 'validAtTime': published,
+                               'referenceId': '100289', 'missingData': False,
+                               'actualTime': 120, 'expectedTime': 90, 'trafficStatusValue': 'freeFlow'}}
+        rows = feeds._parse_norway_travel_times({'features': [base]}, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [10.7, 59.9])
+        self.assertIn('Free flow', rows[0]['properties']['detail'])
+        missing = {**base, 'properties': {**base['properties'], 'missingData': True}}
+        self.assertEqual(feeds._parse_norway_travel_times({'features': [missing]}, NOW), [])
+
     def test_zurich_sensors_join_active_counters_by_station_number(self):
         locations = [
             {'geometry': {'type': 'Point', 'coordinates': [8.48, 47.45]},

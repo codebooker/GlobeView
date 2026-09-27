@@ -1978,8 +1978,10 @@
       paths = boxes.map(box => `${path}?${new URLSearchParams({ bbox: box.join(','), limit: '10000' })}`);
     }
     try {
-      const internationalSensorsVisible = type === 'sensors' && regionVisible({ bounds: {
-        minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } }, currentBounds());
+      const internationalSensorsVisible = type === 'sensors' && [
+        { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } },
+        { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } }
+      ].some(region => regionVisible(region, currentBounds()));
       const northAmericaSensorsVisible = type !== 'sensors' || regionVisible({ bounds: {
         minLon: -170, maxLon: -50, minLat: 15, maxLat: 72 } }, currentBounds());
       const staticPromise = northAmericaSensorsVisible ? Promise.all(paths.map(async url => {
