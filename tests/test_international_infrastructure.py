@@ -73,6 +73,32 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no usable cameras'):
             feeds._parse_luxembourg_cameras(ET.fromstring('<kml xmlns="http://www.opengis.net/kml/2.2"/>'))
 
+    def test_luxembourg_traffic_sensors_require_recent_measurements(self):
+        now = dt.datetime(2026, 9, 27, 9, 15, tzinfo=dt.timezone.utc).timestamp()
+        document = '''<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0">
+          <publicationTime>2026-09-27T09:10:00Z</publicationTime>
+          <siteMeasurements><measurementSiteReference id="A13.PS.6630"/>
+            <measurementTimeDefault>2026-09-27T09:08:00Z</measurementTimeDefault>
+            <measuredValue><basicData><pertinentLocation><locationForDisplay>
+              <latitude>49.52</latitude><longitude>6.3</longitude>
+            </locationForDisplay><roadNumber>A13</roadNumber></pertinentLocation>
+              <averageVehicleSpeed><speed>85.5</speed></averageVehicleSpeed></basicData></measuredValue>
+            <measuredValue><basicData><vehicleFlow><vehicleFlowRate>930</vehicleFlowRate></vehicleFlow></basicData></measuredValue>
+          </siteMeasurements><siteMeasurements><measurementSiteReference id="old"/>
+            <measurementTimeDefault>2026-09-27T08:00:00Z</measurementTimeDefault>
+            <locationForDisplay><latitude>49.52</latitude><longitude>6.3</longitude></locationForDisplay>
+            <vehicleFlow><vehicleFlowRate>50</vehicleFlowRate></vehicleFlow>
+          </siteMeasurements></d2LogicalModel>'''
+        rows = feeds._parse_luxembourg_traffic(ET.fromstring(document), 'a13', now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'lu:cita:sensor:A13.PS.6630')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [6.3, 49.52])
+        self.assertIn('85.5 km/h', rows[0]['properties']['detail'])
+        self.assertIn('930 vehicles/hour', rows[0]['properties']['detail'])
+        stale = ET.fromstring(document.replace('2026-09-27T09:10:00Z', '2026-09-27T08:00:00Z'))
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_luxembourg_traffic(stale, 'a13', now)
+
     def test_norway_roads_only_include_active_main_records(self):
         published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
         base = {'geometry': {'type': 'Point', 'coordinates': [10.7, 59.9]},

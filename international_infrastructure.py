@@ -61,6 +61,8 @@ LUXEMBOURG_ROADS_URL = 'https://cita.lu/info_trafic/datex/situationrecord36'
 LUXEMBOURG_ROADS_SOURCE = 'https://data.public.lu/en/datasets/cita-evenements-trafic-en-datex-ii-v3-6/'
 LUXEMBOURG_CAMERAS_URL = 'https://www.cita.lu/kml/cameras.kml'
 LUXEMBOURG_CAMERAS_SOURCE = 'https://data.public.lu/en/datasets/cita-cameras-autoroute/'
+LUXEMBOURG_TRAFFIC_BASE = 'https://www.cita.lu/info_trafic/datex/trafficstatus_'
+LUXEMBOURG_TRAFFIC_SOURCE = 'https://data.public.lu/en/datasets/cita-donnees-trafic-en-datex-ii/'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -918,6 +920,65 @@ def _luxembourg_cameras():
     return _parse_luxembourg_cameras(_get_xml(LUXEMBOURG_CAMERAS_URL))
 
 
+def _parse_luxembourg_traffic(root, road, now=None):
+    now = time.time() if now is None else now
+    published = _timestamp(root.findtext('.//{*}publicationTime'))
+    if published is None or not -600 <= now - published <= 20 * 60:
+        raise ValueError(f'Luxembourg {road.upper()} traffic publication is stale or invalid')
+    features = []
+    for site in root.findall('.//{*}siteMeasurements'):
+        reference = site.find('{*}measurementSiteReference')
+        site_id = reference.get('id', '') if reference is not None else ''
+        measured_text = site.findtext('{*}measurementTimeDefault')
+        measured = _timestamp(measured_text)
+        if not site_id or measured is None or not -600 <= now - measured <= 30 * 60:
+            continue
+        lat = site.findtext('.//{*}locationForDisplay/{*}latitude')
+        lon = site.findtext('.//{*}locationForDisplay/{*}longitude')
+        point = _point({'coordinates': [lon, lat]})
+        if not point or not (5.5 <= point[0] <= 6.6 and 49.35 <= point[1] <= 50.2):
+            continue
+        speed_text = site.findtext('.//{*}averageVehicleSpeed/{*}speed')
+        flow_text = site.findtext('.//{*}vehicleFlow/{*}vehicleFlowRate')
+        try:
+            speed = float(speed_text) if speed_text is not None else None
+            flow = int(flow_text) if flow_text is not None else None
+        except ValueError:
+            continue
+        speed = speed if speed is not None and 0 <= speed <= 240 else None
+        flow = flow if flow is not None and 0 <= flow <= 20000 else None
+        if speed is None and flow is None:
+            continue
+        number = _clean(site.findtext('.//{*}roadNumber'), 12)
+        detail = ' · '.join(filter(None, [
+            f'Average speed {speed:g} km/h' if speed is not None else '',
+            f'{flow:,} vehicles/hour' if flow is not None else '',
+        ]))
+        features.append(_feature(point, {
+            'key': f'lu:cita:sensor:{site_id}', 'layer': 'sensors',
+            'title': f'{number or road.upper()} traffic sensor', 'detail': detail,
+            'source': 'Luxembourg CITA · CC0', 'source_url': LUXEMBOURG_TRAFFIC_SOURCE,
+            'updated_at': measured_text,
+        }))
+    return features
+
+
+def _luxembourg_traffic():
+    roads = ('a1', 'a3', 'a4', 'a6', 'a7', 'a13', 'b40')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(_get_xml, LUXEMBOURG_TRAFFIC_BASE + road): road for road in roads}
+        results = []
+        for future in concurrent.futures.as_completed(futures):
+            road = futures[future]
+            try:
+                results.extend(_parse_luxembourg_traffic(future.result(), road))
+            except (OSError, ValueError, ET.ParseError):
+                continue
+    if not results:
+        raise ValueError('Luxembourg traffic measurements are unavailable or stale')
+    return results
+
+
 def _lambert93_to_lonlat(x, y):
     """Convert the sensor reference's RGF93 / Lambert-93 metres to map coordinates."""
     a, flattening = 6378137.0, 1 / 298.257222101
@@ -1493,6 +1554,7 @@ _FETCHERS = {
         'fr_national_roads': _france_roads,
         'lu_cita_roads': _luxembourg_roads,
         'lu_cita_cameras': _luxembourg_cameras,
+        'lu_cita_traffic': _luxembourg_traffic,
         'fr_traffic_sensors': _france_sensors,
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
