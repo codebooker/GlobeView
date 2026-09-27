@@ -7,6 +7,52 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_sweden_vma_maps_only_current_public_alerts_to_municipalities(self):
+        now = dt.datetime(2026, 9, 27, 18, tzinfo=dt.timezone.utc)
+        alert = {'identifier': 'SRCAP20260927170000I', 'sent': '2026-09-27T19:00:00+02:00',
+                 'status': 'Actual', 'scope': 'Public', 'msgType': 'Alert',
+                 'info': [
+                     {'language': 'sv-SE', 'event': 'Viktigt meddelande',
+                      'expires': '2026-09-28T19:00:00+02:00',
+                      'area': [{'areaDesc': 'Dorotea kommun', 'geocode': [
+                          {'valueName': 'Kommun', 'value': '2425'}]}]},
+                     {'language': 'en-US', 'event': 'Important Public Announcement',
+                      'description': 'Stay indoors.', 'expires': '2026-09-28T19:00:00+02:00',
+                      'web': 'https://sverigesradio.se/artikel/vma-vad-ar-det',
+                      'area': [{'areaDesc': 'Dorotea kommun', 'geocode': [
+                          {'valueName': 'Kommun', 'value': '2425'},
+                          {'valueName': 'Kommun', 'value': '2425'},
+                          {'valueName': 'Kommun', 'value': '9999'}]}]}]}
+        payload = {'alerts': [alert, {**alert, 'identifier': 'cancel', 'msgType': 'Cancel'},
+                              {**alert, 'identifier': 'exercise', 'status': 'Exercise'},
+                              {**alert, 'identifier': 'test', 'status': 'Test'}]}
+        rows = feeds.parse_sweden_vma(payload, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['id'], 'se:vma:SRCAP20260927170000I:2425')
+        self.assertIn('Dorotea · Important Public Announcement', rows[0]['title'])
+        self.assertIn('approximate area marker', rows[0]['detail'])
+        self.assertIn('Stay indoors.', rows[0]['detail'])
+        self.assertEqual(rows[0]['sourceUrl'], 'https://sverigesradio.se/artikel/vma-vad-ar-det')
+        self.assertEqual(feeds.parse_sweden_vma(payload, now + dt.timedelta(days=2)), [])
+        self.assertEqual(len(feeds._sweden_areas()['points']), 290)
+        self.assertEqual(len(feeds._sweden_areas()['counties']), 21)
+
+    def test_sweden_vma_uses_county_or_country_when_no_municipality_given(self):
+        now = dt.datetime(2026, 9, 27, 18, tzinfo=dt.timezone.utc)
+        base = {'sent': '2026-09-27T17:00:00Z', 'status': 'Actual',
+                'scope': 'Public', 'msgType': 'Update',
+                'info': [{'language': 'sv-SE', 'event': 'VMA',
+                          'expires': '2026-09-28T17:00:00Z',
+                          'area': [{'geocode': [{'valueName': 'Län', 'value': '01'},
+                                                {'valueName': 'Sverige', 'value': '00'}]}]}]}
+        rows = feeds.parse_sweden_vma({'alerts': [{**base, 'identifier': 'county'}]}, now)
+        self.assertEqual([row['id'] for row in rows], ['se:vma:county:01'])
+        self.assertIn('county · approximate', rows[0]['detail'])
+        national = {**base, 'identifier': 'national', 'info': [{**base['info'][0],
+                    'area': [{'geocode': [{'valueName': 'Sverige', 'value': '00'}]}]}]}
+        rows = feeds.parse_sweden_vma({'alerts': [national]}, now)
+        self.assertEqual([row['id'] for row in rows], ['se:vma:national:00'])
+
     def test_nsw_uses_incident_point_and_skips_planned_burns(self):
         payload = {'features': [
             {'geometry': {'type': 'GeometryCollection', 'geometries': [

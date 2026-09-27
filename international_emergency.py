@@ -23,6 +23,7 @@ ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods'
 BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
 ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
 PORTUGAL_SOURCE = 'https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto'
+SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
 PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/services/'
                 'OcorrenciasSite/FeatureServer/0/query?where=1%3D1&outFields='
                 'ID_oc%2CNumero%2CEstadoAgrupado%2CNatureza%2CConcelho%2CRegiao%2C'
@@ -481,6 +482,95 @@ def parse_portugal(payload, now=None):
     return output
 
 
+@lru_cache(maxsize=1)
+def _sweden_areas():
+    path = Path(__file__).with_name('sweden-administrative-points.json')
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def parse_sweden_vma(payload, now=None):
+    """Map current public VMA notices to approximate administrative points."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(payload, dict) or not isinstance(payload.get('alerts'), list):
+        raise ValueError('Swedish VMA response is invalid')
+    areas_by_code = _sweden_areas()
+    output = []
+    seen = set()
+    for alert in payload['alerts']:
+        if not isinstance(alert, dict) or alert.get('status') != 'Actual' or alert.get('scope') != 'Public':
+            continue
+        if alert.get('msgType') not in {'Alert', 'Update'}:
+            continue
+        identifier = str(alert.get('identifier') or '')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', identifier):
+            continue
+        try:
+            sent = dt.datetime.fromisoformat(str(alert['sent']).replace('Z', '+00:00'))
+            if sent.tzinfo is None or sent > now + dt.timedelta(minutes=5):
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        infos = [info for info in alert.get('info') or [] if isinstance(info, dict)]
+        infos.sort(key=lambda info: not str(info.get('language') or '').lower().startswith('en'))
+        before_count = len(output)
+        for info in infos:
+            try:
+                expires = dt.datetime.fromisoformat(str(info['expires']).replace('Z', '+00:00'))
+                if expires.tzinfo is None or expires <= now:
+                    continue
+            except (KeyError, TypeError, ValueError):
+                continue
+            areas = info.get('area') or []
+            if not isinstance(areas, list):
+                continue
+            article = str(info.get('web') or '')
+            source_url = (article if re.fullmatch(r'https://(?:www\.)?sverigesradio\.se/[^\s]+', article)
+                          else f'https://vmaapi.sr.se/api/v3/alert/{identifier}')
+            event = _clean(info.get('headline') or info.get('event') or 'Public warning', 100)
+            message = _clean(info.get('description') or info.get('instruction'), 180)
+            locations = []
+            for area in areas:
+                if not isinstance(area, dict):
+                    continue
+                for geocode in area.get('geocode') or []:
+                    if not isinstance(geocode, dict):
+                        continue
+                    code = str(geocode.get('value') or '')
+                    kind = geocode.get('valueName')
+                    if kind == 'Kommun':
+                        point = areas_by_code['points'].get(code)
+                        rank, suffix = 0, 'municipality'
+                    elif kind == 'Län':
+                        point = areas_by_code['counties'].get(code)
+                        rank, suffix = 1, 'county'
+                    elif kind == 'Sverige' and code == '00':
+                        point = areas_by_code['country']
+                        rank, suffix = 2, 'country'
+                    else:
+                        continue
+                    if point:
+                        locations.append((rank, code, point, suffix))
+            if not locations:
+                continue
+            finest = min(location[0] for location in locations)
+            for rank, code, point, suffix in locations:
+                if rank != finest:
+                    continue
+                key = f'se:vma:{identifier}:{code}'
+                if key in seen:
+                    continue
+                seen.add(key)
+                lon, lat, name = point
+                detail = f'{name} {suffix} · approximate area marker. {message}'
+                output.append(_item(key, lon, lat, f'{name} · {event}', detail,
+                                    'Sveriges Radio VMA', source_url,
+                                    sent.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z')))
+            # English text is preferred when available; do not duplicate translated areas.
+            if len(output) > before_count:
+                break
+    return output
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
@@ -490,6 +580,7 @@ _LOADERS = {
     'burgenland_fire': lambda: parse_burgenland(_html(BURGENLAND_URL)),
     'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
     'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
+    'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),
 }
 
 
