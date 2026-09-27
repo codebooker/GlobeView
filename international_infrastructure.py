@@ -22,6 +22,9 @@ from zoneinfo import ZoneInfo
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
+MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
+MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
+MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
 FINTRAFFIC_CAMERAS_SOURCE = 'https://www.digitraffic.fi/en/road-traffic/'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
@@ -221,6 +224,96 @@ def _point(geometry):
 
 def _feature(lonlat, properties):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': lonlat}, 'properties': properties}
+
+
+def _madrid_xml(filename):
+    request = urllib.request.Request(MADRID_BASE + filename,
+                                     headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        modified = response.headers.get('Last-Modified')
+        body = response.read(2 * 1024 * 1024 + 1)
+    if len(body) > 2 * 1024 * 1024:
+        raise ValueError('Madrid feed exceeded size limit')
+    published = email.utils.parsedate_to_datetime(modified).timestamp() if modified else None
+    if published is None or not -300 <= time.time() - published <= 25 * 60:
+        raise ValueError('Madrid feed is stale')
+    return ET.fromstring(body), published
+
+
+def _madrid_time(value):
+    try:
+        normalized = re.sub(r'(\.\d{6})\d+', r'\1', str(value))
+        return dt.datetime.fromisoformat(normalized).replace(
+            tzinfo=ZoneInfo('Europe/Madrid')).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_madrid_incidents(root, published, now=None):
+    now = time.time() if now is None else now
+    features = []
+    for item in root.findall('Incidencia'):
+        incident_id = item.findtext('id_incidencia') or ''
+        if not incident_id.isdecimal() or item.findtext('incid_estado') not in {'1', '4'}:
+            continue
+        try:
+            point = [float(item.findtext('longitud')), float(item.findtext('latitud'))]
+        except (TypeError, ValueError):
+            continue
+        if not (-3.9 <= point[0] <= -3.45 and 40.25 <= point[1] <= 40.65):
+            continue
+        start = _madrid_time(item.findtext('fh_inicio'))
+        end = _madrid_time(item.findtext('fh_final'))
+        if start is None or start > now or (end and end > start and end < now):
+            continue
+        is_work = item.findtext('es_obras') == 'S'
+        layer = 'construction' if is_work else 'incidents'
+        title = _clean(item.findtext('nom_tipo_incidencia'), 90) or ('Roadworks' if is_work else 'Road incident')
+        features.append(_feature(point, {
+            'key': f'es:madrid:incident:{incident_id}', 'layer': layer,
+            'title': title, 'detail': _clean(item.findtext('descripcion'), 240),
+            'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_SOURCE,
+            'updated_at': published,
+        }))
+    return features
+
+
+def _madrid_incidents():
+    root, published = _madrid_xml('incid_aytomadrid.xml')
+    return _parse_madrid_incidents(root, published)
+
+
+def _parse_madrid_cameras(root, published):
+    namespace = {'k': 'http://earth.google.com/kml/2.2'}
+    features = []
+    for mark in root.findall('.//k:Placemark', namespace):
+        data = {node.get('name'): node.findtext('k:Value', namespaces=namespace)
+                for node in mark.findall('.//k:Data', namespace)}
+        camera_id = str(data.get('Numero') or '')
+        if not re.fullmatch(r'\d{4,6}', camera_id):
+            continue
+        coordinates = (mark.findtext('.//k:coordinates', namespaces=namespace) or '').strip().split(',')
+        try:
+            point = [float(coordinates[0]), float(coordinates[1])]
+        except (IndexError, ValueError):
+            continue
+        if not (-3.9 <= point[0] <= -3.45 and 40.25 <= point[1] <= 40.65):
+            continue
+        features.append(_feature(point, {
+            'key': f'es:madrid:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(data.get('Nombre'), 110) or f'Madrid road camera {camera_id}',
+            'detail': 'Latest available still · normally updated every 5 min',
+            'snapshot_url': f'https://informo.madrid.es/cameras/Camara{camera_id}.jpg',
+            'snapshot_refresh_ms': 300000,
+            'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_CAMERAS_SOURCE,
+            'updated_at': published,
+        }))
+    return features
+
+
+def _madrid_cameras():
+    root, published = _madrid_xml('CCTV.kml')
+    return _parse_madrid_cameras(root, published)
 
 
 def _norway_wfs(layer, cql_filter=None):
@@ -2072,6 +2165,8 @@ _FETCHERS = {
         'es_dgt_signs': _dgt_signs,
         'es_sct_incidents': _sct_incidents,
         'es_sct_cameras': _sct_cameras,
+        'es_madrid_incidents': _madrid_incidents,
+        'es_madrid_cameras': _madrid_cameras,
         'pl_gddkia_roads': _poland_roads,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),

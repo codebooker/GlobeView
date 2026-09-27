@@ -16,6 +16,34 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_madrid_incidents_use_local_time_and_skip_future_work(self):
+        now = dt.datetime(2026, 9, 27, 11, tzinfo=dt.timezone.utc).timestamp()
+        root = ET.fromstring('''<Incidencias>
+          <Incidencia><id_incidencia>51</id_incidencia><incid_estado>1</incid_estado>
+            <es_obras>S</es_obras><nom_tipo_incidencia>Roadworks</nom_tipo_incidencia>
+            <descripcion>Lane closed</descripcion><longitud>-3.7</longitud><latitud>40.4</latitud>
+            <fh_inicio>2026-09-27T12:00:00.0000000</fh_inicio>
+            <fh_final>2026-09-28T13:00:00.0000000</fh_final></Incidencia>
+          <Incidencia><id_incidencia>52</id_incidencia><incid_estado>4</incid_estado>
+            <es_obras>N</es_obras><longitud>-3.71</longitud><latitud>40.41</latitud>
+            <fh_inicio>2026-09-28T12:00:00.0000000</fh_inicio>
+            <fh_final>2026-09-29T13:00:00.0000000</fh_final></Incidencia>
+        </Incidencias>''')
+        rows = feeds._parse_madrid_incidents(root, now, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+
+    def test_madrid_cameras_use_official_image_url(self):
+        root = ET.fromstring('''<kml xmlns="http://earth.google.com/kml/2.2"><Document>
+          <Placemark><ExtendedData><Data name="Numero"><Value>06303</Value></Data>
+            <Data name="Nombre"><Value>Plaza de Castilla</Value></Data></ExtendedData>
+            <Point><coordinates>-3.68894,40.46606,10</coordinates></Point></Placemark>
+        </Document></kml>''')
+        rows = feeds._parse_madrid_cameras(root, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'],
+                         'https://informo.madrid.es/cameras/Camara06303.jpg')
+
     def test_poland_road_events_require_fresh_publication_and_active_dates(self):
         now = dt.datetime(2026, 9, 27, 10, 50, tzinfo=dt.timezone.utc).timestamp()
         root = ET.fromstring('''<utrudnienia gen="2026-09-27T12:48:00+0200">
