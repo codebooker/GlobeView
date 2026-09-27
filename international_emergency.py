@@ -22,6 +22,12 @@ NZ_URL = 'https://alerthub.civildefence.govt.nz/atom/pwp'
 ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods'
 BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
 ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
+PORTUGAL_SOURCE = 'https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto'
+PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/services/'
+                'OcorrenciasSite/FeatureServer/0/query?where=1%3D1&outFields='
+                'ID_oc%2CNumero%2CEstadoAgrupado%2CNatureza%2CConcelho%2CRegiao%2C'
+                'Operacionais%2CMeiosTerrestres%2CMeiosAereos%2CDataDosDados&'
+                'returnGeometry=true&outSR=4326&f=json')
 _ATOM = '{http://www.w3.org/2005/Atom}'
 _CAP = '{urn:oasis:names:tc:emergency:cap:1.2}'
 _LOCK = threading.Lock()
@@ -426,6 +432,55 @@ def parse_iceland(payload, now=None):
     return output
 
 
+def parse_portugal(payload, now=None):
+    """Map ANEPC's public active-incident layer without street-level details."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(payload, dict) or not isinstance(payload.get('features'), list):
+        raise ValueError('ANEPC incident response is invalid')
+    if payload.get('exceededTransferLimit'):
+        raise ValueError('ANEPC incident response was truncated')
+    rows = payload['features']
+    if not rows:
+        return []
+    try:
+        published = max(float(row['attributes']['DataDosDados']) for row in rows) / 1000
+    except (KeyError, TypeError, ValueError):
+        raise ValueError('ANEPC publication time is missing')
+    observed = dt.datetime.fromtimestamp(published, dt.timezone.utc)
+    # ANEPC currently labels Portugal's local summer time as UTC.
+    if dt.timedelta(minutes=30) < observed - now < dt.timedelta(minutes=90):
+        observed -= dt.timedelta(hours=1)
+    if observed < now - dt.timedelta(minutes=30) or observed > now + dt.timedelta(minutes=5):
+        raise ValueError('ANEPC incident publication is stale')
+    observed_text = observed.isoformat().replace('+00:00', 'Z')
+    output = []
+    for row in rows[:2000]:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('attributes') or {}
+        geometry = row.get('geometry') or {}
+        lon, lat = geometry.get('x'), geometry.get('y')
+        incident_id = props.get('Numero') or props.get('ID_oc')
+        if not incident_id or not _valid(lon, lat):
+            continue
+        nature = re.sub(r'^\d+\s*-\s*', '', str(props.get('Natureza') or '')).strip()
+        municipality = props.get('Concelho') or props.get('Regiao') or ''
+        state = props.get('EstadoAgrupado') or ''
+        if state not in {'Em Curso', 'Em Despacho', 'Em Resolução', 'Em Conclusão'}:
+            continue
+        title = f'{nature or "Civil protection incident"} · {municipality}' if municipality else nature or 'Civil protection incident'
+        responders = props.get('Operacionais') or 0
+        ground_units = props.get('MeiosTerrestres') or 0
+        detail = ' · '.join(filter(None, [state, str(props.get('Numero') or ''),
+            f'{responders} responder{"s" if responders != 1 else ""}' if responders else '',
+            f'{ground_units} ground unit{"s" if ground_units != 1 else ""}' if ground_units else '']))
+        code = str(props.get('Natureza') or '')[:2]
+        category = 'fire' if code == '31' else 'traffic' if code == '24' else 'warning'
+        output.append(_item(f'portugal:{incident_id}', lon, lat, title, detail,
+                            'Portugal ANEPC · CC BY 4.0', PORTUGAL_SOURCE, observed_text, category))
+    return output
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
@@ -434,6 +489,7 @@ _LOADERS = {
     'england_floods': lambda: parse_england(_json(ENGLAND_URL)),
     'burgenland_fire': lambda: parse_burgenland(_html(BURGENLAND_URL)),
     'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
+    'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
 }
 
 

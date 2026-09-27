@@ -100,6 +100,25 @@ class InternationalEmergencyTests(unittest.TestCase):
         self.assertIn('downloaded 2026-09-27', items[0]['source'])
         self.assertEqual(feeds.parse_iceland([{**row, 'expires': '2026-09-27T07:00:00Z'}], now), [])
 
+    def test_portugal_active_incidents_check_freshness_and_use_public_fields(self):
+        now = dt.datetime(2026, 9, 27, 10, 6, tzinfo=dt.timezone.utc)
+        record = {'geometry': {'x': -8.61, 'y': 41.15}, 'attributes': {
+            'ID_oc': 123, 'Numero': '2026000123', 'Natureza': '3103 - Mato',
+            'Concelho': 'Porto', 'EstadoAgrupado': 'Em Curso', 'Operacionais': 12,
+            'MeiosTerrestres': 3, 'DataDosDados': int((now + dt.timedelta(minutes=58)).timestamp() * 1000)}}
+        payload = {'features': [record]}
+        items = feeds.parse_portugal(payload, now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['id'], 'portugal:2026000123')
+        self.assertEqual((items[0]['lon'], items[0]['lat']), (-8.61, 41.15))
+        self.assertEqual(items[0]['category'], 'fire')
+        self.assertIn('Mato · Porto', items[0]['title'])
+        self.assertNotIn('Endereco', items[0]['detail'])
+        self.assertEqual(items[0]['observed'], '2026-09-27T10:04:00Z')
+        record['attributes']['DataDosDados'] = int((now - dt.timedelta(hours=2)).timestamp() * 1000)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds.parse_portugal(payload, now)
+
 
 if __name__ == '__main__':
     unittest.main()
