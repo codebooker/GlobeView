@@ -960,16 +960,38 @@
       // Popups are positioned inside MapLibre's transformed map container. Safari can
       // defer lazy images there even while the popup is visible, so load on selection.
       img.loading = 'eager';
+      img.hidden = true;
       let retries = 0;
       let usingFallback = false;
       let retryTimer;
+      let loading = false;
       const retryButton = textElement('button', 'popup-play', 'Retry camera image');
       retryButton.type = 'button';
       const loadImage = () => {
-        if (!popup.isOpen() || !img.isConnected) return;
+        if (!popup.isOpen() || !img.isConnected || loading) return;
+        loading = true;
         const url = usingFallback ? fallback : snapshot;
         const separator = url.includes('?') ? '&' : '?';
-        img.src = `${url}${separator}v=${Date.now()}`;
+        const next = new Image();
+        next.onload = () => {
+          loading = false;
+          if (!popup.isOpen() || !img.isConnected) return;
+          img.src = next.src;
+          img.hidden = false;
+          retries = 0;
+          retryButton.remove();
+        };
+        next.onerror = () => {
+          loading = false;
+          if (!popup.isOpen() || !img.isConnected) return;
+          if (retries++ === 0) retryTimer = window.setTimeout(loadImage, 1500);
+          else if (fallback && !usingFallback) {
+            usingFallback = true;
+            retries = 0;
+            loadImage();
+          } else if (!retryButton.isConnected) root.append(retryButton);
+        };
+        next.src = `${url}${separator}v=${Date.now()}`;
       };
       retryButton.addEventListener('click', () => {
         retries = 0;
@@ -977,30 +999,14 @@
         retryButton.remove();
         loadImage();
       });
-      img.addEventListener('load', () => {
-        retries = 0;
-        img.hidden = false;
-        retryButton.remove();
-      });
-      img.addEventListener('error', () => {
-        if (!popup.isOpen() || !img.isConnected) return;
-        if (retries++ === 0) retryTimer = window.setTimeout(loadImage, 1500);
-        else if (fallback && !usingFallback) {
-          usingFallback = true;
-          retries = 0;
-          loadImage();
-        }
-        else {
-          img.hidden = true;
-          if (!retryButton.isConnected) root.append(retryButton);
-        }
-      });
       root.append(img);
-      img.src = snapshot;
+      loadImage();
       const refreshMs = Number(meta.item.expando?.snapshotRefreshMs);
       if (refreshMs >= 60000) {
         const refresh = window.setInterval(() => {
-          if (!retryButton.isConnected) loadImage();
+          retries = 0;
+          usingFallback = false;
+          loadImage();
         }, refreshMs);
         popup.on('close', () => window.clearInterval(refresh));
       }
