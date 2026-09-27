@@ -434,7 +434,7 @@ body.radio-playing .map-actions{bottom:210px}
 }
 @media(min-width:701px) and (max-width:900px){.trip-panel,.draw-panel{top:64px;right:16px;bottom:auto;left:auto;width:350px;max-height:calc(100dvh - 80px)}
 }
-@media(max-width:600px){.topbar{height:100px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:38px 42px;gap:6px 12px;padding:6px 12px 7px}
+@media(max-width:700px){.topbar{height:100px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:38px 42px;gap:6px 12px;padding:6px 12px 7px}
 .brand{grid-column:1;grid-row:1;min-width:0}
 .brand img{width:30px;height:30px}
 .brand strong{font-size:15px}
