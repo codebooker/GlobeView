@@ -17,6 +17,7 @@ from cyber_feeds import cyber_snapshot
 from international_emergency import international_emergency_snapshot
 from international_infrastructure import (road_snapshot as international_road_snapshot,
                                           power_snapshot as international_power_snapshot,
+                                          bordeaux_flow_snapshot,
                                           zurich_sensor_sample, northern_ireland_camera_snapshot,
                                           madrid_camera_snapshot, dgt_camera_snapshot,
                                           lyon_camera_snapshot,
@@ -19260,6 +19261,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_international_emergency(parsed)
         elif parsed.path == '/international-roads':
             self._handle_international_roads(parsed)
+        elif parsed.path == '/international-traffic':
+            self._handle_international_traffic(parsed)
         elif parsed.path == '/international-sensor-sample':
             self._handle_international_sensor_sample(parsed)
         elif parsed.path == '/international-power':
@@ -20561,6 +20564,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as error:
             self._log_exception('international-roads', error)
             self.send_error(502, 'International road feed unavailable')
+
+    def _handle_international_traffic(self, parsed):
+        try:
+            self._write_bytes(200, json.dumps(bordeaux_flow_snapshot()).encode(),
+                              'application/json', cache_control='public, max-age=60')
+        except Exception as error:
+            self._log_exception('international-traffic', error)
+            self.send_error(502, 'International traffic feed unavailable')
 
     def _handle_international_sensor_sample(self, parsed):
         collector_id = urllib.parse.parse_qs(parsed.query).get('id', [''])[0]

@@ -17,6 +17,22 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_bordeaux_flow_keeps_fresh_road_segments_only(self):
+        now = dt.datetime(2026, 9, 27, 20, 40, tzinfo=dt.timezone.utc).timestamp()
+        def road(gid, state='DENSE', modified='2026-09-27T20:35:00+00:00', lon=-0.60):
+            return {'gid': gid, 'etat': state, 'mdate': modified, 'geo_shape': {
+                'geometry': {'type': 'LineString', 'coordinates': [[lon, 44.82], [lon + 0.01, 44.83]]}}}
+        data = feeds._parse_bordeaux_flow([
+            road('17'), road('18', 'INCONNU'), road('19', modified='2026-09-27T19:00:00+00:00'),
+            road('20', lon=2.35)], now)
+        self.assertEqual(len(data['features']), 1)
+        self.assertEqual(data['features'][0]['properties']['state'], 'DENSE')
+        self.assertEqual(data['features'][0]['geometry']['coordinates'][0], [-0.6, 44.82])
+        with self.assertRaisesRegex(ValueError, 'no current'):
+            feeds._current_bordeaux_flow(data, now + 31 * 60)
+        with self.assertRaisesRegex(ValueError, 'no current'):
+            feeds._parse_bordeaux_flow([road('18', 'INCONNU')], now)
+
     def test_brussels_counters_only_map_recent_active_measurements(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def counter(name, measured='2026-09-27T18:58:00Z', active=1, count=8, speed=42):

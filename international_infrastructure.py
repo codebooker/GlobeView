@@ -97,6 +97,9 @@ AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
+BORDEAUX_FLOW_SOURCE = 'https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3'
+BORDEAUX_FLOW_API = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/catalog/'
+                     'datasets/ci_trafi_l/records')
 BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_geom/'
 BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                           'service=WFS&version=1.1.0&request=GetFeature&'
@@ -138,6 +141,8 @@ _CACHE = {
     'power': {'until': 0, 'sources': {}, 'source_times': {}, 'errors': []},
 }
 _STALE_SECONDS = 900
+_BORDEAUX_FLOW_LOCK = threading.Lock()
+_BORDEAUX_FLOW_CACHE = {'until': 0, 'data': None}
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
 _NH_ROADWORKS_CACHE = {'until': 0, 'url': '', 'published': '', 'activities': []}
 _FRANCE_SENSOR_REFERENCES = {'until': 0, 'points': {}}
@@ -785,6 +790,88 @@ def lyon_camera_snapshot(camera_id):
     if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
         raise ValueError('Lyon camera returned no JPEG still')
     return image, 'image/jpeg'
+
+
+def _parse_bordeaux_flow(rows, now=None):
+    now = time.time() if now is None else now
+    features = []
+    for row in rows:
+        state = str(row.get('etat') or '').upper()
+        if state not in {'FLUIDE', 'DENSE', 'EMBOUTEILLE', 'IMPOSSIBLE'}:
+            continue
+        try:
+            updated = dt.datetime.fromisoformat(row['mdate']).timestamp()
+            geometry = row['geo_shape']['geometry']
+            if geometry['type'] != 'LineString':
+                continue
+            line = geometry['coordinates']
+            gid = int(row['gid'])
+            coordinates = [[float(point[0]), float(point[1])] for point in line]
+        except (TypeError, ValueError, KeyError, IndexError):
+            continue
+        if not -300 <= now - updated <= 30 * 60:
+            continue
+        if not (2 <= len(coordinates) <= 150 and all(
+                -0.9 <= lon <= -0.3 and 44.6 <= lat <= 45.1 for lon, lat in coordinates)):
+            continue
+        features.append({'type': 'Feature', 'id': gid,
+                         'geometry': {'type': 'LineString', 'coordinates': coordinates},
+                         'properties': {'state': state, 'updated_at': updated}})
+    if not features:
+        raise ValueError('Bordeaux traffic feed contains no current road states')
+    return {'type': 'FeatureCollection', 'features': features,
+            'source': 'Bordeaux Métropole · Licence Ouverte',
+            'source_url': BORDEAUX_FLOW_SOURCE}
+
+
+def _fetch_bordeaux_flow_page(offset):
+    query = urllib.parse.urlencode({'limit': 100, 'offset': offset,
+                                    'select': 'geo_shape,gid,etat,mdate'})
+    request = urllib.request.Request(f'{BORDEAUX_FLOW_API}?{query}',
+                                     headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        body = response.read(150_001)
+    if len(body) > 150_000:
+        raise ValueError('Bordeaux traffic page exceeded size limit')
+    return json.loads(body)
+
+
+def _current_bordeaux_flow(data, now):
+    features = [feature for feature in data['features']
+                if -300 <= now - feature['properties']['updated_at'] <= 30 * 60]
+    if not features:
+        raise ValueError('Bordeaux traffic cache has no current road states')
+    return dict(data, features=features)
+
+
+def bordeaux_flow_snapshot():
+    with _BORDEAUX_FLOW_LOCK:
+        now = time.time()
+        if now < _BORDEAUX_FLOW_CACHE['until'] and _BORDEAUX_FLOW_CACHE['data']:
+            return _current_bordeaux_flow(_BORDEAUX_FLOW_CACHE['data'], now)
+        try:
+            first = _fetch_bordeaux_flow_page(0)
+            count = int(first['total_count'])
+            if not 1 <= count <= 1000:
+                raise ValueError('Bordeaux traffic record count is invalid')
+            pages = []
+            offsets = list(range(100, count, 100))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                pages = list(executor.map(_fetch_bordeaux_flow_page, offsets))
+            records = list(first['results'])
+            for page in pages:
+                if int(page['total_count']) != count:
+                    raise ValueError('Bordeaux traffic pages changed during fetch')
+                records.extend(page['results'])
+            if len(records) != count:
+                raise ValueError('Bordeaux traffic feed is incomplete')
+            data = _parse_bordeaux_flow(records, now)
+            _BORDEAUX_FLOW_CACHE.update(until=now + 300, data=data)
+            return data
+        except (OSError, ValueError, KeyError, TypeError):
+            if _BORDEAUX_FLOW_CACHE['data'] and now < _BORDEAUX_FLOW_CACHE['until'] + 600:
+                return _current_bordeaux_flow(_BORDEAUX_FLOW_CACHE['data'], now)
+            raise
 
 
 def _parse_madrid_signs(locations, root, published):
