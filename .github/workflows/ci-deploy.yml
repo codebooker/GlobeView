@@ -56,9 +56,16 @@ jobs:
       - name: Deploy tested commit
         env:
           DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+          DEPLOY_ORIGIN_IP: 178.104.224.99
         run: |
           python3 - <<'PY'
-          import hashlib, hmac, json, os, time, urllib.request
+          import hashlib, hmac, http.client, json, os, socket, ssl, time
+
+          class OriginHTTPSConnection(http.client.HTTPSConnection):
+              def connect(self):
+                  raw = socket.create_connection((self.host, self.port), self.timeout)
+                  self.sock = self._context.wrap_socket(raw, server_hostname='globeview.app')
+
           secret = os.environ['DEPLOY_WEBHOOK_SECRET'].encode()
           if len(secret) < 32:
               raise SystemExit('Deployment secret is missing or too short')
@@ -69,21 +76,17 @@ jobs:
           }, separators=(',', ':'), sort_keys=True).encode()
           timestamp = str(int(time.time()))
           signature = hmac.new(secret, timestamp.encode() + b'.' + body, hashlib.sha256).hexdigest()
-          request = urllib.request.Request(
-              'https://globeview.app/__deploy',
-              data=body,
-              headers={
-                  'Content-Type': 'application/json',
-                  'X-GlobeView-Timestamp': timestamp,
-                  'X-GlobeView-Signature': signature,
-              },
-              method='POST',
-          )
-          try:
-              with urllib.request.urlopen(request, timeout=13 * 60) as response:
-                  result = json.load(response)
-          except Exception as exc:
-              raise SystemExit(f'Deployment hook failed: {type(exc).__name__}')
+          connection = OriginHTTPSConnection(os.environ['DEPLOY_ORIGIN_IP'], 443, timeout=13 * 60, context=ssl.create_default_context())
+          connection.request('POST', '/__deploy', body=body, headers={
+              'Host': 'globeview.app',
+              'Content-Type': 'application/json',
+              'X-GlobeView-Timestamp': timestamp,
+              'X-GlobeView-Signature': signature,
+          })
+          response = connection.getresponse()
+          result = json.loads(response.read())
+          if response.status != 200:
+              raise SystemExit(f'Deployment hook returned HTTP {response.status}: {result.get("error", "unknown error")}')
           if result.get('status') != 'deployed' or result.get('sha') != os.environ['GITHUB_SHA']:
               raise SystemExit('Deployment hook returned an unexpected response')
           print('Deployed ' + result['sha'])
