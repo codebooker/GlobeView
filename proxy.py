@@ -20,6 +20,7 @@ from international_infrastructure import (road_snapshot as international_road_sn
                                           zurich_sensor_sample, northern_ireland_camera_snapshot,
                                           madrid_camera_snapshot, dgt_camera_snapshot,
                                           lithuania_camera_snapshot,
+                                          lithuania_event_detail,
                                           tii_camera_snapshot)
 from radio_catalog import catalog_snapshot as radio_catalog_snapshot, record_station_click
 from cyclone_guidance import guidance_snapshot as cyclone_guidance_snapshot
@@ -19139,6 +19140,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_dgt_camera(parsed)
         elif parsed.path.startswith('/lithuania-camera/'):
             self._handle_lithuania_camera(parsed)
+        elif parsed.path.startswith('/lithuania-road-event/'):
+            self._handle_lithuania_road_event(parsed)
         elif parsed.path.startswith('/ireland-camera/'):
             self._handle_ireland_camera(parsed)
         elif parsed.path.startswith('/stream/'):
@@ -19609,6 +19612,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as exc:
             self._log_exception('lithuania-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_lithuania_road_event(self, parsed):
+        event_id = urllib.parse.unquote(parsed.path.removeprefix('/lithuania-road-event/'))
+        if not re.fullmatch(r'(MJ|OB):\d{1,7}', event_id):
+            self.send_error(400, 'Invalid road event ID'); return
+        try:
+            content, content_type, cache_status = API_RESPONSE_CACHE.get_or_load(
+                f'lithuania-road-event:v1:{event_id}',
+                lambda: (json.dumps(lithuania_event_detail(event_id)).encode(), 'application/json'),
+                ttl=300, stale_ttl=600, persist=False, wait_timeout=20)
+            self._write_bytes(200, content, content_type,
+                              cache_control='public, max-age=60, stale-while-revalidate=120',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except FileNotFoundError:
+            self.send_error(404, 'Road event unavailable')
+        except Exception as exc:
+            self._log_exception('lithuania-road-event', exc)
+            self.send_error(502, 'Road event unavailable')
 
     def _handle_ireland_camera(self, parsed):
         camera_id = parsed.path.removeprefix('/ireland-camera/')

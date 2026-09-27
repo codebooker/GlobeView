@@ -1182,6 +1182,22 @@
       return;
     }
     if (meta.sourceUrl) appendLink(root, 'View source ↗', meta.sourceUrl);
+    if (meta.lithuaniaEventId && (type === 'construction' || type === 'incidents')) {
+      const controller = new AbortController();
+      popup.on('close', () => controller.abort());
+      fetch(`/lithuania-road-event/${encodeURIComponent(meta.lithuaniaEventId)}`, {
+        signal: controller.signal
+      }).then(async response => {
+        if (!response.ok) throw new Error(`Lithuania road event: ${response.status}`);
+        return response.json();
+      }).then(info => {
+        if (!popup.isOpen()) return;
+        title.textContent = info.title || meta.title;
+        detail.textContent = info.detail || meta.detail;
+      }).catch(error => {
+        if (!controller.signal.aborted) console.warn('Lithuania road event detail:', error);
+      });
+    }
     if (type === 'sensors' && meta.sensorId) {
       const live = textElement('span', 'popup-detail', 'Checking for a recent vehicle detection…');
       root.append(live);
@@ -1350,6 +1366,7 @@
         source: p.source || 'Public road authority', sourceUrl: p.source_url,
         signImage: type === 'signs' ? p.image_data || '' : '',
         snapshotUrl: type === 'cameras' ? p.snapshot_url || '' : '',
+        lithuaniaEventId: p.lithuania_event_id || '',
         cameraViews: type === 'cameras' && Array.isArray(p.camera_views) ? p.camera_views : [],
         snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0
       });

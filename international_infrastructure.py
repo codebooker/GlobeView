@@ -103,6 +103,8 @@ LUXEMBOURG_TRAFFIC_BASE = 'https://www.cita.lu/info_trafic/datex/trafficstatus_'
 LUXEMBOURG_TRAFFIC_SOURCE = 'https://data.public.lu/en/datasets/cita-donnees-trafic-en-datex-ii/'
 LITHUANIA_CAMERA_TABLE_URL = 'https://eismoinfo.lt/eismoinfo-backend/camera-info-table'
 LITHUANIA_CAMERA_SOURCE = 'https://eismoinfo.lt/'
+LITHUANIA_RESTRICTIONS_URL = ('https://eismoinfo.lt/eismoinfo-backend/'
+                              'layer-dynamic-features/EAL?lks=true')
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -3290,6 +3292,77 @@ def lithuania_camera_snapshot(camera_id):
     return image, 'image/jpeg'
 
 
+def _parse_lithuania_restrictions(payload):
+    if (not isinstance(payload, list) or len(payload) != 1 or
+            not isinstance(payload[0], dict) or payload[0].get('layer') != 'EAL'):
+        raise ValueError('Lithuania restrictions response is invalid')
+    rows = payload[0].get('features')
+    if not isinstance(rows, list):
+        raise ValueError('Lithuania restrictions have no feature list')
+    features = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        event_id = str(row.get('id') or '')
+        if not re.fullmatch(r'(MJ|OB):\d{1,7}', event_id) or event_id in seen:
+            continue
+        positions = row.get('points') or []
+        try:
+            x, y = map(float, positions[0]['point'][:2])
+            lon, lat = _LITHUANIA_TRANSFORMER.transform(x, y)
+        except (IndexError, KeyError, TypeError, ValueError):
+            continue
+        if not (20.8 <= lon <= 26.9 and 53.8 <= lat <= 56.5):
+            continue
+        seen.add(event_id)
+        works = event_id.startswith('MJ:')
+        features.append(_feature([lon, lat], {
+            'key': f'lt:eismoinfo:event:{event_id}',
+            'layer': 'construction' if works else 'incidents',
+            'title': 'Roadworks' if works else 'Road obstruction',
+            'detail': 'Reported temporary restriction',
+            'lithuania_event_id': event_id,
+            'source': 'Via Lietuva · Eismoinfo', 'source_url': LITHUANIA_CAMERA_SOURCE,
+        }))
+    return features
+
+
+def _lithuania_restrictions():
+    return _parse_lithuania_restrictions(_get_json(LITHUANIA_RESTRICTIONS_URL))
+
+
+def lithuania_event_detail(event_id, now=None):
+    if not re.fullmatch(r'(MJ|OB):\d{1,7}', str(event_id)):
+        raise ValueError('Invalid Lithuania road event ID')
+    url = ('https://eismoinfo.lt/eismoinfo-backend/feature-info/EAL/'
+           + urllib.parse.quote(event_id, safe=''))
+    payload = _get_json(url)
+    if not isinstance(payload, dict) or not isinstance(payload.get('info'), list):
+        raise ValueError('Lithuania road event details are invalid')
+    info = next((part for part in payload['info'] if isinstance(part, dict)), None)
+    if not info:
+        raise FileNotFoundError('Lithuania road event details are missing')
+    fields = {item.get('key'): _clean(item.get('value'), 180)
+              for item in info.get('keyValue', []) if isinstance(item, dict)}
+    period = fields.get('Date', '')
+    end_label = ''
+    if ' - ' in period:
+        try:
+            start_text, end_text = period.split(' - ', 1)
+            start = dt.datetime.strptime(start_text, '%Y-%m-%d %H:%M').replace(tzinfo=ZoneInfo('Europe/Vilnius'))
+            end = dt.datetime.strptime(end_text, '%Y-%m-%d %H:%M').replace(tzinfo=ZoneInfo('Europe/Vilnius'))
+            current = dt.datetime.fromtimestamp(time.time() if now is None else now, dt.timezone.utc)
+            if not start <= current <= end:
+                raise FileNotFoundError('Lithuania road event is outside its stated validity')
+            end_label = f'Until {end:%-d %b}'
+        except ValueError:
+            pass
+    description = _clean(str(info.get('text') or '').split('Darbų vykdytojas')[0], 180)
+    return {'title': _clean(payload.get('name'), 90) or 'Road restriction',
+            'detail': ' · '.join(part for part in (fields.get('Place', ''), description, end_label) if part)}
+
+
 _FETCHERS = {
     'roads': {
         'ie_tii_cameras': _tii_cameras,
@@ -3298,6 +3371,7 @@ _FETCHERS = {
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
         'lt_eismoinfo_cameras': _lithuania_cameras,
+        'lt_eismoinfo_restrictions': _lithuania_restrictions,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
         'is_road_sensors': _iceland_sensors,

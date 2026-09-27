@@ -46,6 +46,37 @@ class InfrastructureTests(unittest.TestCase):
             self.assertEqual(feeds.lithuania_camera_snapshot('72'),
                              (b'\xff\xd8\xffimage', 'image/jpeg'))
 
+    def test_lithuania_temporary_restrictions_use_valid_locations_and_types(self):
+        payload = [{'layer': 'EAL', 'features': [
+            {'id': 'MJ:3814', 'name': 'Kelio remontas',
+             'points': [{'point': [422912, 6113682]}]},
+            {'id': 'OB:5524', 'name': 'Kliūtis',
+             'points': [{'point': [506619, 6086186]}]},
+            {'id': 'MJ:9999', 'points': [{'point': [0, 0]}]},
+        ]}]
+        rows = feeds._parse_lithuania_restrictions(payload)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([row['properties']['layer'] for row in rows],
+                         ['construction', 'incidents'])
+        self.assertEqual(rows[0]['properties']['lithuania_event_id'], 'MJ:3814')
+        with self.assertRaises(ValueError):
+            feeds._parse_lithuania_restrictions([{'layer': 'EA', 'features': []}])
+
+    def test_lithuania_road_event_detail_checks_date_range(self):
+        payload = {'name': 'Road construction', 'info': [{
+            'keyValue': [{'key': 'Place', 'value': 'A1 10 - 12km'},
+                         {'key': 'Date', 'value': '2026-09-26 00:00 - 2026-09-28 23:00'}],
+            'text': 'Road resurfacing. Darbų vykdytojas: Contractor 12345.'}]}
+        with patch.object(feeds, '_get_json', return_value=payload):
+            detail = feeds.lithuania_event_detail('MJ:3814', NOW)
+            self.assertEqual(detail['title'], 'Road construction')
+            self.assertIn('A1 10 - 12km', detail['detail'])
+            self.assertNotIn('Contractor', detail['detail'])
+            with self.assertRaises(FileNotFoundError):
+                feeds.lithuania_event_detail('MJ:3814', NOW + 10 * 86400)
+        with self.assertRaises(ValueError):
+            feeds.lithuania_event_detail('../3814')
+
     def test_iceland_cameras_group_views_and_require_verified_location(self):
         base = {'Maelist_nr': 7001, 'Myndavel': 'Hellisheiði', 'Vegheiti': 'Hringvegur',
                 'Breidd': 64.018296, 'Lengd': -21.342636}
