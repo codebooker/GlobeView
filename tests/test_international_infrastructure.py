@@ -17,6 +17,25 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_vitoria_cameras_require_connected_image_and_valid_location(self):
+        image_url = 'https://www.vitoria-gasteiz.org/c11-01w/cameras?action=get&id=CM03'
+        row = {'type': 'Feature', 'id': 'CM03',
+               'geometry': {'type': 'Point', 'coordinates': [-2.67, 42.85]},
+               'properties': {'commStatusCode': 'Conectado', 'imagen': image_url,
+                              'nombre': 'City centre'}}
+        payload = {'type': 'FeatureCollection', 'features': [
+            row, dict(row, id='CM04', properties=dict(row['properties'], commStatusCode='Desconectado')),
+            dict(row, id='CM05', properties=dict(row['properties'], imagen='https://elsewhere.example/image')),
+            dict(row, id='../CM03'),
+            dict(row, id='CM06', geometry={'type': 'Point', 'coordinates': [0, 0]})]}
+        rows = feeds._parse_vitoria_cameras(payload)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/vitoria-camera/CM03')
+        with self.assertRaises(ValueError):
+            feeds._parse_vitoria_cameras({})
+        with self.assertRaises(ValueError):
+            feeds.vitoria_camera_snapshot('../CM03')
+
     def test_estonia_restrictions_use_active_dated_locations_and_strip_private_contacts(self):
         def event(event_id, cause='CONSTRUCTION', start=NOW - 3600, end=NOW + 86400,
                   coordinates=None):

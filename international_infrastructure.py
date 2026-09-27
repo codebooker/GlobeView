@@ -30,6 +30,8 @@ TII_TRAFFIC_SOURCE = 'https://traffic.tii.ie/'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
+VITORIA_CAMERAS_URL = 'https://www.vitoria-gasteiz.org/c11-01w/cameras'
+VITORIA_CAMERAS_SOURCE = 'https://datos.gob.es/es/catalogo/l01010590-camaras-de-trafico-en-tiempo-real'
 MADRID_SIGNS_SOURCE = 'https://datos.madrid.es/dataset/202078-0-trafico-paneles-superficie'
 MADRID_SIGN_LOCATIONS = ('https://datos.madrid.es/dataset/202535-0-paneles-informacion-variable/'
                          'resource/202535-2-paneles-informacion-variable-csv/download/'
@@ -260,6 +262,56 @@ def _point(geometry):
 
 def _feature(lonlat, properties):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': lonlat}, 'properties': properties}
+
+
+def _parse_vitoria_cameras(payload):
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(payload.get('features'), list):
+        raise ValueError('Vitoria camera catalog is invalid')
+    features = []
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        camera_id = str(row.get('id') or '')
+        if not re.fullmatch(r'CM\d{2}(?:_ROI_[1-4])?', camera_id):
+            continue
+        props = row.get('properties') or {}
+        if not isinstance(props, dict):
+            continue
+        point = _point(row.get('geometry'))
+        if not point or not (-2.8 <= point[0] <= -2.55 and 42.75 <= point[1] <= 42.95):
+            continue
+        if props.get('commStatusCode') != 'Conectado':
+            continue
+        expected_url = VITORIA_CAMERAS_URL + '?' + urllib.parse.urlencode({'action': 'get', 'id': camera_id})
+        if props.get('imagen') != expected_url:
+            continue
+        features.append(_feature(point, {
+            'key': f'es:vitoria:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(props.get('nombre'), 110) or f'Vitoria road camera {camera_id}',
+            'detail': 'Current traffic camera still',
+            'snapshot_url': f'/vitoria-camera/{camera_id}', 'snapshot_refresh_ms': 60000,
+            'source': 'Vitoria-Gasteiz City Council · CC BY 4.0',
+            'source_url': VITORIA_CAMERAS_SOURCE,
+        }))
+    return features
+
+
+def _vitoria_cameras():
+    return _parse_vitoria_cameras(_get_json(VITORIA_CAMERAS_URL + '?action=list&format=GEOJSON'))
+
+
+def vitoria_camera_snapshot(camera_id):
+    if not re.fullmatch(r'CM\d{2}(?:_ROI_[1-4])?', str(camera_id)):
+        raise ValueError('Invalid Vitoria camera ID')
+    url = VITORIA_CAMERAS_URL + '?' + urllib.parse.urlencode({'action': 'get', 'id': camera_id})
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'www.vitoria-gasteiz.org':
+            raise ValueError('Unexpected Vitoria camera redirect')
+        image = response.read(1_000_001)
+    if len(image) > 1_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Vitoria camera returned no JPEG still')
+    return image, 'image/jpeg'
 
 
 def _trafficwatch_map_data():
@@ -3520,6 +3572,7 @@ _FETCHERS = {
         'es_madrid_incidents': _madrid_incidents,
         'es_madrid_cameras': _madrid_cameras,
         'es_madrid_signs': _madrid_signs,
+        'es_vitoria_cameras': _vitoria_cameras,
         'it_south_tyrol_roads': _south_tyrol_roads,
         'pl_gddkia_roads': _poland_roads,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
