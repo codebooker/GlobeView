@@ -94,6 +94,34 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(result[0]['properties']['layer'], 'incidents')
         self.assertEqual(result[0]['properties']['source'], 'Traffic Wales')
 
+    def test_france_datex_maps_only_current_geolocated_road_events(self):
+        now = dt.datetime(2026, 9, 27, 12, 30, tzinfo=dt.timezone.utc).timestamp()
+        document = '''<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <publicationTime>2026-09-27T12:00:00Z</publicationTime>
+          <situation><situationRecord xsi:type="MaintenanceWorks" id="works-1">
+            <situationRecordVersionTime>2026-09-27T11:50:00Z</situationRecordVersionTime>
+            <validity><overallStartTime>2026-09-27T10:00:00Z</overallStartTime>
+              <overallEndTime>2026-09-27T14:00:00Z</overallEndTime></validity>
+            <generalPublicComment><comment><values><value>Travaux sur la chaussée</value></values></comment></generalPublicComment>
+            <groupOfLocations><pointCoordinates><latitude>48.85</latitude><longitude>2.35</longitude></pointCoordinates>
+              <roadNumber>N001</roadNumber></groupOfLocations>
+          </situationRecord><situationRecord xsi:type="Accident" id="crash-1">
+            <validity><overallStartTime>2026-09-27T11:00:00Z</overallStartTime></validity>
+            <groupOfLocations><pointCoordinates><latitude>45.7</latitude><longitude>4.8</longitude></pointCoordinates></groupOfLocations>
+          </situationRecord><situationRecord xsi:type="Accident" id="ended">
+            <validity><overallEndTime>2026-09-27T11:00:00Z</overallEndTime></validity>
+            <groupOfLocations><pointCoordinates><latitude>45.7</latitude><longitude>4.8</longitude></pointCoordinates></groupOfLocations>
+          </situationRecord></situation></d2LogicalModel>'''
+        root = ET.fromstring(document)
+        result = feeds._parse_france_roads(root, now)
+        self.assertEqual([item['properties']['layer'] for item in result], ['construction', 'incidents'])
+        self.assertEqual(result[0]['geometry']['coordinates'], [2.35, 48.85])
+        self.assertEqual(result[0]['properties']['title'], 'Roadworks · N001')
+        stale = ET.fromstring(document.replace('2026-09-27T12:00:00Z', '2026-09-26T12:00:00Z'))
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_france_roads(stale, now)
+
     def test_power_filters_restored_and_future_outages_and_deduplicates(self):
         uk_rows = [
             {'incidentreference': 'a', 'geopoint': {'lon': 0.1, 'lat': 51.5},

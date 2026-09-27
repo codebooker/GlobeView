@@ -27,6 +27,10 @@ NGED_OUTAGES_URL = ('https://connecteddata.nationalgrid.co.uk/dataset/'
 SSEN_OUTAGES_URL = 'https://external.distribution.prd.ssen.co.uk/opendataportal-prd/v4/api/getallfaults'
 WALES_RSS_BASE = 'https://traffic.wales/feeds'
 SRWR_BASE = 'https://downloads.srwr.scot/disruptions-export/api/v1'
+FRANCE_ROADS_URL = ('https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/'
+                    'publicationsDIR/Evenementiel-DIR/grt/RRN/content.xml')
+FRANCE_ROADS_SOURCE = ('https://transport.data.gouv.fr/datasets/'
+                       'evenements-routiers-sur-le-reseau-routier-national-non-concede')
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
@@ -54,12 +58,12 @@ def _get_json(url, fintraffic=False):
     return json.loads(body)
 
 
-def _get_xml(url):
+def _get_xml(url, max_bytes=2 * 1024 * 1024):
     request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/rss+xml, application/xml'})
     with urllib.request.urlopen(request, timeout=15) as response:
-        body = response.read(2 * 1024 * 1024 + 1)
-    if len(body) > 2 * 1024 * 1024:
-        raise ValueError('Road feed exceeded 2 MB')
+        body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise ValueError('Road feed exceeded size limit')
     return ET.fromstring(body)
 
 
@@ -433,6 +437,64 @@ def _nged_outages(now=None):
     return features
 
 
+_DATEX_NS = {'d': 'http://datex2.eu/schema/2/2_0'}
+_DATEX_TYPE = '{http://www.w3.org/2001/XMLSchema-instance}type'
+_FRANCE_WORK_TYPES = {'MaintenanceWorks', 'ConstructionWorks'}
+_FRANCE_INCIDENT_TYPES = {'Accident', 'AbnormalTraffic', 'EnvironmentalObstruction',
+                          'GeneralObstruction', 'InfrastructureDamageObstruction',
+                          'PublicEvent', 'VehicleObstruction', 'WeatherRelatedRoadConditions'}
+_FRANCE_MANAGEMENT_TYPES = {'GeneralNetworkManagement', 'ReroutingManagement',
+                            'RoadOrCarriagewayOrLaneManagement', 'SpeedManagement'}
+
+
+def _parse_france_roads(root, now=None):
+    now = time.time() if now is None else now
+    published = _timestamp(root.findtext('.//d:publicationTime', namespaces=_DATEX_NS))
+    if published is None or not -600 <= now - published <= 4 * 3600:
+        raise ValueError('French road publication is stale or invalid')
+    features = []
+    for record in root.findall('.//d:situationRecord', _DATEX_NS):
+        kind = record.get(_DATEX_TYPE, '').split(':')[-1]
+        if kind not in _FRANCE_WORK_TYPES | _FRANCE_INCIDENT_TYPES | _FRANCE_MANAGEMENT_TYPES:
+            continue
+        start = _timestamp(record.findtext('.//d:overallStartTime', namespaces=_DATEX_NS))
+        end = _timestamp(record.findtext('.//d:overallEndTime', namespaces=_DATEX_NS))
+        if (start is not None and start > now) or (end is not None and end < now):
+            continue
+        lat = record.findtext('.//d:pointCoordinates/d:latitude', namespaces=_DATEX_NS)
+        lon = record.findtext('.//d:pointCoordinates/d:longitude', namespaces=_DATEX_NS)
+        point = _point({'coordinates': [lon, lat]})
+        if not point or not (-6 <= point[0] <= 10 and 41 <= point[1] <= 52):
+            continue
+        comments = [_clean(node.text, 220) for node in record.findall(
+            './/d:generalPublicComment/d:comment/d:values/d:value', _DATEX_NS)]
+        comments = [comment for comment in comments if comment]
+        description = comments[0] if comments else ''
+        if kind in _FRANCE_WORK_TYPES or (kind in _FRANCE_MANAGEMENT_TYPES and
+                                         re.search(r'chantier|travaux|maintenance', ' '.join(comments), re.I)):
+            layer, label = 'construction', 'Roadworks'
+        else:
+            layer, label = 'incidents', {
+                'Accident': 'Crash', 'AbnormalTraffic': 'Traffic delay',
+                'PublicEvent': 'Road event', 'WeatherRelatedRoadConditions': 'Weather road hazard',
+                'VehicleObstruction': 'Vehicle obstruction',
+            }.get(kind, 'Road disruption')
+        road = _clean(record.findtext('.//d:roadNumber', namespaces=_DATEX_NS), 24)
+        detail = _clean(' · '.join(filter(None, [road, *comments[:2]])), 280)
+        features.append(_feature(point, {
+            'key': f'fr:road:{record.get("id")}', 'layer': layer,
+            'title': f'{label} · {road}' if road else label, 'detail': detail,
+            'source': 'Bison Futé / DIR · Licence Ouverte 2.0',
+            'source_url': FRANCE_ROADS_SOURCE,
+            'updated_at': record.findtext('d:situationRecordVersionTime', default='', namespaces=_DATEX_NS),
+        }))
+    return features
+
+
+def _france_roads():
+    return _parse_france_roads(_get_xml(FRANCE_ROADS_URL, max_bytes=8 * 1024 * 1024))
+
+
 _FETCHERS = {
     'roads': {
         'fi_signs': _fintraffic_signs,
@@ -442,6 +504,7 @@ _FETCHERS = {
         'uk_wales_incidents': lambda: _wales_feed('incidents'),
         'uk_wales_construction': lambda: _wales_feed('construction'),
         'uk_scotland_construction': _scotland_roadworks,
+        'fr_national_roads': _france_roads,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages},

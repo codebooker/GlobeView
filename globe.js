@@ -1202,7 +1202,8 @@
     const bounds = currentBounds();
     const internationalVisible = ['signs', 'incidents', 'construction'].includes(type) && [
       { bounds: { minLon: 19, maxLon: 32, minLat: 59, maxLat: 71 } },
-      { bounds: { minLon: -9, maxLon: 3, minLat: 49, maxLat: 61.5 } }
+      { bounds: { minLon: -9, maxLon: 3, minLat: 49, maxLat: 61.5 } },
+      { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } }
     ].some(region => regionVisible(region, bounds));
     const internationalPromise = internationalVisible
       ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
