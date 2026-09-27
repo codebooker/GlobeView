@@ -30,6 +30,13 @@ TII_TRAFFIC_SOURCE = 'https://traffic.tii.ie/'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
+LYON_CAMERAS_SOURCE = 'https://www.data.gouv.fr/datasets/cameras-web-criter-de-la-metropole-de-lyon'
+LYON_CAMERAS_URL = ('https://data.grandlyon.com/geoserver/metropole-de-lyon/ows?'
+                   'SERVICE=WFS&VERSION=2.0.0&request=GetFeature&'
+                   'typename=metropole-de-lyon:pvo_patrimoine_voirie.pvocameracriter&'
+                   'outputFormat=application/json&SRSNAME=EPSG:4326')
+LYON_CAMERA_BASE = ('https://download.data.grandlyon.com/files/rdata/'
+                    'pvo_patrimoine_voirie.pvocameracriter/')
 VITORIA_CAMERAS_URL = 'https://www.vitoria-gasteiz.org/c11-01w/cameras'
 VITORIA_CAMERAS_SOURCE = 'https://datos.gob.es/es/catalogo/l01010590-camaras-de-trafico-en-tiempo-real'
 VIGO_CAMERAS_URL = 'https://datos.vigo.org/data/trafico/camaras-trafico.geojson'
@@ -696,6 +703,87 @@ def madrid_camera_snapshot(camera_id):
                 raise
     if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
         raise ValueError('Madrid camera returned no JPEG still')
+    return image, 'image/jpeg'
+
+
+def _lyon_camera_url(camera_id):
+    if not re.fullmatch(r'CW[A-Z0-9]{3,10}', str(camera_id)):
+        raise ValueError('Invalid Lyon camera ID')
+    return f'{LYON_CAMERA_BASE}{camera_id}.JPG'
+
+
+def _parse_lyon_cameras(payload, now=None):
+    now = time.time() if now is None else now
+    rows = []
+    for item in payload.get('features', []):
+        props = item.get('properties') or {}
+        coordinates = (item.get('geometry') or {}).get('coordinates') or []
+        camera_id = str(props.get('numeromaintenance') or '')
+        try:
+            lon, lat = map(float, coordinates[:2])
+            observed = dt.datetime.fromisoformat(props['last_update']).timestamp()
+        except (ValueError, TypeError, KeyError):
+            continue
+        if not (4.65 <= lon <= 5.15 and 45.55 <= lat <= 46.05):
+            continue
+        if not -300 <= now - observed <= 10 * 60:
+            continue
+        try:
+            expected_url = _lyon_camera_url(camera_id)
+        except ValueError:
+            continue
+        if props.get('url') != expected_url:
+            continue
+        title = _clean(props.get('libellelong') or props.get('nom'), 100)
+        rows.append(_feature([lon, lat], {
+            'key': f'fr:lyon:camera:{camera_id}', 'layer': 'cameras',
+            'title': title or f'Lyon road camera {camera_id}',
+            'detail': 'Latest available still · updated about every minute',
+            'snapshot_url': f'/lyon-camera/{camera_id}', 'snapshot_refresh_ms': 60000,
+            'source': 'Métropole de Lyon · Licence Ouverte 2.0',
+            'source_url': LYON_CAMERAS_SOURCE, 'updated_at': observed,
+        }))
+    if not rows:
+        raise ValueError('Lyon camera catalog contains no fresh camera stills')
+    return rows
+
+
+def _lyon_cameras():
+    request = urllib.request.Request(LYON_CAMERAS_URL,
+                                     headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        payload = response.read(200_001)
+    if len(payload) > 200_000:
+        raise ValueError('Lyon camera catalog exceeded size limit')
+    rows = _parse_lyon_cameras(json.loads(payload))
+
+    def image_available(row):
+        camera_id = row['properties']['key'].rsplit(':', 1)[-1]
+        request = urllib.request.Request(_lyon_camera_url(camera_id),
+                                         headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                return (response.url == _lyon_camera_url(camera_id)
+                        and response.headers.get('Content-Type', '').split(';')[0] == 'image/jpeg'
+                        and response.read(3) == b'\xff\xd8\xff')
+        except (OSError, ValueError):
+            return False
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        return [row for row, available in zip(rows, executor.map(image_available, rows)) if available]
+
+
+def lyon_camera_snapshot(camera_id):
+    url = _lyon_camera_url(camera_id)
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        if (response.url != url or
+                response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg'):
+            raise FileNotFoundError('Lyon camera still is unavailable')
+        image = response.read(2_000_001)
+    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Lyon camera returned no JPEG still')
     return image, 'image/jpeg'
 
 
@@ -3794,6 +3882,7 @@ _FETCHERS = {
         'es_sct_cameras': _sct_cameras,
         'es_madrid_incidents': _madrid_incidents,
         'es_madrid_cameras': _madrid_cameras,
+        'fr_lyon_cameras': _lyon_cameras,
         'es_madrid_signs': _madrid_signs,
         'es_vitoria_cameras': _vitoria_cameras,
         'es_vigo_cameras': _vigo_cameras,

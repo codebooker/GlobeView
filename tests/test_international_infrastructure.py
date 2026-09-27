@@ -514,6 +514,32 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
                          'https://informo.madrid.es/cameras/Camara06303.jpg')
 
+    def test_lyon_cameras_require_fresh_official_stills(self):
+        observed = dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat()
+        def camera(camera_id, url=None, updated=observed):
+            return {'geometry': {'coordinates': [4.81, 45.77]}, 'properties': {
+                'numeromaintenance': camera_id, 'nom': 'Lyon Centre',
+                'libellelong': 'Pont Clemenceau', 'last_update': updated,
+                'url': url or feeds._lyon_camera_url(camera_id)}}
+        payload = {'features': [
+            camera('CWL9018'),
+            camera('CWL9019', 'https://other.example/CWL9019.JPG'),
+            camera('CWL9020', updated='2020-01-01T00:00:00+00:00')]}
+        rows = feeds._parse_lyon_cameras(payload, NOW)
+        self.assertEqual([row['properties']['key'] for row in rows],
+                         ['fr:lyon:camera:CWL9018'])
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/lyon-camera/CWL9018')
+        with self.assertRaisesRegex(ValueError, 'fresh'):
+            feeds._parse_lyon_cameras({'features': payload['features'][1:]}, NOW)
+        with self.assertRaises(ValueError):
+            feeds.lyon_camera_snapshot('../CWL9018')
+
+        class Response(io.BytesIO):
+            url = feeds._lyon_camera_url('CWL9018')
+            headers = {'Content-Type': 'image/jpeg'}
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
+            self.assertEqual(feeds.lyon_camera_snapshot('CWL9018')[1], 'image/jpeg')
+
     def test_madrid_camera_proxy_validates_id_and_image(self):
         class Response(io.BytesIO):
             url = 'https://informo.madrid.es/cameras/Camara06303.jpg'
