@@ -102,6 +102,8 @@ POLAND_ROADS_URL = 'https://www.archiwum.gddkia.gov.pl/dane/zima_html/utrdane.xm
 CYPRUS_ROADS_URL = 'https://www.traffic4cyprus.org.cy/swarco3/api/Data/SituationPublication'
 CYPRUS_ROADS_SOURCE = ('https://www.traffic4cyprus.org.cy/en/dataset/trafficevents/'
                        'resource/38f28237-79c7-4618-837a-977ef34f6480')
+CYPRUS_WAZE_URL = 'https://fixcyprus.cy/gnosis/open/api/nap/datasets/waze_alerts/'
+CYPRUS_WAZE_SOURCE = 'https://www.traffic4cyprus.org.cy/en/dataset/waze_alerts'
 POLAND_ROADS_SOURCE = 'https://www.gov.pl/web/gddkia/dane-xml'
 AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
@@ -3582,6 +3584,56 @@ def _cyprus_roads():
     return _parse_cyprus_roads(_get_xml(CYPRUS_ROADS_URL, max_bytes=2 * 1024 * 1024))
 
 
+def _parse_cyprus_waze_alerts(root, now=None):
+    now = time.time() if now is None else now
+    published = _timestamp(root.findtext('.//{*}publicationTime'))
+    if (not root.tag.endswith('}d2LogicalModel') or published is None
+            or not -300 <= now - published <= 20 * 60):
+        raise ValueError('Cyprus Waze publication is stale or invalid')
+    features = []
+    seen = set()
+    titles = {'ROAD_CLOSED': 'Reported road closure', 'ACCIDENT': 'Reported crash',
+              'HAZARD': 'Reported road hazard', 'JAM': 'Reported congestion'}
+    for event in root.findall('.//{*}trafficElement'):
+        event_id = event.findtext('{*}id')
+        if not event_id or event_id in seen:
+            continue
+        seen.add(event_id)
+        comments = {}
+        for comment in event.findall('.//{*}comment'):
+            kind = comment.findtext('{*}commentType')
+            if kind in {'type', 'subtype', 'street', 'report_time'}:
+                comments[kind] = comment.findtext('{*}value')
+        event_type = comments.get('type')
+        if event_type not in titles:
+            continue
+        reported = _cyprus_road_time(comments.get('report_time'))
+        if reported is None or not -300 <= now - reported <= 3 * 3600:
+            continue
+        try:
+            lat = float(event.findtext('.//{*}latitude'))
+            lon = float(event.findtext('.//{*}longitude'))
+        except (TypeError, ValueError):
+            continue
+        if not 34.4 <= lat <= 35.8 or not 31.9 <= lon <= 34.8:
+            continue
+        street = _clean(comments.get('street'), 90)
+        subtype = _clean(comments.get('subtype'), 80).replace('_', ' ').capitalize()
+        features.append(_feature([lon, lat], {
+            'key': f'cy:waze:{hashlib.sha1(event_id.encode("utf-8")).hexdigest()[:16]}',
+            'layer': 'incidents', 'title': titles[event_type],
+            'detail': ' · '.join(part for part in (street, subtype) if part),
+            'source': 'Waze via Cyprus National Access Point · CC BY 4.0',
+            'source_url': CYPRUS_WAZE_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(reported, dt.timezone.utc).isoformat(),
+        }))
+    return features
+
+
+def _cyprus_waze_alerts():
+    return _parse_cyprus_waze_alerts(_get_xml(CYPRUS_WAZE_URL, max_bytes=2 * 1024 * 1024))
+
+
 def _gdynia_catalog(name):
     cache = _GDYNIA_CATALOGS[name]
     with cache['lock']:
@@ -4480,6 +4532,7 @@ _FETCHERS = {
         'it_south_tyrol_roads': _south_tyrol_roads,
         'pl_gddkia_roads': _poland_roads,
         'cy_nap_events': _cyprus_roads,
+        'cy_waze_alerts': _cyprus_waze_alerts,
         'pl_gdynia_signs': _gdynia_signs,
         'pl_gdynia_sensors': _gdynia_sensors,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),

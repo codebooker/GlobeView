@@ -44,6 +44,30 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_cyprus_roads(root, now + 3600)
 
+    def test_cyprus_waze_alerts_exclude_old_crowdsourced_reports(self):
+        now = dt.datetime(2026, 9, 27, 23, 50, tzinfo=dt.timezone.utc).timestamp()
+        def alert(identity, reported):
+            return (f'<t:trafficElement><c:id>{identity}</c:id><c:generalPublicComment>'
+                    '<c:comment><c:commentType>type</c:commentType><c:value>HAZARD</c:value></c:comment>'
+                    f'<c:comment><c:commentType>report_time</c:commentType><c:value>{reported}</c:value></c:comment>'
+                    '<c:comment><c:commentType>street</c:commentType><c:value>A6</c:value></c:comment>'
+                    '</c:generalPublicComment><l:latitude>35.1</l:latitude>'
+                    '<l:longitude>33.4</l:longitude></t:trafficElement>')
+        xml = ('<e:d2LogicalModel xmlns:e="https://datex2.eu/schema/3/exchangeInformation" '
+               'xmlns:t="https://datex2.eu/schema/3/traffic" '
+               'xmlns:c="https://datex2.eu/schema/3/common" '
+               'xmlns:l="https://datex2.eu/schema/3/locationReferencing">'
+               '<c:publicationTime>2026-09-28T02:52:00+03:00</c:publicationTime>'
+               + alert('recent', '2026-09-28 02:20:00')
+               + alert('old', '2026-09-26 12:00:00') + '</e:d2LogicalModel>')
+        root = ET.fromstring(xml)
+        rows = feeds._parse_cyprus_waze_alerts(root, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['detail'], 'A6')
+        self.assertEqual(rows[0]['properties']['updated_at'], '2026-09-27T23:20:00+00:00')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_cyprus_waze_alerts(root, now + 3600)
+
     def test_gdynia_signs_show_text_from_each_display_page(self):
         devices = [{'id': 5, 'location': {'type': 'Point', 'coordinates': [18.48, 54.52]}}]
         messages = [{'id': 12050184, 'vmsId': 5,
