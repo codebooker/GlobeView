@@ -878,7 +878,13 @@ def _parse_luxembourg_roads(root, now=None):
 
 
 def _luxembourg_roads():
-    return _parse_luxembourg_roads(_get_xml(LUXEMBOURG_ROADS_URL))
+    try:
+        root = _get_xml(LUXEMBOURG_ROADS_URL)
+    except ET.ParseError:
+        # Retry a blank response from the minute-refreshing publication once.
+        time.sleep(0.5)
+        root = _get_xml(LUXEMBOURG_ROADS_URL.replace('://cita.lu/', '://www.cita.lu/'))
+    return _parse_luxembourg_roads(root)
 
 
 def _lambert93_to_lonlat(x, y):

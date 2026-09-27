@@ -47,6 +47,16 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_luxembourg_roads(stale, now)
 
+    def test_luxembourg_retries_a_blank_xml_publication(self):
+        root = ET.fromstring('<payload><publicationTime>2026-09-27T08:25:00Z</publicationTime></payload>')
+        now = dt.datetime(2026, 9, 27, 8, 30, tzinfo=dt.timezone.utc).timestamp()
+        with patch.object(feeds, '_get_xml', side_effect=[ET.ParseError('empty'), root]) as fetch, \
+                patch.object(feeds.time, 'sleep') as sleep, patch.object(feeds.time, 'time', return_value=now):
+            self.assertEqual(feeds._luxembourg_roads(), [])
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIn('www.cita.lu', fetch.call_args.args[0])
+        sleep.assert_called_once_with(0.5)
+
     def test_norway_roads_only_include_active_main_records(self):
         published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+0000')
         base = {'geometry': {'type': 'Point', 'coordinates': [10.7, 59.9]},
