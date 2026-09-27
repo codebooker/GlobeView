@@ -1,0 +1,47 @@
+[Unit]
+Description=GlobeView application server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=globeview
+Group=globeview
+WorkingDirectory=/opt/globeview/current
+Environment=AMERICAMAP_HOST=127.0.0.1
+Environment=AMERICAMAP_PORT=8765
+Environment=AMERICAMAP_CACHE_DIR=/var/cache/globeview
+Environment=AMERICAMAP_ALLOWED_HOSTS=globeview.app,127.0.0.1,localhost
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/globeview/env
+ExecStart=/opt/globeview/current/.venv/bin/python /opt/globeview/current/proxy.py
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=30s
+UMask=0077
+CacheDirectory=globeview
+CacheDirectoryMode=0700
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/cache/globeview
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

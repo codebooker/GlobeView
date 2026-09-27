@@ -1,0 +1,17 @@
+globeview.app {
+	encode zstd gzip
+	handle /__deploy {
+		reverse_proxy 127.0.0.1:8766 {
+			header_down Strict-Transport-Security "max-age=31536000"
+		}
+	}
+	handle /healthz {
+		header Strict-Transport-Security "max-age=31536000"
+		respond 404
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8765 {
+			header_down Strict-Transport-Security "max-age=31536000"
+		}
+	}
+}

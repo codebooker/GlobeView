@@ -1,0 +1,38 @@
+[Unit]
+Description=GlobeView authenticated deployment hook
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=globeview-deploy
+Group=globeview
+WorkingDirectory=/opt/globeview
+EnvironmentFile=/etc/globeview/deploy.env
+ExecStart=/usr/bin/python3 /usr/local/lib/globeview/deploy_hook.py
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=20s
+UMask=0027
+RuntimeDirectory=globeview-deploy
+RuntimeDirectoryMode=0750
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/opt/globeview /run/globeview-deploy
+[Install]
+WantedBy=multi-user.target

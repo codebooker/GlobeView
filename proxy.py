@@ -35,9 +35,26 @@ SOURCE_FETCH_WORKERS = max(1, int(os.getenv('AMERICAMAP_SOURCE_FETCH_WORKERS', '
 API_UPSTREAM_CONCURRENCY = max(1, int(os.getenv('AMERICAMAP_API_UPSTREAM_CONCURRENCY', '16')))
 MEDIA_UPSTREAM_CONCURRENCY = max(1, int(os.getenv('AMERICAMAP_MEDIA_UPSTREAM_CONCURRENCY', '32')))
 MAX_STREAM_REQUESTS = max(1, int(os.getenv('AMERICAMAP_MAX_STREAMS', '48')))
+MAX_STREAM_PLAYLIST_BYTES = 512 * 1024
+MAX_STREAM_MEDIA_BYTES = 32 * 1024 * 1024
 API_UPSTREAM_SEMAPHORE = threading.BoundedSemaphore(API_UPSTREAM_CONCURRENCY)
 MEDIA_UPSTREAM_SEMAPHORE = threading.BoundedSemaphore(MEDIA_UPSTREAM_CONCURRENCY)
 STREAM_REQUEST_SEMAPHORE = threading.BoundedSemaphore(MAX_STREAM_REQUESTS)
+
+
+class NoStreamRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        raise urllib.error.HTTPError(request.full_url, code, 'Stream redirect blocked', headers, response)
+
+
+STREAM_HTTP_OPENER = urllib.request.build_opener(NoStreamRedirectHandler)
+
+
+def rate_limit_bucket(path):
+    for prefix in ('/stream/', '/camera-snapshot/', '/511/', '/fl511/'):
+        if path.startswith(prefix):
+            return prefix
+    return path
 
 
 def parse_trusted_proxy_networks(value):
@@ -936,7 +953,7 @@ PUBLIC_STATIC_FILES = frozenset({
 })
 SECURITY_HEADERS = {
     'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'SAMEORIGIN',
+    'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     'Content-Security-Policy': (
@@ -978,6 +995,10 @@ REGISTRY_CACHE_LOCK = threading.Lock()
 REGISTRY_CACHE_MAX_SIZE = 4096
 RATE_LIMIT_WINDOW = 60
 RATE_LIMITS = {
+    '/stream/': 240,
+    '/camera-snapshot/': 180,
+    '/511/': 180,
+    '/fl511/': 180,
     '/tile': 1200,
     '/radar-tile': 1200,
     '/naip-tile': 600,
@@ -19034,6 +19055,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             response.headers.get('Content-Length'),
             minimum=0,
         )
+        if content_length is not None and content_length > MAX_STREAM_MEDIA_BYTES:
+            raise ValueError('Stream media is too large')
         self.send_response(200)
         self.send_header('Content-Type', content_type)
         self.send_header('Cache-Control', 'no-store')
@@ -19046,13 +19069,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.command == 'HEAD':
             return
         try:
+            sent = len(prefix)
             if prefix:
                 self.wfile.write(prefix)
             while True:
-                chunk = response.read(64 * 1024)
+                chunk = response.read(min(64 * 1024, MAX_STREAM_MEDIA_BYTES - sent + 1))
                 if not chunk:
                     break
+                if sent + len(chunk) > MAX_STREAM_MEDIA_BYTES:
+                    self.close_connection = True
+                    break
                 self.wfile.write(chunk)
+                sent += len(chunk)
         except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
             self.close_connection = True
 
@@ -19072,13 +19100,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not allowed_request_host(self.headers.get('Host')):
             self.send_error(400, 'Invalid host'); return
 
+        if len(self.path) > 8192:
+            self.send_error(414, 'Request target too long'); return
         parsed = urllib.parse.urlparse(self.path)
 
         client_ip = request_client_ip(
             self.client_address[0],
             self.headers.get('X-Forwarded-For'),
         )
-        if not check_rate_limit(client_ip, parsed.path):
+        if not check_rate_limit(client_ip, rate_limit_bucket(parsed.path)):
             if parsed.path == '/aircraft':
                 self._write_bytes(429, b'{"error":"aircraft_request_limit"}', 'application/json',
                                   cache_control='no-store', extra_headers={'Retry-After': '60'})
@@ -20678,7 +20708,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     region.get('traffic_adapter') == 'mdot' and parsed_upstream.path.endswith('.ts')
                 ) else {}),
             })
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with STREAM_HTTP_OPENER.open(req, timeout=15) as resp:
                 content_type = resp.headers.get('Content-Type', 'application/octet-stream')
                 is_playlist = (
                     'mpegurl' in content_type.lower() or
@@ -20686,7 +20716,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 )
                 prefix = resp.read(10)
                 if is_playlist or prefix.startswith(b'#EXTM3U'):
-                    content = prefix + resp.read()
+                    content = prefix + resp.read(MAX_STREAM_PLAYLIST_BYTES - len(prefix) + 1)
+                    if len(content) > MAX_STREAM_PLAYLIST_BYTES:
+                        raise ValueError('Stream playlist is too large')
                     content = self._rewrite_m3u8(content, upstream_url, parsed.query)
                     self._write_bytes(
                         200,
@@ -20695,6 +20727,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         cache_control='no-store',
                     )
                 else:
+                    media_type = content_type.split(';', 1)[0].strip().lower()
+                    if not (
+                        media_type.startswith(('video/', 'audio/', 'image/')) or
+                        media_type in {'application/octet-stream', 'application/mp2t', 'binary/octet-stream'}
+                    ):
+                        raise ValueError('Unexpected stream media type')
                     self._write_streamed_upstream(resp, content_type, prefix=prefix)
         except Exception as e:
             self._log_exception('stream-proxy', e)

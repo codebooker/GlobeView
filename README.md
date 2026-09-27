@@ -31,7 +31,7 @@ GlobeView starts as a **spherical MapLibre globe** with useful layers already on
 Requires Python 3.9+ and a modern browser. No frontend build step or paid map key is needed.
 
 ```bash
-python3 -m pip install cryptography websockets
+python3 -m pip install --requirement requirements.txt
 cp .env.example .env
 bash start.sh
 ```
@@ -54,6 +54,10 @@ Browser (MapLibre + plain JavaScript)
 The [Python server](proxy.py) serves the app and normalizes external feeds. It shares cached responses across viewers, limits upstream concurrency, and opens one AISStream subscription for active map areas. [MapLibre](https://maplibre.org/) renders the globe; the client is plain JavaScript and CSS. Pins, labels, lines, polygons, and radius circles are stored in browser `localStorage`, with no server sync.
 
 The quick route planner uses public Valhalla and OSRM demo services. For a larger deployment, use your own routing backend and place a caching reverse proxy in front of the app. See [data sources and coverage](docs/FEEDS.md) for provider details, update intervals, licenses, and limits.
+
+## Production deployment
+
+Pull requests and pushes to `main` run the test workflow. A passing push to `main` deploys that exact commit to Hetzner through a signed HTTPS hook. Server provisioning, firewall, HTTPS, rollback behavior, and the required GitHub deployment secret are documented in [`deploy/README.md`](deploy/README.md).
 
 ## Project layout
 

@@ -1,0 +1,90 @@
+name: CI and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: globeview-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.12']
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install pinned dependencies
+        run: python -m pip install --requirement requirements.txt
+      - name: Compile Python
+        run: >-
+          python -m py_compile proxy.py global_feeds.py hazard_feeds.py
+          cyclone_guidance.py cyber_feeds.py international_emergency.py
+          international_infrastructure.py radio_catalog.py arcgis_catalog.py
+          trip_routing.py deploy/deploy_hook.py
+      - name: Check JavaScript syntax
+        run: |
+          node --check globe.js
+          node --check trip.js
+          node --check drawings.js
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+  deploy:
+    name: Deploy production
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Deploy tested commit
+        env:
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, hmac, json, os, time, urllib.request
+          secret = os.environ['DEPLOY_WEBHOOK_SECRET'].encode()
+          if len(secret) < 32:
+              raise SystemExit('Deployment secret is missing or too short')
+          body = json.dumps({
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'ref': os.environ['GITHUB_REF'],
+              'sha': os.environ['GITHUB_SHA'],
+          }, separators=(',', ':'), sort_keys=True).encode()
+          timestamp = str(int(time.time()))
+          signature = hmac.new(secret, timestamp.encode() + b'.' + body, hashlib.sha256).hexdigest()
+          request = urllib.request.Request(
+              'https://globeview.app/__deploy',
+              data=body,
+              headers={
+                  'Content-Type': 'application/json',
+                  'X-GlobeView-Timestamp': timestamp,
+                  'X-GlobeView-Signature': signature,
+              },
+              method='POST',
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=13 * 60) as response:
+                  result = json.load(response)
+          except Exception as exc:
+              raise SystemExit(f'Deployment hook failed: {type(exc).__name__}')
+          if result.get('status') != 'deployed' or result.get('sha') != os.environ['GITHUB_SHA']:
+              raise SystemExit('Deployment hook returned an unexpected response')
+          print('Deployed ' + result['sha'])
+          PY
