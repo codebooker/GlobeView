@@ -618,6 +618,7 @@ class InfrastructureTests(unittest.TestCase):
                                                   else 'Sat, 26 Sep 2026 18:00:00 GMT')}
             def __enter__(self): return self
             def __exit__(self, *_): return False
+            def read(self, size): return b'\xff\xd8\xff'[:size]
 
         cameras = [feeds._feature([-3.7, 40.4], {
             'key': f'es:madrid:camera:{camera_id}', 'layer': 'cameras',
