@@ -954,7 +954,9 @@
       const img = document.createElement('img');
       img.className = 'popup-media';
       img.alt = 'Latest road camera snapshot';
-      img.loading = 'lazy';
+      // Popups are positioned inside MapLibre's transformed map container. Safari can
+      // defer lazy images there even while the popup is visible, so load on selection.
+      img.loading = 'eager';
       let retries = 0;
       let retryTimer;
       const retryButton = textElement('button', 'popup-play', 'Retry camera image');
