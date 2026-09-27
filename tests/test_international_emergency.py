@@ -7,6 +7,34 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_usti_fire_reports_join_recent_status_and_map_coordinates(self):
+        now = dt.datetime(2026, 9, 27, 22, 30, tzinfo=dt.timezone.utc)
+        url = feeds.USTI_EMERGENCY_URL
+        rss = ET.fromstring(f'''<rss><channel><lastBuildDate>Sun, 27 Sep 2026 22:20:00 +0000</lastBuildDate>
+          <item><title>požár - Ústí nad Labem</title><link>{url}15685/</link>
+            <description>stav: probíhající&lt;br&gt;Ústí nad Labem</description>
+            <pubDate>Sun, 27 Sep 2026 22:10:00 +0000</pubDate></item>
+          <item><title>dopravní nehoda - Děčín</title><link>{url}15684/</link>
+            <description>stav: ukončená</description>
+            <pubDate>Sun, 27 Sep 2026 22:00:00 +0000</pubDate></item>
+          <item><title>old event</title><link>{url}15683/</link>
+            <pubDate>Sun, 27 Sep 2026 12:00:00 +0000</pubDate></item>
+        </channel></rss>''')
+        payload = {'result': {'total_items': 3, 'batch_start': 0},
+                   'result_items': [{'ret': [
+                       {'id': 15685, 'geom': {'lon': '-760726', 'lat': '-975193'}},
+                       {'id': 15684, 'geom': {'lon': '-790632', 'lat': '-990678'}},
+                       {'id': 15683, 'geom': {'lon': '-760726', 'lat': '-975193'}}]}]}
+        rows = feeds.parse_usti_emergencies(payload, rss, now)
+        self.assertEqual([row['id'] for row in rows], ['cz:usti:fire:15685', 'cz:usti:fire:15684'])
+        self.assertAlmostEqual(rows[0]['lon'], 14.0394, places=3)
+        self.assertAlmostEqual(rows[0]['lat'], 50.6689, places=3)
+        self.assertEqual([row['category'] for row in rows], ['fire', 'traffic'])
+        self.assertIn('Ongoing report', rows[0]['detail'])
+        self.assertIn('Completed report', rows[1]['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds.parse_usti_emergencies(payload, rss, now + dt.timedelta(days=2))
+
     def test_sweden_vma_maps_only_current_public_alerts_to_municipalities(self):
         now = dt.datetime(2026, 9, 27, 18, tzinfo=dt.timezone.utc)
         alert = {'identifier': 'SRCAP20260927170000I', 'sent': '2026-09-27T19:00:00+02:00',

@@ -15,6 +15,8 @@ import xml.etree.ElementTree as ET
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
+from pyproj import Transformer
+
 
 NSW_URL = 'https://www.rfs.nsw.gov.au/feeds/majorIncidents.json'
 VIC_URL = 'https://data.emergency.vic.gov.au/Show?pageId=getIncidentJSON'
@@ -28,6 +30,7 @@ ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
 PORTUGAL_SOURCE = 'https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto'
 SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
 SWEDEN_POLICE_URL = 'https://polisen.se/api/events'
+USTI_EMERGENCY_URL = 'https://pkr.kr-ustecky.cz/pkr/zasahy-jednotek-pozarni-ochrany/'
 PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/services/'
                 'OcorrenciasSite/FeatureServer/0/query?where=1%3D1&outFields='
                 'ID_oc%2CNumero%2CEstadoAgrupado%2CNatureza%2CConcelho%2CRegiao%2C'
@@ -40,6 +43,7 @@ _CACHE = {'until': 0, 'value': None, 'sources': {}, 'source_times': {}}
 _REFRESH_LOCK = threading.Lock()
 _SWEDEN_POLICE_LOCK = threading.Lock()
 _SWEDEN_POLICE_CACHE = {'until': 0, 'items': None}
+_JTSK_TO_WGS84 = Transformer.from_crs('EPSG:5514', 'EPSG:4326', always_xy=True)
 
 
 def _get(url):
@@ -705,6 +709,86 @@ def _sweden_police():
         return items
 
 
+def parse_usti_emergencies(map_payload, rss_root, now=None):
+    """Join the region's map coordinates with its status and update RSS feed."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    result = map_payload.get('result') if isinstance(map_payload, dict) else None
+    groups = map_payload.get('result_items') if isinstance(map_payload, dict) else None
+    if not isinstance(result, dict) or not isinstance(groups, list) or result.get('batch_start') != 0:
+        raise ValueError('Ústí fire brigade map response is invalid')
+    try:
+        count = int(result['total_items'])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError('Ústí fire brigade result count is invalid') from None
+    if not 0 <= count <= 2000 or rss_root.tag != 'rss':
+        raise ValueError('Ústí fire brigade publication is invalid')
+    try:
+        updated = email.utils.parsedate_to_datetime(rss_root.findtext('./channel/lastBuildDate'))
+    except (TypeError, ValueError):
+        raise ValueError('Ústí fire brigade RSS timestamp is missing') from None
+    if updated.tzinfo is None or not -dt.timedelta(minutes=5) <= now - updated <= dt.timedelta(hours=24):
+        raise ValueError('Ústí fire brigade RSS is stale')
+
+    reports = {}
+    for entry in rss_root.findall('./channel/item')[:100]:
+        url = entry.findtext('link') or ''
+        match = re.fullmatch(re.escape(USTI_EMERGENCY_URL) + r'(\d{1,9})/', url)
+        if not match:
+            continue
+        try:
+            published = email.utils.parsedate_to_datetime(entry.findtext('pubDate'))
+        except (TypeError, ValueError):
+            continue
+        if published.tzinfo is None or not -dt.timedelta(minutes=5) <= now - published <= dt.timedelta(hours=6):
+            continue
+        description = _clean(entry.findtext('description'), 300)
+        status = re.search(r'\bstav:\s*([^ ]+)', description, re.IGNORECASE)
+        state = status.group(1).casefold() if status else ''
+        if state.startswith('ukon'):
+            state_label = 'Completed report'
+        elif state.startswith(('probíh', 'probih', 'trvaj')):
+            state_label = 'Ongoing report'
+        else:
+            state_label = 'Recent report'
+        reports[int(match.group(1))] = (published, _clean(entry.findtext('title'), 110), state_label)
+
+    rows = groups[0].get('ret') if groups and isinstance(groups[0], dict) else []
+    if not isinstance(rows, list) or len(rows) > 100:
+        raise ValueError('Ústí fire brigade map items are invalid')
+    output = []
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('id'), int):
+            continue
+        incident_id = row['id']
+        if incident_id not in reports:
+            continue
+        point = row.get('geom')
+        if not isinstance(point, dict):
+            continue
+        try:
+            lon, lat = _JTSK_TO_WGS84.transform(float(point['lon']), float(point['lat']))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not 12.2 <= lon <= 14.9 or not 49.9 <= lat <= 51.2:
+            continue
+        published, rss_title, state_label = reports[incident_id]
+        title = rss_title or _clean(row.get('name'), 110)
+        if not title:
+            continue
+        category = ('fire' if title.casefold().startswith('požár') else
+                    'traffic' if title.casefold().startswith('dopravní nehoda') else 'warning')
+        output.append(_item(f'cz:usti:fire:{incident_id}', lon, lat, title,
+                            f'{state_label} · Ústí nad Labem Region · public fire brigade record; reporting may be delayed',
+                            'Ústí nad Labem Region · Crisis Management Portal', USTI_EMERGENCY_URL,
+                            published.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z'), category))
+    return output
+
+
+def _usti_emergencies():
+    return parse_usti_emergencies(_json(USTI_EMERGENCY_URL + '?fmt=json&nl=0'),
+                                  _xml(USTI_EMERGENCY_URL + 'feed.xml'))
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
@@ -717,6 +801,7 @@ _LOADERS = {
     'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
     'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),
     'sweden_police': _sweden_police,
+    'cz_usti_fire': _usti_emergencies,
 }
 
 
