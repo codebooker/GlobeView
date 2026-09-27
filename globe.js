@@ -950,6 +950,7 @@
 
   function attachCameraMedia(root, meta, detail, popup) {
     const snapshot = detail?.snapshot_url || meta.item.expando?.snapshotUrl;
+    const fallback = detail?.snapshot_fallback_url || meta.item.expando?.snapshotFallbackUrl;
     if (snapshot) {
       const img = document.createElement('img');
       img.className = 'popup-media';
@@ -958,16 +959,19 @@
       // defer lazy images there even while the popup is visible, so load on selection.
       img.loading = 'eager';
       let retries = 0;
+      let usingFallback = false;
       let retryTimer;
       const retryButton = textElement('button', 'popup-play', 'Retry camera image');
       retryButton.type = 'button';
       const loadImage = () => {
         if (!popup.isOpen() || !img.isConnected) return;
-        const separator = snapshot.includes('?') ? '&' : '?';
-        img.src = `${snapshot}${separator}v=${Date.now()}`;
+        const url = usingFallback ? fallback : snapshot;
+        const separator = url.includes('?') ? '&' : '?';
+        img.src = `${url}${separator}v=${Date.now()}`;
       };
       retryButton.addEventListener('click', () => {
         retries = 0;
+        usingFallback = false;
         retryButton.remove();
         loadImage();
       });
@@ -979,6 +983,11 @@
       img.addEventListener('error', () => {
         if (!popup.isOpen() || !img.isConnected) return;
         if (retries++ === 0) retryTimer = window.setTimeout(loadImage, 1500);
+        else if (fallback && !usingFallback) {
+          usingFallback = true;
+          retries = 0;
+          loadImage();
+        }
         else {
           img.hidden = true;
           if (!retryButton.isConnected) root.append(retryButton);
@@ -1395,6 +1404,7 @@
         source: p.source || 'Public road authority', sourceUrl: p.source_url,
         signImage: type === 'signs' ? p.image_data || '' : '',
         snapshotUrl: type === 'cameras' ? p.snapshot_url || '' : '',
+        snapshotFallbackUrl: type === 'cameras' ? p.snapshot_fallback_url || '' : '',
         lithuaniaEventId: p.lithuania_event_id || '',
         cameraViews: type === 'cameras' && Array.isArray(p.camera_views) ? p.camera_views : [],
         snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0
