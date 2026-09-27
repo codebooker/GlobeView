@@ -152,6 +152,9 @@ class InfrastructureTests(unittest.TestCase):
 
     def test_flemish_datex_uses_lambert72_and_current_event_windows(self):
         now = dt.datetime(2026, 9, 27, 12, 30, tzinfo=dt.timezone.utc).timestamp()
+        lon, lat = feeds._lambert72_to_lonlat(235603.38, 203901.72)
+        self.assertAlmostEqual(lon, 5.5919238, places=5)
+        self.assertAlmostEqual(lat, 51.1388124, places=5)
         xml = '''<payload xmlns="http://datex2.eu/schema/3/d2Payload" xmlns:s="http://datex2.eu/schema/3/situation"
           xmlns:l="http://datex2.eu/schema/3/locationReferencing" xmlns:g="http://datex2.eu/schema/3/gml"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">

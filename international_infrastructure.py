@@ -17,8 +17,6 @@ import xml.etree.ElementTree as ET
 import zipfile
 from zoneinfo import ZoneInfo
 
-from pyproj import Transformer
-
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
@@ -37,7 +35,6 @@ FRANCE_ROADS_SOURCE = ('https://transport.data.gouv.fr/datasets/'
 FRANCE_SENSOR_BASE = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/QTV-DIR/'
 BELGIUM_ROADS_URL = 'https://www.verkeerscentrum.be/uitwisseling/datex2v3full'
 BELGIUM_ROADS_SOURCE = 'https://www.verkeerscentrum.be/data'
-_BELGIUM_TO_WGS84 = Transformer.from_crs('EPSG:31370', 'EPSG:4326', always_xy=True)
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -609,6 +606,57 @@ def _france_sensors():
                                  _FRANCE_SENSOR_REFERENCES['points'], now)
 
 
+def _lambert72_to_lonlat(x, y):
+    """EPSG:31370 inverse LCC and BD72→WGS84 (3) seven-parameter transform."""
+    radians = math.pi / 180
+    a, flattening = 6378388.0, 1 / 297.0  # International 1924 ellipsoid
+    eccentricity_sq = 2 * flattening - flattening * flattening
+    eccentricity = math.sqrt(eccentricity_sq)
+
+    def m(latitude):
+        return math.cos(latitude) / math.sqrt(1 - eccentricity_sq * math.sin(latitude) ** 2)
+
+    def t(latitude):
+        sine = math.sin(latitude)
+        return math.tan(math.pi / 4 - latitude / 2) * (
+            (1 + eccentricity * sine) / (1 - eccentricity * sine)) ** (eccentricity / 2)
+
+    first, second = 51.1666672333333 * radians, 49.8333339 * radians
+    n = math.log(m(first) / m(second)) / math.log(t(first) / t(second))
+    factor = m(first) / (n * t(first) ** n)
+    dx, dy = x - 150000.013, 5400088.438 - y
+    theta = math.atan2(dx, dy)
+    projected_t = (math.hypot(dx, dy) / (a * factor)) ** (1 / n)
+    latitude = math.pi / 2 - 2 * math.atan(projected_t)
+    for _ in range(8):
+        sine = math.sin(latitude)
+        latitude = math.pi / 2 - 2 * math.atan(projected_t * (
+            (1 - eccentricity * sine) / (1 + eccentricity * sine)) ** (eccentricity / 2))
+    longitude = 4.36748666666667 * radians + theta / n
+
+    prime_vertical = a / math.sqrt(1 - eccentricity_sq * math.sin(latitude) ** 2)
+    X = prime_vertical * math.cos(latitude) * math.cos(longitude)
+    Y = prime_vertical * math.cos(latitude) * math.sin(longitude)
+    Z = prime_vertical * (1 - eccentricity_sq) * math.sin(latitude)
+    # EPSG operation 15929 uses coordinate-frame rotations; signs below are
+    # inverted for the equivalent position-vector form of the Helmert equation.
+    rx, ry, rz = (angle * radians / 3600 for angle in (0.3366, -0.457, 1.8422))
+    scale = 1 - 1.2747e-6
+    X, Y, Z = (-106.8686 + scale * X - rz * Y + ry * Z,
+               52.2978 + rz * X + scale * Y - rx * Z,
+               -103.7239 - ry * X + rx * Y + scale * Z)
+
+    wgs_a, wgs_flattening = 6378137.0, 1 / 298.257223563
+    wgs_eccentricity_sq = 2 * wgs_flattening - wgs_flattening * wgs_flattening
+    longitude = math.atan2(Y, X)
+    distance = math.hypot(X, Y)
+    latitude = math.atan2(Z, distance * (1 - wgs_eccentricity_sq))
+    for _ in range(8):
+        prime_vertical = wgs_a / math.sqrt(1 - wgs_eccentricity_sq * math.sin(latitude) ** 2)
+        latitude = math.atan2(Z + wgs_eccentricity_sq * prime_vertical * math.sin(latitude), distance)
+    return longitude / radians, latitude / radians
+
+
 def _belgium_road_point(record):
     """DATEX v3 geometry is Belgian Lambert 72 (EPSG:31370), not decimal degrees."""
     line = record.find('.//{*}gmlLineString')
@@ -631,7 +679,7 @@ def _belgium_road_point(record):
             return None
     if not (math.isfinite(x) and math.isfinite(y) and 0 <= x <= 300000 and 0 <= y <= 300000):
         return None
-    lon, lat = _BELGIUM_TO_WGS84.transform(x, y)
+    lon, lat = _lambert72_to_lonlat(x, y)
     return [lon, lat] if math.isfinite(lon) and math.isfinite(lat) and 2.3 <= lon <= 6.5 and 49.4 <= lat <= 51.6 else None
 
 

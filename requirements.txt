@@ -1,3 +1,2 @@
 cryptography==46.0.7
-pyproj==3.6.1
 websockets==15.0.1
