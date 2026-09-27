@@ -16,6 +16,98 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_tii_cameras_only_publish_active_public_stills(self):
+        rows = [
+            {'id': 91, 'active': True, 'public': True, 'name': 'Reaghstown',
+             'location': {'latitude': 53.929722, 'longitude': -6.648056, 'routeId': 'M2/N2'},
+             'views': [{'type': 'STILL_IMAGE', 'url': 'https://irecam.carsprogram.org/Vaisala/1681_cam1.jpeg'}]},
+            {'id': 92, 'active': False, 'public': True, 'location': {'latitude': 53.9, 'longitude': -6.6},
+             'views': [{'type': 'STILL_IMAGE', 'url': 'https://irecam.carsprogram.org/Vaisala/1682_cam1.jpeg'}]},
+            {'id': 93, 'active': True, 'public': True, 'location': {'latitude': 53.9, 'longitude': -6.6},
+             'views': [{'type': 'STILL_IMAGE', 'url': 'https://example.com/camera.jpeg'}]},
+        ]
+        previous = dict(feeds._TII_CAMERA_CACHE)
+        try:
+            feeds._TII_CAMERA_CACHE['until'] = 0
+            with patch.object(feeds, '_get_json', return_value=rows), \
+                    patch.object(feeds, '_tii_unavailable_cameras', return_value=set()):
+                features = feeds._tii_cameras()
+            self.assertEqual(len(features), 1)
+            self.assertEqual(features[0]['properties']['snapshot_url'], '/ireland-camera/91')
+        finally:
+            feeds._TII_CAMERA_CACHE.update(previous)
+
+    def test_tii_camera_health_omits_stale_stills(self):
+        class Response:
+            def __init__(self, url):
+                self.url = url
+                self.headers = {'Content-Type': 'image/jpeg',
+                                'Last-Modified': ('Sun, 27 Sep 2026 12:55:00 GMT' if url.endswith('/91.jpeg')
+                                                  else 'Sun, 27 Sep 2026 10:00:00 GMT')}
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+        catalog = {str(number): ({'id': number}, f'https://irecam.carsprogram.org/{number}.jpeg')
+                   for number in (91, 92)}
+        previous = dict(feeds._TII_CAMERA_HEALTH)
+        now = dt.datetime(2026, 9, 27, 13, tzinfo=dt.timezone.utc).timestamp()
+        try:
+            feeds._TII_CAMERA_HEALTH['until'] = 0
+            with patch.object(feeds.time, 'time', return_value=now), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
+                self.assertEqual(feeds._tii_unavailable_cameras(catalog), {'92'})
+        finally:
+            feeds._TII_CAMERA_HEALTH.update(previous)
+
+    def test_tii_camera_snapshot_rejects_stale_image(self):
+        class Response(io.BytesIO):
+            url = 'https://irecam.carsprogram.org/Vaisala/1681_cam1.jpeg'
+            def __init__(self, last_modified):
+                super().__init__(b'\xff\xd8\xffjpeg')
+                self.headers = {'Last-Modified': last_modified}
+        catalog = {'91': ({'id': 91}, 'https://irecam.carsprogram.org/Vaisala/1681_cam1.jpeg')}
+        now = dt.datetime(2026, 9, 27, 13, tzinfo=dt.timezone.utc).timestamp()
+        with patch.object(feeds, '_tii_camera_catalog', return_value=catalog), \
+                patch.object(feeds.time, 'time', return_value=now), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response('Sun, 27 Sep 2026 12:55:00 GMT')):
+            self.assertEqual(feeds.tii_camera_snapshot('91')[1], 'image/jpeg')
+        with patch.object(feeds, '_tii_camera_catalog', return_value=catalog), \
+                patch.object(feeds.time, 'time', return_value=now), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response('Sun, 27 Sep 2026 11:00:00 GMT')):
+            with self.assertRaises(FileNotFoundError):
+                feeds.tii_camera_snapshot('91')
+
+    def test_tii_events_require_current_window(self):
+        now = dt.datetime(2026, 9, 27, 13, tzinfo=dt.timezone.utc).timestamp()
+        def row(event_id, title, start):
+            return {'id': event_id, 'active': True,
+                    'location': {'primaryPoint': {'lat': 53.3, 'lon': -6.2}},
+                    'eventDescription': {'descriptionHeader': title,
+                                         'headlinePhrase': 'Roadworks',
+                                         'locationDescription': 'M50 near Dublin'},
+                    'beginTime': {'time': start * 1000},
+                    'endTime': {'time': (now + 3600) * 1000},
+                    'updateTime': {'time': now * 1000}}
+        features = feeds._parse_tii_events([
+            row('IRE-26-09-1', 'Current roadworks', now - 600),
+            row('IRE-26-09-2', 'Tomorrow roadworks', now + 86400),
+        ], now)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(features[0]['properties']['layer'], 'construction')
+
+    def test_tii_signs_use_only_recent_display_images(self):
+        def row(sign_id, image_url):
+            return {'id': f'irelanddot*{sign_id}', 'name': 'M50 sign',
+                    'status': 'DISPLAYING_MESSAGE',
+                    'properties': {'signType': 'VMS_IMAGE'},
+                    'location': {'latitude': 53.3, 'longitude': -6.2},
+                    'display': {'pages': [{'lines': [image_url]}]}}
+        features = feeds._parse_tii_signs([
+            row('M50-ONE', 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/fresh.PNG'),
+            row('M50-TWO', 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/old.PNG'),
+        ], image_loader=lambda url: ('YWJj', NOW) if url.endswith('fresh.PNG') else None)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(features[0]['properties']['image_data'], 'YWJj')
+
     def test_trafficwatch_ni_maps_cameras_current_works_and_readable_signs(self):
         now = dt.datetime(2026, 9, 27, 11, tzinfo=dt.timezone.utc).timestamp()
         data = {

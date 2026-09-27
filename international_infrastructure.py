@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
+TII_TRAFFIC_BASE = 'https://iretg.carsprogram.org'
+TII_TRAFFIC_SOURCE = 'https://traffic.tii.ie/'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
@@ -2466,8 +2468,244 @@ def _poland_roads():
     return _parse_poland_roads(_get_xml(POLAND_ROADS_URL, max_bytes=2 * 1024 * 1024))
 
 
+_TII_CAMERA_CACHE = {'until': 0, 'items': {}}
+_TII_CAMERA_LOCK = threading.Lock()
+_TII_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
+_TII_CAMERA_HEALTH_LOCK = threading.Lock()
+_TII_SIGN_IMAGE_CACHE = {}
+_TII_SIGN_IMAGE_LOCK = threading.Lock()
+
+
+def _tii_point(location):
+    if not isinstance(location, dict):
+        return None
+    try:
+        lat, lon = float(location['latitude']), float(location['longitude'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return [lon, lat] if -11 <= lon <= -5 and 51 <= lat <= 56 else None
+
+
+def _tii_camera_catalog():
+    with _TII_CAMERA_LOCK:
+        if time.time() < _TII_CAMERA_CACHE['until']:
+            return _TII_CAMERA_CACHE['items']
+        payload = _get_json(TII_TRAFFIC_BASE + '/cameras_v1/api/cameras')
+        if not isinstance(payload, list):
+            raise ValueError('TII camera catalog is invalid')
+        items = {}
+        for row in payload:
+            if not isinstance(row, dict) or not row.get('active') or not row.get('public'):
+                continue
+            camera_id = str(row.get('id') or '')
+            if not re.fullmatch(r'\d{1,5}', camera_id) or not _tii_point(row.get('location')):
+                continue
+            views = row.get('views') or []
+            image = next((view.get('url') for view in views if isinstance(view, dict)
+                          and view.get('type') == 'STILL_IMAGE' and
+                          re.fullmatch(r'https://irecam\.carsprogram\.org/(?:Vaisala|Kapsch|IBI)/[A-Za-z0-9_-]+\.jpe?g',
+                                       str(view.get('url') or ''))), None)
+            if image:
+                items[camera_id] = (row, image)
+        if not items:
+            raise ValueError('TII camera catalog has no usable stills')
+        _TII_CAMERA_CACHE.update(until=time.time() + 300, items=items)
+        return items
+
+
+def _tii_cameras():
+    catalog = _tii_camera_catalog()
+    unavailable = _tii_unavailable_cameras(catalog)
+    features = []
+    for camera_id, (row, _image) in catalog.items():
+        if camera_id in unavailable:
+            continue
+        location = row['location']
+        road = _clean(location.get('routeId'), 30)
+        name = _clean(row.get('name'), 90)
+        features.append(_feature(_tii_point(location), {
+            'key': f'ie:tii:camera:{camera_id}', 'layer': 'cameras',
+            'title': ' · '.join(part for part in (road, name) if part) or 'Irish road camera',
+            'detail': 'Latest available still',
+            'snapshot_url': f'/ireland-camera/{camera_id}', 'snapshot_refresh_ms': 300000,
+            'source': 'TII · CC BY 4.0',
+            'source_url': TII_TRAFFIC_SOURCE + 'list/cameras',
+        }))
+    return features
+
+
+def _tii_unavailable_cameras(catalog):
+    with _TII_CAMERA_HEALTH_LOCK:
+        now = time.time()
+        if now < _TII_CAMERA_HEALTH['until']:
+            return _TII_CAMERA_HEALTH['unavailable']
+
+        def unavailable(entry):
+            camera_id, (_row, url) = entry
+            request = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'GlobeView/1.0'})
+            try:
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    if urllib.parse.urlsplit(response.url).hostname != 'irecam.carsprogram.org':
+                        return camera_id
+                    modified = response.headers.get('Last-Modified')
+                    if response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg' or not modified:
+                        return camera_id
+                    age = now - email.utils.parsedate_to_datetime(modified).timestamp()
+                    return camera_id if not -300 <= age <= 30 * 60 else None
+            except urllib.error.HTTPError as error:
+                return camera_id if error.code == 404 else None
+            except (OSError, ValueError):
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+            unavailable_ids = {camera_id for camera_id in executor.map(unavailable, catalog.items()) if camera_id}
+        _TII_CAMERA_HEALTH.update(until=now + 3600, unavailable=unavailable_ids)
+        return unavailable_ids
+
+
+def tii_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{1,5}', str(camera_id)):
+        raise ValueError('Invalid TII camera ID')
+    entry = _tii_camera_catalog().get(str(camera_id))
+    if not entry:
+        raise FileNotFoundError('TII camera is not in the public active catalog')
+    request = urllib.request.Request(entry[1], headers={'User-Agent': 'GlobeView/1.0'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'irecam.carsprogram.org':
+            raise ValueError('Unexpected TII camera redirect')
+        modified = response.headers.get('Last-Modified')
+        if modified:
+            age = time.time() - email.utils.parsedate_to_datetime(modified).timestamp()
+            if not -300 <= age <= 30 * 60:
+                raise FileNotFoundError('TII camera still is stale')
+        image = response.read(2_000_001)
+    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('TII camera returned no JPEG still')
+    return image, 'image/jpeg'
+
+
+def _parse_tii_events(payload, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(payload, list):
+        raise ValueError('TII road events are invalid')
+    features = []
+    for row in payload:
+        if not isinstance(row, dict) or not row.get('active'):
+            continue
+        event_id = str(row.get('id') or '')
+        if not re.fullmatch(r'IRE-[A-Za-z0-9-]{4,32}', event_id):
+            continue
+        location = row.get('location') or {}
+        primary = location.get('primaryPoint') or {}
+        point = _tii_point({'latitude': primary.get('lat'), 'longitude': primary.get('lon')})
+        if not point:
+            continue
+        begin = (row.get('beginTime') or {}).get('time')
+        end = (row.get('endTime') or {}).get('time')
+        try:
+            if not float(begin) / 1000 <= now <= float(end) / 1000:
+                continue
+        except (TypeError, ValueError):
+            continue
+        description = row.get('eventDescription') or {}
+        category = _clean(description.get('headlinePhrase'), 40)
+        layer = 'construction' if category.casefold() == 'roadworks' else 'incidents'
+        title = _clean(description.get('descriptionHeader'), 120) or category or 'Road event'
+        detail = _clean(description.get('locationDescription') or description.get('descriptionBrief'), 180)
+        updated_ms = (row.get('updateTime') or {}).get('time')
+        try:
+            updated = dt.datetime.fromtimestamp(float(updated_ms) / 1000, dt.timezone.utc).strftime('%H:%M UTC')
+        except (TypeError, ValueError, OverflowError):
+            updated = ''
+        features.append(_feature(point, {
+            'key': f'ie:tii:event:{event_id}', 'layer': layer,
+            'title': title, 'detail': detail,
+            'source': 'TII · CC BY 4.0',
+            'source_url': TII_TRAFFIC_SOURCE + 'list/events', 'updated_at': updated,
+        }))
+    return features
+
+
+def _tii_events():
+    return _parse_tii_events(_get_json(TII_TRAFFIC_BASE + '/events_v1/api/eventReports'))
+
+
+def _tii_sign_image(url):
+    if not re.fullmatch(r'https://crc-public-eu-west-1-s3\.s3\.eu-west-1\.amazonaws\.com/ire/prod/signs/[A-Za-z0-9_-]+\.PNG', url):
+        return None
+    now = time.time()
+    with _TII_SIGN_IMAGE_LOCK:
+        cached = _TII_SIGN_IMAGE_CACHE.get(url)
+        if cached and now < cached['until']:
+            return cached['image']
+    image = None
+    updated = None
+    try:
+        request = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'GlobeView/1.0'})
+        with urllib.request.urlopen(request, timeout=8) as response:
+            if urllib.parse.urlsplit(response.url).hostname != 'crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com':
+                raise ValueError('Unexpected TII sign redirect')
+            updated = email.utils.parsedate_to_datetime(response.headers['Last-Modified']).timestamp()
+            if not -300 <= now - updated <= 30 * 60 or int(response.headers.get('Content-Length', '0')) > 100_000:
+                updated = None
+        if updated is not None:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0'}), timeout=8) as response:
+                if urllib.parse.urlsplit(response.url).hostname != 'crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com':
+                    raise ValueError('Unexpected TII sign redirect')
+                body = response.read(100_001)
+            if len(body) <= 100_000 and body.startswith(b'\x89PNG\r\n\x1a\n'):
+                image = (base64.b64encode(body).decode(), updated)
+    except (OSError, ValueError, KeyError):
+        pass
+    with _TII_SIGN_IMAGE_LOCK:
+        _TII_SIGN_IMAGE_CACHE[url] = {'until': now + (180 if image else 1800), 'image': image}
+    return image
+
+
+def _parse_tii_signs(payload, image_loader=_tii_sign_image):
+    if not isinstance(payload, list):
+        raise ValueError('TII signs are invalid')
+    candidates = []
+    for row in payload:
+        if not isinstance(row, dict) or row.get('status') != 'DISPLAYING_MESSAGE' or (row.get('properties') or {}).get('signType') != 'VMS_IMAGE':
+            continue
+        sign_id = str(row.get('id') or '')
+        point = _tii_point(row.get('location'))
+        if not re.fullmatch(r'irelanddot\*[A-Za-z0-9_-]{4,90}', sign_id) or not point:
+            continue
+        pages = (row.get('display') or {}).get('pages') or []
+        url = next((line for page in pages if isinstance(page, dict)
+                    for line in page.get('lines', []) if isinstance(line, str)
+                    and line.startswith('https://crc-public-eu-west-1-s3.')), None)
+        if url:
+            candidates.append((row, point, url))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        images = list(executor.map(lambda item: image_loader(item[2]), candidates))
+    features = []
+    for (row, point, _url), image in zip(candidates, images):
+        if not image:
+            continue
+        image_data, updated = image
+        features.append(_feature(point, {
+            'key': f'ie:tii:sign:{row["id"]}', 'layer': 'signs',
+            'title': _clean(row.get('name'), 110) or 'Irish road sign',
+            'detail': 'Current sign display', 'image_data': image_data,
+            'source': 'TII · CC BY 4.0',
+            'source_url': TII_TRAFFIC_SOURCE + 'list/signs',
+            'updated_at': dt.datetime.fromtimestamp(updated, dt.timezone.utc).strftime('%H:%M UTC'),
+        }))
+    return features
+
+
+def _tii_signs():
+    return _parse_tii_signs(_get_json(TII_TRAFFIC_BASE + '/signs_v1/api/signs'))
+
+
 _FETCHERS = {
     'roads': {
+        'ie_tii_cameras': _tii_cameras,
+        'ie_tii_events': _tii_events,
+        'ie_tii_signs': _tii_signs,
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
         'fi_traffic_sensors': lambda: _fintraffic_sensors('tms'),
