@@ -46,6 +46,20 @@ class InfrastructureTests(unittest.TestCase):
             self.assertEqual(feeds.lithuania_camera_snapshot('72'),
                              (b'\xff\xd8\xffimage', 'image/jpeg'))
 
+    def test_lithuania_road_weather_uses_recent_station_measurements(self):
+        row = {'id': 68, 'name': 'Seirijai 132 15,56', 'x': 493361, 'y': 6017514,
+               'date': int((NOW - 300) * 1000), 'surfaceCondition': 'Sausa',
+               'roadTemperature': 17.3, 'airTemperature': 16.4}
+        rows = feeds._parse_lithuania_road_weather([
+            row, dict(row, id=69, date=int((NOW - 3600) * 1000)),
+            dict(row, id=70, x=0), dict(row, id=68)], NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'sensors')
+        self.assertIn('Surface Dry · Road 17.3°C · Air 16.4°C',
+                      rows[0]['properties']['detail'])
+        with self.assertRaises(ValueError):
+            feeds._parse_lithuania_road_weather({'rows': [row]}, NOW)
+
     def test_lithuania_temporary_restrictions_use_valid_locations_and_types(self):
         payload = [{'layer': 'EAL', 'features': [
             {'id': 'MJ:3814', 'name': 'Kelio remontas',

@@ -103,6 +103,7 @@ LUXEMBOURG_TRAFFIC_BASE = 'https://www.cita.lu/info_trafic/datex/trafficstatus_'
 LUXEMBOURG_TRAFFIC_SOURCE = 'https://data.public.lu/en/datasets/cita-donnees-trafic-en-datex-ii/'
 LITHUANIA_CAMERA_TABLE_URL = 'https://eismoinfo.lt/eismoinfo-backend/camera-info-table'
 LITHUANIA_CAMERA_SOURCE = 'https://eismoinfo.lt/'
+LITHUANIA_ROAD_WEATHER_URL = 'https://eismoinfo.lt/eismoinfo-backend/osi-info-table'
 LITHUANIA_RESTRICTIONS_URL = ('https://eismoinfo.lt/eismoinfo-backend/'
                               'layer-dynamic-features/EAL?lks=true')
 UKPN_DATASET = 'ukpn-live-faults'
@@ -3274,6 +3275,52 @@ def _lithuania_cameras():
     return _parse_lithuania_cameras(_lithuania_camera_rows())
 
 
+def _parse_lithuania_road_weather(rows, now=None):
+    if not isinstance(rows, list):
+        raise ValueError('Lithuania road weather table is invalid')
+    now = time.time() if now is None else now
+    features = []
+    seen = set()
+    surface_labels = {'Sausa': 'Dry', 'Drėgna': 'Damp', 'Šlapia': 'Wet',
+                      'Apledėjusi': 'Icy', 'Slidi': 'Slippery'}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        station_id = str(row.get('id') or '')
+        if not re.fullmatch(r'\d{1,6}', station_id) or station_id in seen:
+            continue
+        try:
+            observed = float(row['date']) / 1000
+            lon, lat = _LITHUANIA_TRANSFORMER.transform(float(row['x']), float(row['y']))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (-300 <= now - observed <= 30 * 60 and
+                20.8 <= lon <= 26.9 and 53.8 <= lat <= 56.5):
+            continue
+        seen.add(station_id)
+        surface = _clean(row.get('surfaceCondition'), 32)
+        detail = [f'Surface {surface_labels.get(surface, surface)}' if surface else '']
+        for key, label in (('roadTemperature', 'Road'), ('airTemperature', 'Air')):
+            try:
+                value = float(row[key])
+                if math.isfinite(value) and -80 <= value <= 80:
+                    detail.append(f'{label} {value:g}°C')
+            except (KeyError, TypeError, ValueError):
+                pass
+        detail.append('Observed ' + dt.datetime.fromtimestamp(observed, dt.timezone.utc).strftime('%H:%M UTC'))
+        features.append(_feature([lon, lat], {
+            'key': f'lt:eismoinfo:weather:{station_id}', 'layer': 'sensors',
+            'title': _clean(row.get('name'), 100) or f'Road weather station {station_id}',
+            'detail': ' · '.join(part for part in detail if part),
+            'source': 'Via Lietuva · Eismoinfo', 'source_url': LITHUANIA_CAMERA_SOURCE,
+        }))
+    return features
+
+
+def _lithuania_road_weather():
+    return _parse_lithuania_road_weather(_get_json(LITHUANIA_ROAD_WEATHER_URL))
+
+
 def lithuania_camera_snapshot(camera_id):
     camera_id = str(camera_id)
     if not re.fullmatch(r'\d{1,6}', camera_id):
@@ -3371,6 +3418,7 @@ _FETCHERS = {
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
         'lt_eismoinfo_cameras': _lithuania_cameras,
+        'lt_eismoinfo_road_weather': _lithuania_road_weather,
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
         'is_road_cameras': _iceland_cameras,
         'is_road_events': _iceland_roads,
