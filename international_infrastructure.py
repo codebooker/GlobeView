@@ -2678,8 +2678,10 @@ def _parse_dgt_cameras(root, now=None):
     features = []
     for device_id, (device, point) in _dgt_devices(root, 'camera').items():
         image_url = device.findtext('.//{*}deviceUrl') or ''
-        if not re.fullmatch(r'https://etraffic\.dgt\.es/camarasEtraffic/\d+\.jpg', image_url):
+        image_match = re.fullmatch(r'https://etraffic\.dgt\.es/camarasEtraffic/(\d{1,7})\.jpg', image_url)
+        if not image_match:
             continue
+        image_id = image_match.group(1)
         road = _clean(device.findtext('.//{*}roadName'), 40)
         province = _clean(device.findtext('.//{*}province'), 55)
         km = _clean(device.findtext('.//{*}kilometerPoint'), 16)
@@ -2688,7 +2690,7 @@ def _parse_dgt_cameras(root, now=None):
             'title': f'Traffic camera · {road}' if road else 'Traffic camera',
             'detail': ' · '.join(part for part in (f'km {km}' if km else '', province,
                                               'Latest available still') if part),
-            'snapshot_url': image_url, 'snapshot_refresh_ms': 120000,
+            'snapshot_url': f'/dgt-camera/{image_id}', 'snapshot_refresh_ms': 120000,
             'source': 'Spain DGT · CC BY', 'source_url': DGT_CAMERAS_SOURCE,
             'updated_at': published,
         }))
@@ -2699,6 +2701,10 @@ def _parse_dgt_cameras(root, now=None):
 
 _DGT_MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
 _DGT_CAMERA_PLACEHOLDER_BYTES = {'32634', '9422'}
+
+
+def _dgt_camera_url(camera_id):
+    return f'https://etraffic.dgt.es/camarasEtraffic/{camera_id}.jpg'
 
 
 def _dgt_camera_headers_available(response, now):
@@ -2729,8 +2735,8 @@ def _dgt_madrid_unavailable_cameras(features):
               40.25 <= item['geometry']['coordinates'][1] <= 40.65]
 
     def unavailable(item):
-        url = item['properties']['snapshot_url']
-        request = urllib.request.Request(url, method='HEAD', headers={
+        camera_id = item['properties']['snapshot_url'].rsplit('/', 1)[-1]
+        request = urllib.request.Request(_dgt_camera_url(camera_id), method='HEAD', headers={
             'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
         try:
             with urllib.request.urlopen(request, timeout=6) as response:
@@ -2745,6 +2751,20 @@ def _dgt_madrid_unavailable_cameras(features):
                            zip(madrid, executor.map(unavailable, madrid)) if bad}
     _DGT_MADRID_CAMERA_HEALTH.update(until=now + 1800, unavailable=unavailable_ids)
     return unavailable_ids
+
+
+def dgt_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{1,7}', str(camera_id)):
+        raise ValueError('Invalid DGT camera ID')
+    request = urllib.request.Request(_dgt_camera_url(camera_id), headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if not _dgt_camera_headers_available(response, time.time()):
+            raise FileNotFoundError('DGT camera still is unavailable or stale')
+        image = response.read(2_000_001)
+    if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('DGT camera returned no JPEG still')
+    return image, 'image/jpeg'
 
 
 def _dgt_cameras():

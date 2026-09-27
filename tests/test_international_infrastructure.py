@@ -442,7 +442,7 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_dgt_cameras(root, now)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'],
-                         'https://etraffic.dgt.es/camarasEtraffic/168408.jpg')
+                         '/dgt-camera/168408')
         self.assertEqual(rows[0]['geometry']['coordinates'], [-0.4282263, 42.304092])
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)
@@ -461,7 +461,7 @@ class InfrastructureTests(unittest.TestCase):
             def __exit__(self, *_): return False
         items = [feeds._feature([-3.7, 40.4], {
             'key': f'es:dgt:camera:{number}', 'layer': 'cameras',
-            'snapshot_url': f'https://etraffic.dgt.es/camarasEtraffic/{number}.jpg',
+            'snapshot_url': f'/dgt-camera/{number}',
         }) for number in (923, 1103, 1104, 929)]
         previous = dict(feeds._DGT_MADRID_CAMERA_HEALTH)
         try:
@@ -472,6 +472,23 @@ class InfrastructureTests(unittest.TestCase):
                                  {'es:dgt:camera:923', 'es:dgt:camera:1103', 'es:dgt:camera:1104'})
         finally:
             feeds._DGT_MADRID_CAMERA_HEALTH.update(previous)
+
+    def test_dgt_camera_proxy_validates_image_and_freshness(self):
+        class Response(io.BytesIO):
+            url = 'https://etraffic.dgt.es/camarasEtraffic/597.jpg'
+            headers = {'Content-Type': 'image/jpeg', 'Content-Length': '125380',
+                       'Last-Modified': email.utils.formatdate(NOW - 300, usegmt=True)}
+        with self.assertRaises(ValueError):
+            feeds.dgt_camera_snapshot('../bad')
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
+            self.assertEqual(feeds.dgt_camera_snapshot('597'), (b'\xff\xd8\xffimage', 'image/jpeg'))
+        placeholder = Response(b'\xff\xd8\xffimage')
+        placeholder.headers = dict(Response.headers, **{'Content-Length': '32634'})
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=placeholder):
+            with self.assertRaises(FileNotFoundError):
+                feeds.dgt_camera_snapshot('597')
 
     def test_dgt_incidents_separate_active_works_from_road_events(self):
         now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()
