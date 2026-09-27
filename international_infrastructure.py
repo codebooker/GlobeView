@@ -32,6 +32,10 @@ MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-vi
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
 VITORIA_CAMERAS_URL = 'https://www.vitoria-gasteiz.org/c11-01w/cameras'
 VITORIA_CAMERAS_SOURCE = 'https://datos.gob.es/es/catalogo/l01010590-camaras-de-trafico-en-tiempo-real'
+VIGO_CAMERAS_URL = 'https://datos.vigo.org/data/trafico/camaras-trafico.geojson'
+VIGO_CAMERA_BASE = 'https://camaras.vigo.org/webcam/camv2.php'
+VIGO_CAMERAS_SOURCE = 'https://datos.gob.es/es/catalogo/l01360577-camaras-de-trafico'
+VIGO_UNAVAILABLE_SHA256 = '3549123ffcf6e0f9ccec7d91426a9fd8c3b6409c49cb83c4c9d0c04e496530f7'
 MADRID_SIGNS_SOURCE = 'https://datos.madrid.es/dataset/202078-0-trafico-paneles-superficie'
 MADRID_SIGN_LOCATIONS = ('https://datos.madrid.es/dataset/202535-0-paneles-informacion-variable/'
                          'resource/202535-2-paneles-informacion-variable-csv/download/'
@@ -311,6 +315,79 @@ def vitoria_camera_snapshot(camera_id):
         image = response.read(1_000_001)
     if len(image) > 1_000_000 or not image.startswith(b'\xff\xd8\xff'):
         raise ValueError('Vitoria camera returned no JPEG still')
+    return image, 'image/jpeg'
+
+
+def _parse_vigo_cameras(payload):
+    if not isinstance(payload, dict) or not isinstance(payload.get('features'), list):
+        raise ValueError('Vigo camera catalog is invalid')
+    features = []
+    for row in payload['features']:
+        if not isinstance(row, dict) or not isinstance(row.get('properties'), dict):
+            continue
+        props = row['properties']
+        camera_id = str(props.get('id') or '')
+        if not re.fullmatch(r'\d{1,3}', camera_id):
+            continue
+        point = _point(row.get('geometry'))
+        if not point or not (-8.9 <= point[0] <= -8.55 and 42.1 <= point[1] <= 42.4):
+            continue
+        expected_url = 'http://camaras.vigo.org/webcam/camv2.php?id=' + camera_id
+        if props.get('url') != expected_url:
+            continue
+        features.append(_feature(point, {
+            'key': f'es:vigo:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(props.get('nombre'), 110) or f'Vigo road camera {camera_id}',
+            'detail': 'Current traffic camera still',
+            'snapshot_url': f'/vigo-camera/{camera_id}', 'snapshot_refresh_ms': 60000,
+            'source': 'Fonte dos datos: Concello de Vigo', 'source_url': VIGO_CAMERAS_SOURCE,
+        }))
+    return features
+
+
+_VIGO_CAMERA_HEALTH = {'until': 0, 'unavailable': set(), 'lock': threading.Lock()}
+
+
+def _vigo_cameras():
+    features = _parse_vigo_cameras(_get_json(VIGO_CAMERAS_URL))
+    now = time.time()
+    with _VIGO_CAMERA_HEALTH['lock']:
+        if now >= _VIGO_CAMERA_HEALTH['until']:
+            def unavailable(item):
+                camera_id = item['properties']['key'].rsplit(':', 1)[-1]
+                try:
+                    vigo_camera_snapshot(camera_id)
+                    return None
+                except (OSError, ValueError):
+                    return camera_id
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                bad = {camera_id for camera_id in executor.map(unavailable, features) if camera_id}
+            _VIGO_CAMERA_HEALTH.update(until=now + 3600, unavailable=bad)
+        bad = _VIGO_CAMERA_HEALTH['unavailable']
+    return [item for item in features if item['properties']['key'].rsplit(':', 1)[-1] not in bad]
+
+
+def vigo_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{1,3}', str(camera_id)):
+        raise ValueError('Invalid Vigo camera ID')
+    url = VIGO_CAMERA_BASE + '?id=' + camera_id
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'camaras.vigo.org':
+            raise ValueError('Unexpected Vigo camera redirect')
+        image = response.read(1_000_001)
+        modified = response.headers.get('Last-Modified')
+    if len(image) > 1_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Vigo camera returned no JPEG still')
+    if hashlib.sha256(image).hexdigest() == VIGO_UNAVAILABLE_SHA256:
+        raise FileNotFoundError('Vigo camera is unavailable')
+    if modified:
+        try:
+            age = time.time() - email.utils.parsedate_to_datetime(modified).timestamp()
+        except (TypeError, ValueError):
+            raise ValueError('Vigo camera timestamp is invalid')
+        if not -300 <= age <= 30 * 60:
+            raise FileNotFoundError('Vigo camera still is stale')
     return image, 'image/jpeg'
 
 
@@ -3573,6 +3650,7 @@ _FETCHERS = {
         'es_madrid_cameras': _madrid_cameras,
         'es_madrid_signs': _madrid_signs,
         'es_vitoria_cameras': _vitoria_cameras,
+        'es_vigo_cameras': _vigo_cameras,
         'it_south_tyrol_roads': _south_tyrol_roads,
         'pl_gddkia_roads': _poland_roads,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),

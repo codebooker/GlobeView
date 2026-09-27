@@ -17,6 +17,31 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_vigo_cameras_reject_unavailable_stills_and_untrusted_urls(self):
+        row = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-8.72, 42.23]},
+               'properties': {'id': '05', 'nombre': 'Junction',
+                              'url': 'http://camaras.vigo.org/webcam/camv2.php?id=05'}}
+        payload = {'features': [row, dict(row, properties=dict(row['properties'], id='06')),
+                                dict(row, properties=dict(row['properties'], id='../05'))]}
+        rows = feeds._parse_vigo_cameras(payload)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/vigo-camera/05')
+        with self.assertRaises(ValueError):
+            feeds.vigo_camera_snapshot('../05')
+        class Response:
+            url = 'https://camaras.vigo.org/webcam/camv2.php?id=05'
+            headers = {}
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, size): return b'\xff\xd8\xff' + b'camera image'
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=Response()):
+            self.assertEqual(feeds.vigo_camera_snapshot('05')[1], 'image/jpeg')
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=Response()), \
+                patch.object(feeds.hashlib, 'sha256') as digest:
+            digest.return_value.hexdigest.return_value = feeds.VIGO_UNAVAILABLE_SHA256
+            with self.assertRaises(FileNotFoundError):
+                feeds.vigo_camera_snapshot('05')
+
     def test_vitoria_cameras_require_connected_image_and_valid_location(self):
         image_url = 'https://www.vitoria-gasteiz.org/c11-01w/cameras?action=get&id=CM03'
         row = {'type': 'Feature', 'id': 'CM03',

@@ -20,6 +20,7 @@ from international_infrastructure import (road_snapshot as international_road_sn
                                           zurich_sensor_sample, northern_ireland_camera_snapshot,
                                           madrid_camera_snapshot, dgt_camera_snapshot,
                                           vitoria_camera_snapshot,
+                                          vigo_camera_snapshot,
                                           lithuania_camera_snapshot,
                                           lithuania_event_detail,
                                           tii_camera_snapshot)
@@ -19230,6 +19231,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_madrid_camera(parsed)
         elif parsed.path.startswith('/vitoria-camera/'):
             self._handle_vitoria_camera(parsed)
+        elif parsed.path.startswith('/vigo-camera/'):
+            self._handle_vigo_camera(parsed)
         elif parsed.path.startswith('/dgt-camera/'):
             self._handle_dgt_camera(parsed)
         elif parsed.path.startswith('/lithuania-camera/'):
@@ -19679,6 +19682,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(502, 'Snapshot unavailable')
         except Exception as exc:
             self._log_exception('vitoria-camera', exc)
+            self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_vigo_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/vigo-camera/')
+        if not re.fullmatch(r'\d{1,3}', camera_id):
+            self.send_error(400, 'Invalid camera ID'); return
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'vigo-camera:v1:{camera_id}',
+                lambda: vigo_camera_snapshot(camera_id),
+                ttl=60, stale_ttl=180, persist=False, wait_timeout=20)
+            self._write_bytes(200, content, content_type,
+                              cache_control='public, max-age=60, stale-while-revalidate=120',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except FileNotFoundError:
+            self.send_error(404, 'Snapshot unavailable')
+        except Exception as exc:
+            self._log_exception('vigo-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
 
     def _handle_dgt_camera(self, parsed):
