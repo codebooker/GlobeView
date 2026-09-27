@@ -17,6 +17,46 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_gdynia_signs_show_text_from_each_display_page(self):
+        devices = [{'id': 5, 'location': {'type': 'Point', 'coordinates': [18.48, 54.52]}}]
+        messages = [{'id': 12050184, 'vmsId': 5,
+                     'contentUrl': '/ri/vms/messages/12050184',
+                     'insertTime': '2026-09-27 08:13:31'},
+                    {'id': 12050185, 'vmsId': 6,
+                     'contentUrl': 'https://example.org/other',
+                     'insertTime': '2026-09-27 08:13:31'}]
+        pages = feeds._gdynia_sign_pages(
+            '<DisplayValue><Text><Value>DROGA ZAMKNI&#280;TA</Value></Text></DisplayValue>'
+            '<DisplayValue><Text><Value>OBJAZD MORSKA</Value></Text></DisplayValue>')
+        self.assertEqual(pages, ['DROGA ZAMKNIĘTA', 'OBJAZD MORSKA'])
+        self.assertEqual(feeds._gdynia_sign_pages(
+            '<DisplayValue><Text><Value> </Value></Text></DisplayValue>'), [])
+        features = feeds._parse_gdynia_signs(devices, messages, lambda _: pages)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(features[0]['properties']['detail'],
+                         'DROGA ZAMKNIĘTA / OBJAZD MORSKA')
+        self.assertEqual(features[0]['properties']['updated_at'],
+                         '2026-09-27T06:13:31+00:00')
+
+    def test_gdynia_sensors_join_segments_and_reject_stale_readings(self):
+        now = dt.datetime(2026, 9, 27, 23, 55, tzinfo=ZoneInfo('Europe/Warsaw')).timestamp()
+        segments = [{'id': 91, 'geometry': {'type': 'LineString', 'coordinates': [
+            [18.5, 54.5], [18.51, 54.51], [18.52, 54.52]]}},
+                    {'id': 92, 'geometry': {'type': 'Point', 'coordinates': [18.6, 54.4]}}]
+        speeds = [{'roadSegmentId': 91, 'speed': 48, 'measureTime': '2026-09-27 23:50:00'},
+                  {'roadSegmentId': 92, 'speed': 200, 'measureTime': '2026-09-27 23:50:00'}]
+        intensities = [{'roadSegmentId': 91, 'intensity': 120,
+                        'measureTime': '2026-09-27 23:50:00'},
+                       {'roadSegmentId': 92, 'intensity': 80,
+                        'measureTime': '2026-09-27 22:00:00'}]
+        rows = feeds._parse_gdynia_sensors(segments, speeds, intensities, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [18.51, 54.51])
+        self.assertIn('48 km/h', rows[0]['properties']['detail'])
+        self.assertIn('120 vehicles/h', rows[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale or empty'):
+            feeds._parse_gdynia_sensors(segments, speeds, intensities, now + 3600)
+
     def test_bordeaux_flow_keeps_fresh_road_segments_only(self):
         now = dt.datetime(2026, 9, 27, 20, 40, tzinfo=dt.timezone.utc).timestamp()
         def road(gid, state='DENSE', modified='2026-09-27T20:35:00+00:00', lon=-0.60):

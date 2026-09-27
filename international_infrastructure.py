@@ -5,6 +5,7 @@ import base64
 import csv
 import datetime as dt
 import email.utils
+import functools
 import gzip
 import hashlib
 import html
@@ -50,6 +51,9 @@ MADRID_SIGN_LOCATIONS = ('https://datos.madrid.es/dataset/202535-0-paneles-infor
 SOUTH_TYROL_ROADS_URL = ('https://datex.api.opendatahub.com/datex/2/'
                          'province-bz/situation-publication.xml')
 SOUTH_TYROL_SOURCE = 'https://docs.opendatahub.com/use-data/datexii-api/reference/'
+GDYNIA_ROADS_BASE = 'https://api.zdiz.gdynia.pl/ri/rest/'
+GDYNIA_ROADS_SOURCE = ('https://otwartedane.gdynia.pl/dataset/fc4f3a7c-b877-4fe1-ab22-3fb54e6513f7/'
+                       'resource/a426e7b7-7261-4f43-8acb-59a5eca167aa/download/tristar_api.pdf')
 FINTRAFFIC_CAMERAS_SOURCE = 'https://www.digitraffic.fi/en/road-traffic/'
 ICELAND_CAMERAS_URL = 'https://gagnaveita.vegagerdin.is/api/vefmyndavelar2014_1'
 ICELAND_CAMERAS_SOURCE = 'https://www.vegagerdin.is/vegagerdin/gagnasafn/vefthjonustur/vefmyndavelar'
@@ -157,6 +161,8 @@ _AUTOBAHN_CACHE = {service: {'until': 0, 'roads': {}, 'lock': threading.Lock()}
 _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Lock()}
                        for service in ('cameras', 'sign_locations')}
 _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
+                    for name in ('vms', 'road_segments')}
 _LITHUANIA_TRANSFORMER = Transformer.from_crs('EPSG:3346', 'EPSG:4326', always_xy=True)
 
 
@@ -3487,6 +3493,168 @@ def _poland_roads():
     return _parse_poland_roads(_get_xml(POLAND_ROADS_URL, max_bytes=2 * 1024 * 1024))
 
 
+def _gdynia_catalog(name):
+    cache = _GDYNIA_CATALOGS[name]
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+        payload = _get_json(GDYNIA_ROADS_BASE + name)
+        rows = payload.get(name) if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or not rows:
+            raise ValueError(f'Gdynia {name} catalog is empty or invalid')
+        cache.update(until=time.time() + 24 * 3600, rows=rows)
+        return rows
+
+
+def _gdynia_time(value):
+    try:
+        parsed = dt.datetime.fromisoformat(str(value))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo('Europe/Warsaw'))
+        return parsed.timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
+def _gdynia_sign_pages(content):
+    if not content or len(content) > 128 * 1024:
+        return []
+    try:
+        root = ET.fromstring('<Pages>' + content + '</Pages>')
+    except ET.ParseError:
+        return []
+    pages = []
+    for display in root.findall('DisplayValue'):
+        lines = [_clean(node.text, 90) for node in display.findall('.//Text/Value')]
+        message = ' · '.join(line for line in lines if line)
+        if message and message not in pages:
+            pages.append(message)
+    return pages
+
+
+@functools.lru_cache(maxsize=256)
+def _gdynia_message_pages(message_id):
+    if not re.fullmatch(r'\d{1,12}', str(message_id)):
+        raise ValueError('Invalid Gdynia sign message ID')
+    request = urllib.request.Request(
+        f'https://api.zdiz.gdynia.pl/ri/vms/messages/{message_id}',
+        headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'api.zdiz.gdynia.pl':
+            raise ValueError('Unexpected Gdynia sign redirect')
+        body = response.read(128 * 1024 + 1)
+    if len(body) > 128 * 1024:
+        raise ValueError('Gdynia sign message exceeded size limit')
+    return _gdynia_sign_pages(body.decode('utf-8-sig'))
+
+
+def _parse_gdynia_signs(devices, messages, pages_for_id):
+    if not isinstance(messages, list):
+        raise ValueError('Gdynia sign list is invalid')
+    locations = {str(row.get('id')): _point(row.get('location'))
+                 for row in devices if isinstance(row, dict)}
+    features = []
+    for row in messages:
+        if not isinstance(row, dict):
+            continue
+        message_id = str(row.get('id') or '')
+        sign_id = str(row.get('vmsId') or '')
+        if (not re.fullmatch(r'\d{1,12}', message_id)
+                or not re.fullmatch(r'\d{1,8}', sign_id)
+                or row.get('contentUrl') != f'/ri/vms/messages/{message_id}'):
+            continue
+        point = locations.get(sign_id)
+        if not point or not (18.3 <= point[0] <= 18.9 and 54.2 <= point[1] <= 54.7):
+            continue
+        pages = pages_for_id(message_id)
+        if not pages:
+            continue
+        changed = _gdynia_time(row.get('insertTime'))
+        features.append(_feature(point, {
+            'key': f'pl:gdynia:sign:{sign_id}', 'layer': 'signs',
+            'title': f'Gdynia message sign {sign_id}',
+            'detail': ' / '.join(pages)[:500],
+            'source': 'Gdynia ZDiZ · TRISTAR', 'source_url': GDYNIA_ROADS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(changed, dt.timezone.utc).isoformat() if changed else '',
+        }))
+    return features
+
+
+def _gdynia_signs():
+    devices = _gdynia_catalog('vms')
+    messages = _get_json(GDYNIA_ROADS_BASE + 'vms_messages')
+    if not isinstance(messages, list):
+        raise ValueError('Gdynia sign list is invalid')
+    ids = {str(row.get('id')) for row in messages if isinstance(row, dict)
+           and row.get('contentUrl') == f"/ri/vms/messages/{row.get('id')}"
+           and re.fullmatch(r'\d{1,12}', str(row.get('id')))}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {message_id: executor.submit(_gdynia_message_pages, message_id)
+                   for message_id in ids}
+        pages = {}
+        failures = 0
+        for message_id, future in futures.items():
+            try:
+                pages[message_id] = future.result()
+            except (OSError, ValueError, UnicodeError) as error:
+                failures += 1
+                pages[message_id] = []
+    if failures and failures == len(ids):
+        raise ValueError('Gdynia sign content is unavailable')
+    return _parse_gdynia_signs(devices, messages, lambda message_id: pages.get(message_id, []))
+
+
+def _parse_gdynia_sensors(segments, speeds, intensities, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(speeds, list) or not isinstance(intensities, list):
+        raise ValueError('Gdynia traffic measurements are invalid')
+    points = {str(row.get('id')): _point(row.get('geometry'))
+              for row in segments if isinstance(row, dict)}
+    readings = {}
+    for rows, field, upper in ((speeds, 'speed', 130), (intensities, 'intensity', 10000)):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            segment_id = str(row.get('roadSegmentId') or '')
+            point = points.get(segment_id)
+            measured = _gdynia_time(row.get('measureTime'))
+            try:
+                value = float(row.get(field))
+            except (TypeError, ValueError):
+                continue
+            if (not point or not (18.3 <= point[0] <= 18.9 and 54.2 <= point[1] <= 54.7)
+                    or measured is None or not -300 <= now - measured <= 20 * 60
+                    or not 0 <= value <= upper):
+                continue
+            record = readings.setdefault(segment_id, {'point': point, 'measured': measured})
+            record[field] = value
+            record['measured'] = max(record['measured'], measured)
+    if not readings:
+        raise ValueError('Gdynia traffic measurements are stale or empty')
+    features = []
+    for segment_id, record in readings.items():
+        speed = record.get('speed')
+        intensity = record.get('intensity')
+        detail = ' · '.join(part for part in (
+            f'{speed:.0f} km/h average speed' if speed is not None else '',
+            f'{intensity:.0f} vehicles/h' if intensity is not None else '') if part)
+        features.append(_feature(record['point'], {
+            'key': f'pl:gdynia:sensor:{segment_id}', 'layer': 'sensors',
+            'title': 'Gdynia traffic sensor', 'detail': detail,
+            'source': 'Gdynia ZDiZ · TRISTAR', 'source_url': GDYNIA_ROADS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(record['measured'], dt.timezone.utc).isoformat(),
+        }))
+    return features
+
+
+def _gdynia_sensors():
+    segments = _gdynia_catalog('road_segments')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        speeds = executor.submit(_get_json, GDYNIA_ROADS_BASE + 'traffic_speeds')
+        intensities = executor.submit(_get_json, GDYNIA_ROADS_BASE + 'traffic_intensities')
+        return _parse_gdynia_sensors(segments, speeds.result(), intensities.result())
+
+
 _TII_CAMERA_CACHE = {'until': 0, 'items': {}}
 _TII_CAMERA_LOCK = threading.Lock()
 _TII_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
@@ -4082,6 +4250,8 @@ _FETCHERS = {
         'es_vigo_cameras': _vigo_cameras,
         'it_south_tyrol_roads': _south_tyrol_roads,
         'pl_gddkia_roads': _poland_roads,
+        'pl_gdynia_signs': _gdynia_signs,
+        'pl_gdynia_sensors': _gdynia_sensors,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
