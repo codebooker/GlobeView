@@ -144,6 +144,26 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_bordeaux_signs(metadata, {'total_count': 5, 'results': publication['results']}, now)
 
+    def test_paris_roadworks_require_current_reported_work_and_fresh_dataset(self):
+        now = dt.datetime(2026, 9, 28, 9, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'data_processed': '2026-09-27T08:25:05+00:00'}}}
+        def work(identity, status=2, start='2026-09-20', end='2026-10-02', lon=2.35):
+            return {'identifiant': identity, 'statut': status, 'date_debut': start,
+                    'date_fin': end, 'voie': 'Rue de Rivoli',
+                    'impact_circulation': 'BARRAGE_TOTAL',
+                    'description': 'Road works', 'geo_point_2d': {'lon': lon, 'lat': 48.86}}
+        rows = feeds._parse_paris_roadworks(metadata, [
+            work('CP123456'), work('CP123457', status=4),
+            work('CP123458', status=1), work('CP123459', start='2026-10-01'),
+            work('CP123460', end='2026-09-27'), work('CP123461', lon=10),
+            work('../bad')], now)
+        self.assertEqual([row['properties']['key'] for row in rows],
+                         ['fr:paris:works:CP123456', 'fr:paris:works:CP123457'])
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertIn('Road closed', rows[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_paris_roadworks(metadata, [work('CP123456')], now + 15 * 86400)
+
     def test_brussels_counters_only_map_recent_active_measurements(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def counter(name, measured='2026-09-27T18:58:00Z', active=1, count=8, speed=42):

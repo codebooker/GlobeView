@@ -115,6 +115,9 @@ BORDEAUX_FLOW_API = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/cat
 BORDEAUX_SIGNS_BASE = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/'
                       'catalog/datasets/pc_pmv_p')
 BORDEAUX_SIGNS_SOURCE = 'https://datahub.bordeaux-metropole.fr/explore/dataset/pc_pmv_p/'
+PARIS_WORKS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
+                    'datasets/chantiers-perturbants')
+PARIS_WORKS_SOURCE = 'https://opendata.paris.fr/explore/dataset/chantiers-perturbants/'
 BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_geom/'
 BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                           'service=WFS&version=1.1.0&request=GetFeature&'
@@ -164,6 +167,7 @@ _CACHE = {
 _STALE_SECONDS = 900
 _BORDEAUX_FLOW_LOCK = threading.Lock()
 _BORDEAUX_FLOW_CACHE = {'until': 0, 'data': None}
+_PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
 _NH_ROADWORKS_CACHE = {'until': 0, 'url': '', 'published': '', 'activities': []}
 _FRANCE_SENSOR_REFERENCES = {'until': 0, 'points': {}}
@@ -950,6 +954,77 @@ def _bordeaux_signs():
         'limit': 100, 'select': 'ident,geo_point_2d,page1,page2,mdate'})
     publication = _get_json(f'{BORDEAUX_SIGNS_BASE}/records?{query}')
     return _parse_bordeaux_signs(metadata, publication)
+
+
+def _parse_paris_roadworks(metadata, rows, now=None):
+    now = time.time() if now is None else now
+    published = (metadata.get('metas') or {}).get('default', {}).get('data_processed')
+    processed = _timestamp(published)
+    if processed is None or not -300 <= now - processed <= 14 * 86400:
+        raise ValueError('Paris roadworks publication is stale')
+    if not isinstance(rows, list) or len(rows) > 500:
+        raise ValueError('Paris roadworks records are invalid')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/Paris')).date()
+    impact_names = {'RESTREINTE': 'Restricted traffic', 'SENS_UNIQUE': 'One-way traffic',
+                    'BARRAGE_TOTAL': 'Road closed', 'IMPASSE': 'No through road'}
+    features = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get('statut') not in (2, 4):
+            continue
+        work_id = str(row.get('identifiant') or '')
+        point = row.get('geo_point_2d') or {}
+        if not re.fullmatch(r'CP\d{6}', work_id) or not isinstance(point, dict):
+            continue
+        try:
+            lon, lat = float(point['lon']), float(point['lat'])
+            start = dt.date.fromisoformat(row['date_debut'])
+            end = dt.date.fromisoformat(row['date_fin'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (2.1 <= lon <= 2.55 and 48.75 <= lat <= 49.0 and start <= today <= end):
+            continue
+        street = _clean(row.get('voie'), 90) or 'Paris street'
+        impact = impact_names.get(row.get('impact_circulation'), 'Traffic affected')
+        description = (_clean(row.get('impact_circulation_detail'), 140)
+                       or _clean(row.get('description'), 140))
+        detail = ' · '.join(filter(None, (impact, description, f'Until {end:%d %b %Y}')))
+        features.append(_feature([lon, lat], {
+            'key': f'fr:paris:works:{work_id}', 'layer': 'construction',
+            'title': f'Roadworks · {street}', 'detail': detail,
+            'source': 'Ville de Paris · ODbL', 'source_url': PARIS_WORKS_SOURCE,
+            'updated_at': published,
+        }))
+    return features
+
+
+def _paris_roadworks():
+    cache = _PARIS_WORKS_CACHE
+    with cache['lock']:
+        now = time.time()
+        if now >= cache['until'] or cache['metadata'] is None:
+            metadata = _get_json(PARIS_WORKS_BASE)
+            select = ('identifiant,voie,description,date_debut,date_fin,statut,'
+                      'impact_circulation,impact_circulation_detail,geo_point_2d')
+            def page(offset):
+                query = urllib.parse.urlencode({'limit': 100, 'offset': offset, 'select': select})
+                return _get_json(f'{PARIS_WORKS_BASE}/records?{query}')
+            first = page(0)
+            count = first.get('total_count')
+            if not isinstance(count, int) or not 0 <= count <= 500:
+                raise ValueError('Paris roadworks record count is invalid')
+            rows = list(first.get('results') or [])
+            if len(rows) != min(100, count):
+                raise ValueError('Paris roadworks first page is incomplete')
+            for offset in range(100, count, 100):
+                next_page = page(offset)
+                if next_page.get('total_count') != count:
+                    raise ValueError('Paris roadworks changed during pagination')
+                rows.extend(next_page.get('results') or [])
+            if len(rows) != count:
+                raise ValueError('Paris roadworks publication is incomplete')
+            _parse_paris_roadworks(metadata, rows, now)
+            cache.update(until=now + 3600, rows=rows, metadata=metadata)
+        return _parse_paris_roadworks(cache['metadata'], cache['rows'], now)
 
 
 def _parse_madrid_signs(locations, root, published):
@@ -4574,6 +4649,7 @@ _FETCHERS = {
         'es_madrid_incidents': _madrid_incidents,
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
+        'fr_paris_roadworks': _paris_roadworks,
         'fr_bordeaux_signs': _bordeaux_signs,
         'es_madrid_signs': _madrid_signs,
         'es_vitoria_cameras': _vitoria_cameras,
