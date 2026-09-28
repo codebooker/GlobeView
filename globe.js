@@ -94,7 +94,7 @@
     ports: { label: 'Port', color: '#8fbcb6', glyph: '⚓', minZoom: 3, refreshMs: 86400000 },
     floods: { label: 'Flood', color: '#80bbca', glyph: '≈', minZoom: 0, refreshMs: 1800000 },
     volcanoes: { label: 'Volcanic event', color: '#df9a78', glyph: '▲', minZoom: 0, refreshMs: 1800000 },
-    gdelt_events: { label: 'GDELT media-coded event', color: '#e1a371', glyph: '⚑', minZoom: 2, refreshMs: 900000 }
+    gdelt_events: { label: 'Unrest report', color: '#e1a371', glyph: '⚑', minZoom: 2, refreshMs: 900000 }
   };
   const ROAD = {
     cameras: 'Cameras',
@@ -821,6 +821,12 @@
     if (type === 'signs') {
       iconImage('gm-signs-alert-icon', '#c78276', '!');
       iconExpression = ['case', ['boolean', ['get', 'alert'], false], 'gm-signs-alert-icon', `${sourceId}-icon`];
+    }
+    if (type === 'gdelt_events') {
+      iconImage('gm-gdelt_events-protest-icon', '#e1a371', '⚑');
+      iconImage('gm-gdelt_events-conflict-icon', '#e07877', '⚑');
+      iconImage('gm-gdelt_events-military-icon', '#b9a1d4', '⚑');
+      iconExpression = ['concat', 'gm-gdelt_events-', ['get', 'eventType'], '-icon'];
     }
     if (type === 'emergency' || type === 'international') {
       for (const [category, color, glyph] of [
@@ -2520,7 +2526,8 @@
         }
       records.set(ref, { title: item.title || POINT[type].label, detail, source: item.source || data.source,
           sourceUrl: item.sourceUrl, advice: type === 'nws_alerts' || type === 'world_alerts' ? item.advice : '' });
-        features.push(feature(type, ref, lon, lat, type === 'earthquakes' ? { magnitude: Number(item.magnitude) } : {}));
+        features.push(feature(type, ref, lon, lat, type === 'earthquakes' ? { magnitude: Number(item.magnitude) }
+          : type === 'gdelt_events' ? { eventType: ['protest', 'conflict', 'military'].includes(item.eventType) ? item.eventType : 'protest' } : {}));
       }
       if (type === 'cyclones') {
         map.getSource('gm-cyclones-track')?.setData({ type: 'FeatureCollection', features: tracks });

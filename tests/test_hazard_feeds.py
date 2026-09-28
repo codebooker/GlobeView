@@ -27,6 +27,25 @@ class HazardFeedTests(unittest.TestCase):
         self.assertEqual((items[0]['lon'], items[0]['lat']), (44.25, 12.5))
         self.assertIn('Example group', items[0]['title'])
         self.assertEqual(items[0]['category'], 'Protest')
+        self.assertEqual(items[0]['eventType'], 'protest')
+
+    def test_gdelt_unrest_excludes_broad_sanctions_and_assaults(self):
+        rows = []
+        for code in ('15', '16', '17', '18', '19', '20'):
+            row = [''] * 61
+            row[0], row[28], row[6] = f'event-{code}', code, 'Example group'
+            row[51], row[52], row[56], row[57] = '4', 'Example city', '12.5', '44.25'
+            row[59], row[60] = '20260926210000', 'https://example.org/report'
+            rows.append('\t'.join(row))
+        zipped = io.BytesIO()
+        with zipfile.ZipFile(zipped, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('sample.export.CSV', '\n'.join(rows) + '\n')
+        index = b'12345 abc http://data.gdeltproject.org/gdeltv2/20260926210000.export.CSV.zip\n'
+        responses = [io.BytesIO(index), *[io.BytesIO(zipped.getvalue()) for _ in range(13)]]
+        with patch.object(hazard_feeds.urllib.request, 'urlopen', side_effect=responses):
+            items = hazard_feeds._gdelt_events()['items']
+        self.assertEqual({item['eventType'] for item in items}, {'military', 'conflict'})
+        self.assertEqual({item['id'] for item in items}, {'gdelt:event-15', 'gdelt:event-19', 'gdelt:event-20'})
 
     def test_cyclones_use_latest_observed_position_and_track(self):
         recent = dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')

@@ -668,7 +668,7 @@ def _gdelt_events():
                 with archive.open(member) as payload:
                     text = io.TextIOWrapper(payload, encoding='utf-8', errors='replace')
                     for row in csv.reader(text, delimiter='\t'):
-                        if len(row) < 61 or row[28] not in {'14', '15', '16', '17', '18', '19', '20'}:
+                        if len(row) < 61 or row[28] not in {'14', '15', '19', '20'}:
                             continue
                         try:
                             lon, lat = float(row[57]), float(row[56])
@@ -683,10 +683,13 @@ def _gdelt_events():
                         precision = {'1': 'Country-level location', '2': 'State-level location', '3': 'City-level location', '4': 'City-level location', '5': 'Administrative-region location'}.get(row[51], 'Approximate reported location')
                         actor = row[6] or row[16] or 'Reported event'
                         event_id = row[0] or f'{stamp}-{row[57]}-{row[56]}-{len(items)}'
-                        categories = {'14': 'Protest', '15': 'Demonstration with force', '16': 'Administrative sanction',
-                                      '17': 'Coercive action', '18': 'Assault', '19': 'Armed conflict', '20': 'Mass violence'}
+                        categories = {'14': ('Protest', 'protest'),
+                                      '15': ('Military force posture', 'military'),
+                                      '19': ('Fighting', 'conflict'),
+                                      '20': ('Mass violence', 'conflict')}
                         items.append({'id': f'gdelt:{event_id}', 'title': f'{actor}: {row[52] or "media-coded event"}'[:170],
-                                      'lon': lon, 'lat': lat, 'category': categories[row[28]],
+                                      'lon': lon, 'lat': lat, 'category': categories[row[28]][0],
+                                      'eventType': categories[row[28]][1],
                                       'geoPrecision': precision, 'observed': observed,
                                       'source': 'GDELT Project · automatically coded from news coverage',
                                       'sourceUrl': row[60] if row[60].startswith(('https://', 'http://')) else 'https://www.gdeltproject.org/data.html'})

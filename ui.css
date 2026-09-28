@@ -68,6 +68,7 @@ body.panel-collapsed .panel{visibility:hidden;pointer-events:none}
 
 .layer-group{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:25px;margin:12px 0 2px;color:#75868b;font-size:10px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
 .layer-group:first-of-type{margin-top:5px}
+.layer-note{margin:3px 2px 8px 27px;color:#94a5a6;font-size:10px;line-height:1.45}
 .group-toggle{display:inline-flex;align-items:center;gap:5px;min-height:23px;padding:2px 3px 2px 7px;border:1px solid #465257;border-radius:12px;background:#202c31;color:#899b9e;font-size:9px;font-weight:650;letter-spacing:0;text-transform:none}
 .group-toggle:hover{border-color:#91b9b9;color:#dce9e8}
 .group-switch{position:relative;width:22px;height:13px;border-radius:9px;background:#445257;transition:background .15s}
