@@ -968,6 +968,7 @@
       let retryTimer;
       let loading = false;
       let lastLoadedAt = 0;
+      let failureNonce = 0;
       const retryButton = textElement('button', 'popup-play', 'Retry camera image');
       retryButton.type = 'button';
       const loadImage = () => {
@@ -989,6 +990,7 @@
           lastLoadedAt = Date.now();
           usingFallback = false;
           retries = 0;
+          failureNonce = 0;
           status.remove();
           retryButton.remove();
         };
@@ -1002,6 +1004,7 @@
             return;
           }
           usingFallback = false;
+          failureNonce = Date.now();
           if (retries < 4) {
             status.textContent = img.hidden ? 'Camera image delayed · retrying…'
               : 'Camera refresh delayed · showing last snapshot';
@@ -1017,12 +1020,14 @@
         // Share an image URL for each refresh window so browsers and the CDN can
         // reuse one still across visitors instead of hitting the provider per click.
         const refreshWindow = Math.max(60000, Number(meta.item.expando?.snapshotRefreshMs) || 60000);
-        nextImage.src = `${url}${separator}v=${Math.floor(Date.now() / refreshWindow)}`;
+        const version = Math.floor(Date.now() / refreshWindow);
+        nextImage.src = `${url}${separator}v=${version}${failureNonce ? `&retry=${failureNonce}` : ''}`;
       };
       retryButton.addEventListener('click', () => {
         window.clearTimeout(retryTimer);
         retries = 0;
         usingFallback = false;
+        failureNonce = Date.now();
         retryButton.remove();
         status.textContent = 'Loading camera image…';
         loadImage();
