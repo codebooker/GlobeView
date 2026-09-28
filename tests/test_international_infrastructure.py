@@ -351,6 +351,30 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no current'):
             feeds._parse_lyon_flow(payload, now + 20 * 60)
 
+    def test_lyon_events_exclude_future_active_and_stale_reports(self):
+        now = dt.datetime(2026, 9, 28, 17, tzinfo=dt.timezone.utc).timestamp()
+        def event(identity, kind='AbnormalTraffic', subtype='queueingTraffic',
+                  start='2026-09-28T17:00:00+00:00', comment='A46 queue',
+                  updated='2026-09-28T17:00:00+00:00'):
+            return {'geometry': {'type': 'MultiPoint', 'coordinates': [[4.8, 45.7]]},
+                    'properties': {'id': identity, 'type': kind, 'status': 'active',
+                                   'abnormaltraffictype': subtype,
+                                   'networkmanagementtype': subtype,
+                                   'starttime': start, 'endtime': '2026-09-28T20:00:00+00:00',
+                                   'publiccomment': comment, 'last_update_fme': updated}}
+        rows = [event('Criter123456'),
+                event('Criter123457', 'NetworkManagement', 'roadClosed', comment='Travaux'),
+                event('Criter123458', start='2026-09-29T17:00:00+00:00'),
+                event('Criter123459', 'Activities'),
+                event('Criter123460', updated='2026-09-28T16:00:00+00:00')]
+        payload = {'numberMatched': len(rows), 'numberReturned': len(rows), 'features': rows}
+        result = feeds._parse_lyon_events(payload, now)
+        self.assertEqual([f['properties']['layer'] for f in result], ['incidents', 'construction'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_lyon_events({**payload, 'numberMatched': len(rows) + 1}, now)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_lyon_events(payload, now + 30 * 60)
+
     def test_bison_flow_joins_located_stations_and_rejects_stale_states(self):
         header = ('code_pme;source;source_2;code_insee_commune;axe;pr_debut;'
                   'abscisse_debut;pr_fin;abscisse_fin;sens_gestionnaire;'
