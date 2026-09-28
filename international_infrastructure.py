@@ -149,6 +149,9 @@ ZURICH_ROADWORKS_URL = ('https://maps.zh.ch/wfs/TbaBaustellenZHWFS?SERVICE=WFS&R
                         '&VERSION=2.0.0&TYPENAMES=ms:baustellen-uebersicht'
                         '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
 ZURICH_ROADWORKS_SOURCE = 'https://data.stadt-zuerich.ch/dataset/d991a4a2-32ea-4f7a-93b5-0f31a016d71c'
+VIENNA_ROADWORKS_BASE = ('https://data.wien.gv.at/daten/geo?service=WFS&request=GetFeature'
+                         '&version=1.1.0&srsName=EPSG:4326&outputFormat=json&maxFeatures=1000&typeName=')
+VIENNA_ROADWORKS_SOURCE = 'https://data.wien.gv.at/daten/geo?service=WFS&request=GetCapabilities'
 ZURICH_COUNTERS_URL = ('https://maps.zh.ch/wfs/TBAVMSZHWFS?SERVICE=WFS&REQUEST=GetFeature'
                        '&VERSION=2.0.0&TYPENAMES=ms:verkehrszaehlstellen'
                        '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
@@ -1557,6 +1560,59 @@ def _zurich_roadworks():
     if data.get('type') != 'FeatureCollection':
         raise ValueError('Zurich roadworks feed is invalid')
     return _parse_zurich_roadworks(data.get('features') or [])
+
+
+def _parse_vienna_roadworks(publications, now=None):
+    today = dt.datetime.fromtimestamp(time.time() if now is None else now,
+                                       ZoneInfo('Europe/Vienna')).date()
+    features = []
+    for kind, data in publications.items():
+        if not isinstance(data, dict) or data.get('type') != 'FeatureCollection':
+            raise ValueError('Vienna roadworks feed is invalid')
+        rows = data.get('features')
+        if not isinstance(rows, list):
+            raise ValueError('Vienna roadworks feed is invalid')
+        if data.get('totalFeatures') != len(rows) or len(rows) >= 1000:
+            raise ValueError('Vienna roadworks feed is incomplete')
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            properties = item.get('properties') or {}
+            road_id = str(properties.get('OBJECTID') or '')
+            geometry = item.get('geometry') or {}
+            if not road_id.isdecimal() or geometry.get('type') != kind:
+                continue
+            point = _point(geometry)
+            if not point or not (16.0 <= point[0] <= 16.7 and 48.0 <= point[1] <= 48.4):
+                continue
+            try:
+                start = dt.date.fromisoformat(str(properties.get('OBJEKT_BEGINN'))[:10])
+                end = dt.date.fromisoformat(str(properties.get('OBJEKT_ENDE'))[:10])
+            except ValueError:
+                continue
+            if not start <= today <= end:
+                continue
+            road = _clean(properties.get('BEZEICHNUNG'), 110)
+            if not road:
+                continue
+            impact = _clean(properties.get('BEHINDERUNGSART'), 75)
+            description = _clean(properties.get('PRESSETEXT'), 180)
+            features.append(_feature(point, {
+                'key': f'at:vienna:roadwork:{kind}:{road_id}', 'layer': 'construction',
+                'title': f'Roadworks · {road}',
+                'detail': _clean(' · '.join(part for part in (
+                    impact, description, f'Scheduled through {end.isoformat()}') if part), 290),
+                'source': 'Datenquelle: Stadt Wien – data.wien.gv.at · CC BY 4.0',
+                'source_url': VIENNA_ROADWORKS_SOURCE,
+            }))
+    return features
+
+
+def _vienna_roadworks():
+    publications = {}
+    for kind, layer in (('Point', 'BAUSTELLENPKTOGD'), ('LineString', 'BAUSTELLENLINOGD')):
+        publications[kind] = _get_json(VIENNA_ROADWORKS_BASE + 'ogdwien:' + layer)
+    return _parse_vienna_roadworks(publications)
 
 
 def _parse_zurich_sensors(locations, collectors):
@@ -5845,6 +5901,7 @@ _FETCHERS = {
         'nl_ndw_signs': _ndw_signs,
         'nl_ndw_sensors': _ndw_sensors,
         'ch_zurich_roadworks': _zurich_roadworks,
+        'at_vienna_roadworks': _vienna_roadworks,
         'ch_zurich_sensors': _zurich_sensors,
         'no_road_events': _norway_roads,
         'no_road_cameras': _norway_cameras,

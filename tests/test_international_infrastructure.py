@@ -1058,6 +1058,33 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
         self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
 
+    def test_vienna_roadworks_require_current_dates_and_complete_publications(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        def work(identity, geometry, start='2026-09-25Z', end='2026-10-02Z'):
+            return {'type': 'Feature', 'geometry': geometry, 'properties': {
+                'OBJECTID': identity, 'BEZEICHNUNG': 'Ringstraße',
+                'BEHINDERUNGSART': 'Road closure', 'PRESSETEXT': 'One lane closed',
+                'OBJEKT_BEGINN': start, 'OBJEKT_ENDE': end,
+                'ANSPRECHPERSON_TEL': 'private contact must not appear',
+            }}
+        points = {'type': 'FeatureCollection', 'totalFeatures': 3, 'features': [
+            work(1, {'type': 'Point', 'coordinates': [16.37, 48.21]}),
+            work(2, {'type': 'Point', 'coordinates': [16.38, 48.22]}, start='2026-10-01Z'),
+            work(3, {'type': 'Point', 'coordinates': [16.39, 48.23]}, end='2026-09-27Z'),
+        ]}
+        lines = {'type': 'FeatureCollection', 'totalFeatures': 1, 'features': [
+            work(4, {'type': 'LineString', 'coordinates': [
+                [16.4, 48.24], [16.41, 48.25], [16.42, 48.26]]}),
+        ]}
+        rows = feeds._parse_vienna_roadworks({'Point': points, 'LineString': lines}, now)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1]['geometry']['coordinates'], [16.41, 48.25])
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertIn('Stadt Wien', rows[0]['properties']['source'])
+        self.assertNotIn('private contact', str(rows))
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_vienna_roadworks({'Point': {**points, 'totalFeatures': 4}}, now)
+
     def test_a22_announcements_require_current_road_effects(self):
         now = dt.datetime(2026, 9, 28, 11, tzinfo=dt.timezone.utc).timestamp()
         def record(identity, **changes):
