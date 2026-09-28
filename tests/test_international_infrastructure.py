@@ -289,16 +289,40 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no current'):
             feeds._current_bordeaux_flow(data, now + 20 * 60, 15 * 60)
 
+    def test_rennes_flow_rejects_stale_and_unknown_segments(self):
+        now = dt.datetime(2026, 9, 28, 14, 45, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'data_processed': '2026-09-28T14:42:00+00:00'}}}
+        def road(identity, state='heavy', observed='2026-09-28T16:39:00+02:00', lon=-1.68):
+            return {'type': 'Feature', 'geometry': {'type': 'LineString',
+                    'coordinates': [[lon, 48.10], [lon + .01, 48.11]]},
+                    'properties': {'predefinedlocationreference': identity,
+                                   'trafficstatus': state, 'datetime': observed}}
+        data = feeds._parse_rennes_flow(metadata, {'features': [
+            road('10273_D'), road('10274_G', 'unknown'),
+            road('10275_D', observed='2026-09-28T13:00:00+00:00'),
+            road('10276_D', lon=2.35), road('../bad')]}, now)
+        self.assertEqual(len(data['features']), 1)
+        self.assertEqual(data['features'][0]['id'], 'rennes:10273_D')
+        self.assertEqual(data['features'][0]['properties']['state'], 'DENSE')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_rennes_flow({'metas': {'default': {
+                'data_processed': '2026-09-28T13:00:00+00:00'}}},
+                {'features': [road('10273_D')]}, now)
+        with self.assertRaisesRegex(ValueError, 'no current'):
+            feeds._parse_rennes_flow(metadata, {'features': [road('10274_G', 'unknown')]}, now)
+
     def test_international_traffic_keeps_working_city_when_other_feed_fails(self):
         segment = {'type': 'Feature', 'geometry': {'type': 'LineString',
                    'coordinates': [[7.72, 48.57], [7.73, 48.58]]},
                    'properties': {'state': 'FLUIDE'}}
         with patch.object(feeds, 'bordeaux_flow_snapshot', side_effect=OSError('offline')), \
-                patch.object(feeds, 'strasbourg_flow_snapshot', return_value={'features': [segment]}):
+                patch.object(feeds, 'strasbourg_flow_snapshot', return_value={'features': [segment]}), \
+                patch.object(feeds, 'rennes_flow_snapshot', side_effect=OSError('offline')):
             result = feeds.international_traffic_snapshot()
         self.assertEqual(result['features'], [segment])
         self.assertEqual(result['sources'], ['fr_strasbourg'])
-        self.assertIn('fr_bordeaux', result['sourceErrors'][0])
+        self.assertEqual({error.split(':', 1)[0] for error in result['sourceErrors']},
+                         {'fr_bordeaux', 'fr_rennes'})
 
     def test_bordeaux_signs_show_only_readable_text_from_fresh_publication(self):
         now = dt.datetime(2026, 9, 28, 0, 40, tzinfo=dt.timezone.utc).timestamp()
