@@ -396,7 +396,9 @@ def _dublin_closures():
 
 def _parse_vitoria_cameras(payload):
     if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(payload.get('features'), list):
-        raise ValueError('Vitoria camera catalog is invalid')
+        shape = (','.join(sorted(str(key) for key in payload)[:4])
+                 if isinstance(payload, dict) else type(payload).__name__)
+        raise ValueError(f'Vitoria camera catalog is invalid ({shape})')
     features = []
     for row in payload['features']:
         if not isinstance(row, dict):
