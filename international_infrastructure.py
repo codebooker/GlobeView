@@ -4625,6 +4625,24 @@ _ESTONIA_CAMERA_LOCATIONS = {'until': 0, 'source': None, 'payload': None,
 _ESTONIA_VMS_SITES = {'until': 0, 'root': None, 'read_at': 0, 'lock': threading.Lock()}
 
 
+def _estonia_xml(path):
+    for attempt in range(2):
+        try:
+            return _get_xml(ESTONIA_CAMERAS_BASE + path)
+        except (TimeoutError, urllib.error.URLError):
+            if attempt:
+                raise
+
+
+def _estonia_json(url):
+    for attempt in range(2):
+        try:
+            return _get_json(url)
+        except (TimeoutError, urllib.error.URLError):
+            if attempt:
+                raise
+
+
 def _estonia_publication_time(root, now):
     if root.tag.rsplit('}', 1)[-1] != 'd2LogicalModel':
         raise ValueError('Estonia camera publication is invalid')
@@ -4665,7 +4683,7 @@ def _estonia_camera_index():
         if now < cache['until']:
             return cache['entries']
         try:
-            root = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraImages')
+            root = _estonia_xml('roadCameraImages')
             entries = _parse_estonia_camera_index(root, now)
         except (OSError, ValueError):
             recent = {key: value for key, value in cache['entries'].items()
@@ -4752,11 +4770,11 @@ def _estonia_cameras():
         if time.time() >= cache['until']:
             read_at = time.time()
             try:
-                payload = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraLocations')
+                payload = _estonia_xml('roadCameraLocations')
                 _estonia_publication_time(payload, read_at)
                 source = 'datex'
             except (OSError, ValueError):
-                payload = _get_json(ESTONIA_CAMERAS_ARCGIS)
+                payload = _estonia_json(ESTONIA_CAMERAS_ARCGIS)
                 source = 'arcgis'
             cache.update(until=time.time() + 6 * 3600, source=source,
                          payload=payload, read_at=read_at)
@@ -4835,11 +4853,11 @@ def _estonia_signs():
     with cache['lock']:
         if time.time() >= cache['until']:
             read_at = time.time()
-            root = _get_xml(ESTONIA_CAMERAS_BASE + 'vmsSites')
+            root = _estonia_xml('vmsSites')
             _estonia_publication_time(root, read_at)
             cache.update(until=time.time() + 6 * 3600, root=root, read_at=read_at)
         sites_root, read_at = cache['root'], cache['read_at']
-    messages_root = _get_xml(ESTONIA_CAMERAS_BASE + 'vms')
+    messages_root = _estonia_xml('vms')
     return _parse_estonia_signs(sites_root, messages_root, read_at)
 
 
@@ -4905,7 +4923,7 @@ def _estonia_restrictions():
         'where': where, 'outFields': 'objectid,road_nr,road_name,cause,effect,extra_info,date_from,date_to',
         'returnGeometry': 'true', 'outSR': '4326', 'resultRecordCount': '2000', 'f': 'geojson',
     })
-    return _parse_estonia_restrictions(_get_json(ESTONIA_RESTRICTIONS_URL + '?' + query))
+    return _parse_estonia_restrictions(_estonia_json(ESTONIA_RESTRICTIONS_URL + '?' + query))
 
 
 def _parse_brno_waze_alerts(payload, now=None):

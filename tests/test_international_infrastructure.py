@@ -431,6 +431,12 @@ class InfrastructureTests(unittest.TestCase):
             self.assertIn('987', feeds._estonia_camera_index())
             self.assertEqual(cache['until'], NOW + 60)
 
+    def test_estonia_upstream_retries_one_transient_timeout(self):
+        root = ET.Element('d2LogicalModel')
+        with patch.object(feeds, '_get_xml', side_effect=[TimeoutError(), root]) as fetch:
+            self.assertIs(feeds._estonia_xml('vms'), root)
+            self.assertEqual(fetch.call_count, 2)
+
     def test_estonia_signs_show_only_working_readable_messages(self):
         published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).isoformat()
         sites = ET.fromstring(f'''<d2LogicalModel><payloadPublication>
