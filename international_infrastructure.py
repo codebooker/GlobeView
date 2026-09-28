@@ -51,6 +51,9 @@ MADRID_SIGN_LOCATIONS = ('https://datos.madrid.es/dataset/202535-0-paneles-infor
 SOUTH_TYROL_ROADS_URL = ('https://datex.api.opendatahub.com/datex/2/'
                          'province-bz/situation-publication.xml')
 SOUTH_TYROL_SOURCE = 'https://docs.opendatahub.com/use-data/datexii-api/reference/'
+BERLIN_ROADS_URL = 'https://api.viz.berlin.de/tic3/baustellen_sperrungen_tic.json'
+BERLIN_ROADS_SOURCE = ('https://daten.berlin.de/datensaetze/'
+                       'baustellen-sperrungen-und-sonstige-storungen-von-besonderem-verkehrlichem-interesse')
 GDYNIA_ROADS_BASE = 'https://api.zdiz.gdynia.pl/ri/rest/'
 GDYNIA_ROADS_SOURCE = ('https://otwartedane.gdynia.pl/dataset/fc4f3a7c-b877-4fe1-ab22-3fb54e6513f7/'
                        'resource/a426e7b7-7261-4f43-8acb-59a5eca167aa/download/tristar_api.pdf')
@@ -3273,6 +3276,89 @@ def _hamburg_roads():
     return _parse_hamburg_roads(_get_json(HAMBURG_ROADS_URL))
 
 
+def _berlin_local_time(value):
+    if not value:
+        return None
+    try:
+        return dt.datetime.strptime(value, '%d.%m.%Y %H:%M').replace(
+            tzinfo=ZoneInfo('Europe/Berlin')).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_berlin_roads(payload, published, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection':
+        raise ValueError('Berlin road publication is invalid')
+    features = payload.get('features')
+    if not isinstance(features, list) or len(features) > 2000:
+        raise ValueError('Berlin road publication has an invalid size')
+    if published is None or not -300 <= now - published <= 3 * 3600:
+        raise ValueError('Berlin road publication is stale')
+    rows = []
+    seen = set()
+    for item in features:
+        if not isinstance(item, dict):
+            continue
+        props = item.get('properties') or {}
+        identifier = str(props.get('id') or '')
+        if not 1 <= len(identifier) <= 100 or identifier in seen or props.get('objectState') == 'deleted':
+            continue
+        kind = props.get('subtype')
+        if kind not in {'Baustelle', 'Sperrung', 'Gefahr'}:
+            continue
+        geometry = item.get('geometry') or {}
+        if geometry.get('type') == 'GeometryCollection':
+            point_geometry = next((part for part in geometry.get('geometries', [])
+                                   if isinstance(part, dict) and part.get('type') == 'Point'), None)
+        else:
+            point_geometry = geometry if geometry.get('type') == 'Point' else None
+        point = _point(point_geometry)
+        if point is None or not (13.05 <= point[0] <= 13.8 and 52.3 <= point[1] <= 52.75):
+            continue
+        validity = props.get('validity') or {}
+        start_text, end_text = validity.get('from'), validity.get('to')
+        start, end = _berlin_local_time(start_text), _berlin_local_time(end_text)
+        if (start_text and start is None) or (end_text and end is None):
+            continue
+        if start is not None and start > now or end is not None and end <= now:
+            continue
+        reported = _timestamp(props.get('tstore'))
+        if reported is None or reported > now + 300:
+            continue
+        if end is None and now - reported > 7 * 86400:
+            continue
+        seen.add(identifier)
+        title = {'Baustelle': 'Berlin roadworks', 'Sperrung': 'Berlin road closure',
+                 'Gefahr': 'Berlin road alert'}[kind]
+        detail = ' · '.join(filter(None, [_clean(props.get('street'), 170),
+                                          _clean(props.get('content'), 190)]))
+        rows.append(_feature(point, {
+            'key': 'de:berlin:road:' + hashlib.sha1(identifier.encode()).hexdigest()[:16],
+            'layer': 'construction' if kind == 'Baustelle' else 'incidents',
+            'title': title, 'detail': detail,
+            'source': ('Digitale Plattform Stadtverkehr Berlin / Baustellen, Sperrungen und '
+                       'sonstige Störungen von besonderem verkehrlichem Interesse · DL-DE/BY 2.0'),
+            'source_url': BERLIN_ROADS_SOURCE, 'updated_at': props['tstore'],
+        }))
+    return rows
+
+
+def _berlin_roads():
+    request = urllib.request.Request(BERLIN_ROADS_URL, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/json'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        modified = response.headers.get('Last-Modified')
+        body = response.read(2 * 1024 * 1024 + 1)
+    if len(body) > 2 * 1024 * 1024:
+        raise ValueError('Berlin road publication exceeded size limit')
+    try:
+        published = email.utils.parsedate_to_datetime(modified).timestamp() if modified else None
+    except (TypeError, ValueError):
+        published = None
+    return _parse_berlin_roads(json.loads(body), published)
+
+
 def _parse_autobahn_items(service, road, payload, now=None):
     now = time.time() if now is None else now
     rows = payload.get(service, []) if isinstance(payload, dict) else []
@@ -4800,6 +4886,7 @@ _FETCHERS = {
         'uk_scotland_construction': _scotland_roadworks,
         'fr_national_roads': _france_roads,
         'de_hamburg_roads': _hamburg_roads,
+        'de_berlin_roads': _berlin_roads,
         'lu_cita_roads': _luxembourg_roads,
         'lu_cita_cameras': _luxembourg_cameras,
         'lu_cita_traffic': _luxembourg_traffic,

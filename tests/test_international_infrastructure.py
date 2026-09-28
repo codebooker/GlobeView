@@ -1339,6 +1339,30 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_hamburg_roads(payload, now)
 
+    def test_berlin_roads_use_local_validity_and_reject_stale_publications(self):
+        now = dt.datetime(2026, 9, 28, 3, tzinfo=dt.timezone.utc).timestamp()
+        def item(identifier, kind, start, end, reported='2026-09-28T01:00:00Z'):
+            return {'type': 'Feature', 'geometry': {'type': 'GeometryCollection', 'geometries': [
+                {'type': 'Point', 'coordinates': [13.4, 52.52]},
+                {'type': 'LineString', 'coordinates': [[13.4, 52.52], [13.41, 52.53]]}]},
+                'properties': {'id': identifier, 'subtype': kind, 'objectState': 'modified',
+                    'tstore': reported, 'validity': {'from': start, 'to': end},
+                    'street': 'Berlin, Teststraße', 'content': 'Fahrbahn gesperrt'}}
+        payload = {'type': 'FeatureCollection', 'features': [
+            item('LMS/1', 'Baustelle', '28.09.2026 04:00', '29.09.2026 23:59'),
+            item('LMS/2', 'Sperrung', '28.09.2026 04:00', '29.09.2026 23:59'),
+            item('LMS/3', 'Gefahr', '28.09.2026 06:00', '29.09.2026 23:59'),
+            item('LMS/4', 'Baustelle', '27.09.2026 04:00', '28.09.2026 03:00'),
+            item('LMS/5', 'Sperrung', '', '', '2026-09-01T01:00:00Z')]}
+        rows = feeds._parse_berlin_roads(payload, now - 60, now)
+        self.assertEqual([row['properties']['layer'] for row in rows],
+                         ['construction', 'incidents'])
+        self.assertEqual(rows[0]['geometry']['coordinates'], [13.4, 52.52])
+        self.assertIn('Berlin, Teststraße', rows[0]['properties']['detail'])
+        self.assertNotEqual(rows[0]['properties']['key'], rows[1]['properties']['key'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_berlin_roads(payload, now - 4 * 3600, now)
+
     def test_autobahn_service_cache_is_shared_and_bounded(self):
         cache = {'until': 0, 'roads': {}, 'lock': threading.Lock()}
         calls = []
