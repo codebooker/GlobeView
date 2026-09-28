@@ -20,6 +20,7 @@ from international_infrastructure import (road_snapshot as international_road_sn
                                           bordeaux_flow_snapshot,
                                           zurich_sensor_sample, northern_ireland_camera_snapshot,
                                           madrid_camera_snapshot, dgt_camera_snapshot,
+                                          estonia_camera_snapshot,
                                           lyon_camera_snapshot,
                                           vitoria_camera_snapshot,
                                           vigo_camera_snapshot,
@@ -19231,6 +19232,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_northern_ireland_camera(parsed)
         elif parsed.path.startswith('/madrid-camera/'):
             self._handle_madrid_camera(parsed)
+        elif parsed.path.startswith('/estonia-camera/'):
+            self._handle_estonia_camera(parsed)
         elif parsed.path.startswith('/lyon-camera/'):
             self._handle_lyon_camera(parsed)
         elif parsed.path.startswith('/vitoria-camera/'):
@@ -19666,6 +19669,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(502, 'Snapshot unavailable')
         except Exception as exc:
             self._log_exception('madrid-camera', exc)
+            self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_estonia_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/estonia-camera/')
+        if not re.fullmatch(r'\d{1,6}', camera_id):
+            self.send_error(400, 'Invalid camera ID'); return
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'estonia-camera:v1:{camera_id}',
+                lambda: estonia_camera_snapshot(camera_id),
+                ttl=120, stale_ttl=600, persist=False, wait_timeout=20)
+            self._write_bytes(200, content, content_type,
+                              cache_control='public, max-age=60, stale-while-revalidate=120',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except FileNotFoundError:
+            self.send_error(404, 'Snapshot unavailable')
+        except Exception as exc:
+            self._log_exception('estonia-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
 
     def _handle_lyon_camera(self, parsed):

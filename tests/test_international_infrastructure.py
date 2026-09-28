@@ -344,6 +344,65 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_estonia_restrictions(dict(payload, exceededTransferLimit=True), NOW)
 
+    def test_estonia_cameras_join_current_images_and_reject_untrusted_urls(self):
+        published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).isoformat()
+        stale = dt.datetime.fromtimestamp(NOW - 3600, dt.timezone.utc).isoformat()
+        locations = ET.fromstring(f'''<d2LogicalModel><payloadPublication>
+          <publicationTime>{published}</publicationTime>
+          <predefinedLocation id="station-1"><predefinedLocationName><values><value>Kaimi</value>
+          </values></predefinedLocationName><location><pointByCoordinates><pointCoordinates>
+          <latitude>58.34474</latitude><longitude>26.3853</longitude>
+          </pointCoordinates></pointByCoordinates></location></predefinedLocation>
+          </payloadPublication></d2LogicalModel>''')
+        images = ET.fromstring(f'''<d2LogicalModel><payloadPublication>
+          <publicationTime>{published}</publicationTime>
+          <trafficView id="987-1"><trafficViewTime>{published}</trafficViewTime>
+          <linearTrafficView><linearPredefinedLocationReference id="station-1"/>
+          <trafficViewRecord><urlLink><urlLinkAddress>
+          https://tarktee.transpordiamet.ee/images/987/987_202609261800.jpg
+          </urlLinkAddress><urlLinkType>image</urlLinkType></urlLink>
+          </trafficViewRecord></linearTrafficView></trafficView>
+          <trafficView id="988-1"><trafficViewTime>{stale}</trafficViewTime>
+          <linearTrafficView><linearPredefinedLocationReference id="station-1"/>
+          <trafficViewRecord><urlLink><urlLinkAddress>
+          https://tarktee.transpordiamet.ee/images/988/988_202609261800.jpg
+          </urlLinkAddress><urlLinkType>image</urlLinkType></urlLink>
+          </trafficViewRecord></linearTrafficView></trafficView>
+          <trafficView id="989-1"><trafficViewTime>{published}</trafficViewTime>
+          <linearTrafficView><linearPredefinedLocationReference id="station-1"/>
+          <trafficViewRecord><urlLink><urlLinkAddress>
+          https://example.com/images/989/989_202609261800.jpg
+          </urlLinkAddress><urlLinkType>image</urlLinkType></urlLink>
+          </trafficViewRecord></linearTrafficView></trafficView>
+          </payloadPublication></d2LogicalModel>''')
+        entries = feeds._parse_estonia_camera_index(images, NOW)
+        self.assertEqual(list(entries), ['987'])
+        rows = feeds._parse_estonia_cameras(locations, entries, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/estonia-camera/987')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [26.3853, 58.34474])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_estonia_camera_index(images, NOW + 3600)
+
+    def test_estonia_camera_snapshot_rejects_redirects_and_non_jpegs(self):
+        url = 'https://tarktee.transpordiamet.ee/images/987/987_202609261800.jpg'
+        class Response(io.BytesIO):
+            headers = {'Content-Type': 'image/jpeg'}
+            def __init__(self, body, final_url=url):
+                super().__init__(body)
+                self.url = final_url
+        with self.assertRaises(ValueError):
+            feeds.estonia_camera_snapshot('../987')
+        with patch.object(feeds, '_estonia_camera_index', return_value={'987': ('station-1', url, NOW)}), \
+                patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
+            self.assertEqual(feeds.estonia_camera_snapshot('987')[1], 'image/jpeg')
+        with patch.object(feeds, '_estonia_camera_index', return_value={'987': ('station-1', url, NOW)}), \
+                patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage', 'https://example.com/')):
+            with self.assertRaisesRegex(ValueError, 'unexpected'):
+                feeds.estonia_camera_snapshot('987')
+
     def test_czech_ndic_roads_use_current_records_and_complete_pages(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def event(number, category='Práce na silnici', start='27.09.2026 19:00',

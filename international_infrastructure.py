@@ -161,6 +161,7 @@ ESTONIA_RESTRICTIONS_URL = (
     'restrictions_traffic/MapServer/0/query'
 )
 ESTONIA_RESTRICTIONS_SOURCE = 'https://tarktee.transpordiamet.ee/'
+ESTONIA_CAMERAS_BASE = 'https://tarktee.transpordiamet.ee/api/v1/datex/'
 CZ_NDIC_ROADS_URL = 'https://gis.brno.cz/ags3/rest/services/PUBLIC/uzavirky_ndic/MapServer/0/query'
 CZ_NDIC_ROADS_SOURCE = 'https://gis.brno.cz/ost/edas/public/3c5ff253-35f3-4ac0-86ab-db9e06586552'
 PRAGUE_ROADS_URL = 'https://opravujeme.to/api/action'
@@ -4614,6 +4615,112 @@ def _lithuania_road_weather():
     return _parse_lithuania_road_weather(_get_json(LITHUANIA_ROAD_WEATHER_URL))
 
 
+_ESTONIA_CAMERA_INDEX = {'until': 0, 'entries': {}, 'lock': threading.Lock()}
+
+
+def _estonia_publication_time(root, now):
+    if root.tag.rsplit('}', 1)[-1] != 'd2LogicalModel':
+        raise ValueError('Estonia camera publication is invalid')
+    published = _timestamp(root.findtext('.//{*}payloadPublication/{*}publicationTime'))
+    if published is None or not -300 <= now - published <= 30 * 60:
+        raise ValueError('Estonia camera publication is stale')
+    return published
+
+
+def _parse_estonia_camera_index(root, now=None):
+    now = time.time() if now is None else now
+    _estonia_publication_time(root, now)
+    entries = {}
+    for view in root.findall('.//{*}trafficView'):
+        match = re.fullmatch(r'(\d{1,6})-\d+', view.get('id') or '')
+        reference = view.find('.//{*}linearPredefinedLocationReference')
+        url = (view.findtext('.//{*}urlLinkAddress') or '').strip()
+        captured = _timestamp(view.findtext('{*}trafficViewTime'))
+        if not match or reference is None or not reference.get('id') or captured is None:
+            continue
+        camera_id = match.group(1)
+        if (not re.fullmatch(r'https://tarktee\.transpordiamet\.ee/images/'
+                             + re.escape(camera_id) + r'/' + re.escape(camera_id)
+                             + r'_\d{12}\.jpg', url)
+                or view.findtext('.//{*}urlLinkType') != 'image'
+                or not -300 <= now - captured <= 30 * 60):
+            continue
+        entries[camera_id] = (reference.get('id'), url, captured)
+    if not entries:
+        raise ValueError('Estonia camera publication contains no current images')
+    return entries
+
+
+def _estonia_camera_index():
+    cache = _ESTONIA_CAMERA_INDEX
+    with cache['lock']:
+        now = time.time()
+        if now < cache['until']:
+            return cache['entries']
+        root = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraImages')
+        entries = _parse_estonia_camera_index(root, now)
+        cache.update(until=time.time() + 120, entries=entries)
+        return entries
+
+
+def _parse_estonia_cameras(root, entries, now=None):
+    now = time.time() if now is None else now
+    _estonia_publication_time(root, now)
+    locations = {}
+    for location in root.findall('.//{*}predefinedLocation'):
+        reference = location.get('id')
+        try:
+            lat = float(location.findtext('.//{*}pointCoordinates/{*}latitude'))
+            lon = float(location.findtext('.//{*}pointCoordinates/{*}longitude'))
+        except (TypeError, ValueError):
+            continue
+        if reference and 57.4 <= lat <= 59.9 and 21.5 <= lon <= 28.3:
+            name = _clean(location.findtext('.//{*}predefinedLocationName/{*}values/{*}value'), 90)
+            locations[reference] = ([lon, lat], name)
+    features = []
+    for camera_id, (reference, _, _) in entries.items():
+        if reference not in locations:
+            continue
+        point, name = locations[reference]
+        features.append(_feature(point, {
+            'key': f'ee:tarktee:camera:{camera_id}', 'layer': 'cameras',
+            'title': f'Traffic camera · {name}' if name else 'Traffic camera',
+            'detail': 'Road camera still · updated periodically',
+            'snapshot_url': f'/estonia-camera/{camera_id}',
+            'snapshot_refresh_ms': 120000,
+            'source': 'Estonian Transport Administration · Tark Tee',
+            'source_url': ESTONIA_RESTRICTIONS_SOURCE,
+        }))
+    if not features:
+        raise ValueError('Estonia camera locations have no current images')
+    return features
+
+
+def _estonia_cameras():
+    locations = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraLocations')
+    return _parse_estonia_cameras(locations, _estonia_camera_index())
+
+
+def estonia_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{1,6}', str(camera_id)):
+        raise ValueError('Invalid Estonia camera ID')
+    entry = _estonia_camera_index().get(str(camera_id))
+    if not entry:
+        raise FileNotFoundError('Estonia camera has no recent still')
+    _, url, captured = entry
+    if not -300 <= time.time() - captured <= 30 * 60:
+        raise FileNotFoundError('Estonia camera still is stale')
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        if (response.url != url or response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg'):
+            raise ValueError('Estonia camera returned an unexpected image')
+        image = response.read(1_000_001)
+    if len(image) > 1_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Estonia camera returned no JPEG still')
+    return image, 'image/jpeg'
+
+
 def _parse_estonia_restrictions(payload, now=None):
     if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(payload.get('features'), list):
         raise ValueError('Estonia traffic restrictions feed is invalid')
@@ -5055,6 +5162,7 @@ _FETCHERS = {
         'lt_eismoinfo_cameras': _lithuania_cameras,
         'lt_eismoinfo_road_weather': _lithuania_road_weather,
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
+        'ee_tarktee_cameras': _estonia_cameras,
         'ee_tarktee_restrictions': _estonia_restrictions,
         'cz_ndic_roads': _cz_ndic_roads,
         'cz_prague_roadworks': _prague_roadworks,
