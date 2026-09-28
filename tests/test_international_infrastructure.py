@@ -435,6 +435,28 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_florence_tram_works({**publication, 'totalFeatures': 4}, now)
 
+    def test_ukpn_streetworks_require_current_approved_work_and_fresh_export(self):
+        now = dt.datetime(2026, 9, 28, 18, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'data_processed': '2026-09-28T17:00:00+00:00',
+                                         'records_count': 4}}}
+        def work(reference, status='granted', start='2026-09-20', end='2026-10-02'):
+            return {'permit_ref': reference, 'permit_status': status,
+                    'actualstartdate': start, 'odp_end_date': end,
+                    'geo_point_2d': {'lon': -0.13, 'lat': 50.83},
+                    'location': 'ASHTON RISE, BRIGHTON',
+                    'works_description': 'Utility Asset Works'}
+        rows = [work('PW00000356654-01'), work('PW00000356655-01', status='refused'),
+                work('PW00000356656-01', start='2026-10-01'),
+                work('PW00000356657-01', end='2026-09-27')]
+        features = feeds._parse_ukpn_streetworks(metadata, rows, now)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(features[0]['properties']['layer'], 'construction')
+        self.assertIn('Published work window', features[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_ukpn_streetworks(metadata, rows, now + 7 * 3600)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_ukpn_streetworks(metadata, rows[:-1], now)
+
     def test_paris_traffic_events_exclude_standing_restrictions_and_future_closures(self):
         now = dt.datetime(2026, 9, 28, 14, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'metas': {'default': {'data_processed': '2026-09-28T13:58:00+00:00'}}}

@@ -74,6 +74,7 @@ TFL_CAMERA_BASE = 'https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/'
 TRAFFICWATCH_BASE = 'https://www.trafficwatchni.com/twni/'
 TRAFFICWATCH_SOURCE = 'https://www.trafficwatchni.com/twni/cameras'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
+UKPN_STREETWORKS_DATASET = 'ukpn-open-streetworks'
 NPG_BASE = 'https://northernpowergrid.opendatasoft.com'
 NGED_OUTAGES_URL = ('https://connecteddata.nationalgrid.co.uk/dataset/'
                     'd6672e1e-c684-4cea-bb78-c7e5248b62a2/resource/'
@@ -3141,6 +3142,57 @@ def _scotland_roadworks():
             _SRWR_CACHE.update({'archive': archive, 'activities': _parse_scotland_archive(body)})
         _SRWR_CACHE['until'] = now + 3600
     return [item for start, end, item in _SRWR_CACHE['activities'] if start <= now <= end]
+
+
+def _parse_ukpn_streetworks(metadata, rows, now=None):
+    now = time.time() if now is None else now
+    meta = (metadata.get('metas') or {}).get('default') or {}
+    published = meta.get('data_processed')
+    processed = _timestamp(published)
+    if processed is None or not -300 <= now - processed <= 6 * 3600:
+        raise ValueError('UK Power Networks streetworks publication is stale')
+    if (not isinstance(rows, list) or not 0 < len(rows) <= 5000
+            or meta.get('records_count') != len(rows)):
+        raise ValueError('UK Power Networks streetworks export is incomplete')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/London')).date()
+    features = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict) or row.get('permit_status') not in {'granted', 'issued'}:
+            continue
+        reference = str(row.get('permit_ref') or '')
+        if not re.fullmatch(r'[A-Za-z0-9-]{8,40}', reference) or reference in seen:
+            continue
+        try:
+            start = dt.date.fromisoformat(row['actualstartdate'])
+            end = dt.date.fromisoformat(row['odp_end_date'])
+            if not start <= today <= end:
+                continue
+            lon = float(row['geo_point_2d']['lon'])
+            lat = float(row['geo_point_2d']['lat'])
+            if not (-2.5 <= lon <= 2 and 50 <= lat <= 54):
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        seen.add(reference)
+        location = _clean(row.get('location'), 120) or 'UK Power Networks work site'
+        work = _clean(row.get('works_description'), 100)
+        features.append(_feature([lon, lat], {
+            'key': f'uk:ukpn:streetworks:{reference}', 'layer': 'construction',
+            'title': f'Utility streetworks · {location}',
+            'detail': ' · '.join(filter(None, (work, f'Published work window through {end:%d %b %Y}'))),
+            'source': 'UK Power Networks · CC BY 4.0',
+            'source_url': f'{UKPN_BASE}/explore/dataset/{UKPN_STREETWORKS_DATASET}/',
+            'updated_at': published,
+        }))
+    return features
+
+
+def _ukpn_streetworks():
+    base = f'{UKPN_BASE}/api/explore/v2.1/catalog/datasets/{UKPN_STREETWORKS_DATASET}'
+    metadata = _get_json(base)
+    rows = _get_json(base + '/exports/json')
+    return _parse_ukpn_streetworks(metadata, rows)
 
 
 def _ods(base, dataset, where):
@@ -6630,6 +6682,7 @@ _FETCHERS = {
         'uk_london': _tfl_disruptions,
         'uk_london_cameras': _tfl_cameras,
         'uk_national_highways_roadworks': _national_highways_roadworks,
+        'uk_ukpn_streetworks': _ukpn_streetworks,
         'uk_ni_trafficwatch': _trafficwatch_roads,
         'uk_wales_incidents': lambda: _wales_feed('incidents'),
         'uk_wales_construction': lambda: _wales_feed('construction'),
