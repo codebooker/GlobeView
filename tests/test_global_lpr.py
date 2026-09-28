@@ -92,6 +92,34 @@ class GlobalPlateReaderTests(unittest.TestCase):
         self.assertEqual(payload['elements'], official)
         self.assertTrue(payload['sourceErrors'])
 
+    def test_milan_area_b_maps_only_listed_active_entry_plate_readers(self):
+        def gate(identifier, status='ATTIVI E SANZIONANTI', point=(9.2, 45.47)):
+            return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': list(point)},
+                    'properties': {'id_amat': identifier, 'nome': '001 - CORELLI', 'stato': status}}
+        catalog = {'type': 'FeatureCollection', 'features': [
+            gate(1), gate(2, 'IN PRE-ESERCIZIO'), gate(3, point=(10, 45.47)), gate(1)]}
+        rows = proxy.milan_area_b_plate_readers(catalog, (9.1, 45.4, 9.3, 45.5))
+        self.assertEqual([row['id'] for row in rows], ['it:milano:areab:1'])
+        self.assertIn('CORELLI', rows[0]['title'])
+        self.assertIn('current operation unverified', rows[0]['detail'])
+        self.assertEqual(rows[0]['source_url'], proxy.MILAN_AREA_B_GATES_SOURCE)
+        with self.assertRaisesRegex(ValueError, 'invalid'):
+            proxy.milan_area_b_plate_readers({'features': []}, (9.1, 45.4, 9.3, 45.5))
+
+    def test_milan_official_gates_survive_deflock_outage(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'geometry': {'type': 'Point', 'coordinates': [9.2, 45.47]},
+             'properties': {'id_amat': 1, 'nome': 'CORELLI',
+                            'stato': 'ATTIVI E SANZIONANTI'}}]}
+        def cached(url, key, ttl=900):
+            if key == 'deflock-index:v1': raise OSError('index unavailable')
+            if key == 'it-milan-area-b-gates:v1': return catalog
+            raise AssertionError(key)
+        with patch.object(proxy, 'cached_deflock_json', side_effect=cached):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((9.1, 45.4, 9.3, 45.5)))
+        self.assertEqual([row['id'] for row in payload['elements']], ['it:milano:areab:1'])
+        self.assertTrue(payload['sourceErrors'])
+
 
 if __name__ == '__main__':
     unittest.main()

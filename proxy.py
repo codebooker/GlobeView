@@ -2307,6 +2307,11 @@ LITHUANIA_TOLL_EQUIPMENT_URL = (
     '?where=1%3D1&outFields=objectid%2Ckelionumeris%2Ckm%2Ctipas%2Cgaliojimopradzia%2Cgaliojimopabaiga'
     '&returnGeometry=true&outSR=4326&f=geojson'
 )
+MILAN_AREA_B_GATES_SOURCE = 'https://dati.comune.milano.it/dataset/ds959-varchi-areab'
+MILAN_AREA_B_GATES_URL = (
+    'https://dati.comune.milano.it/dataset/cebfe28e-a50e-4b81-9d14-7b0d37170f0d/'
+    'resource/c3439df3-673d-45e7-b151-c6d8d70ba0e4/download/areab_varchi.geojson'
+)
 LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
     'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13'
 )
@@ -18590,6 +18595,45 @@ def lithuania_toll_plate_readers(payload, bbox, now=None):
     return elements
 
 
+def milan_area_b_plate_readers(payload, bbox):
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(payload.get('features'), list):
+        raise ValueError('Milan Area B gate catalog is invalid')
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        geom = row.get('geometry') or {}
+        if not isinstance(props, dict) or not isinstance(geom, dict):
+            continue
+        gate_id = props.get('id_amat')
+        coords = geom.get('coordinates')
+        if (not isinstance(gate_id, int) or gate_id < 1 or gate_id in seen
+                or props.get('stato') != 'ATTIVI E SANZIONANTI'
+                or geom.get('type') != 'Point' or not isinstance(coords, (list, tuple))
+                or len(coords) < 2):
+            continue
+        try:
+            lon, lat = float(coords[0]), float(coords[1])
+        except (TypeError, ValueError):
+            continue
+        if (not math.isfinite(lon) or not math.isfinite(lat)
+                or not (9.0 <= lon <= 9.35 and 45.35 <= lat <= 45.6)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(gate_id)
+        name = re.sub(r'^\d+\s*-\s*', '', str(props.get('nome') or '')).strip()[:80]
+        elements.append({
+            'type': 'node', 'id': f'it:milano:areab:{gate_id}', 'lat': lat, 'lon': lon,
+            'title': f'Area B plate reader · {name}' if name else 'Area B plate reader',
+            'detail': 'Entry gate listed active in the city inventory file dated 2023 · current operation unverified',
+            'source': 'Comune di Milano · CC BY', 'source_url': MILAN_AREA_B_GATES_SOURCE,
+        })
+    return elements
+
+
 def cached_dutch_anpr_catalog():
     def load():
         search = fetch_text_url(DUTCH_ANPR_SEARCH_URL, timeout=20)
@@ -18611,12 +18655,14 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                          and min_lat <= 56.5 and max_lat >= 53.8)
     dutch_visible = (min_lon <= 7.3 and max_lon >= 3.1
                      and min_lat <= 53.7 and max_lat >= 50.7)
+    milan_visible = (min_lon <= 9.35 and max_lon >= 9.0
+                     and min_lat <= 45.6 and max_lat >= 45.35)
     source_errors = []
     try:
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18649,7 +18695,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -18670,6 +18716,13 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as error:
             source_errors.append(f'Dutch ANPR plan: {error}')
+    if milan_visible:
+        try:
+            catalog = cached_deflock_json(MILAN_AREA_B_GATES_URL, 'it-milan-area-b-gates:v1', ttl=86400)
+            for item in milan_area_b_plate_readers(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Milan Area B gates: {error}')
     if source_errors:
         print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 
