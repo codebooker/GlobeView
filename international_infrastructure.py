@@ -149,6 +149,7 @@ ESTONIA_RESTRICTIONS_URL = (
 ESTONIA_RESTRICTIONS_SOURCE = 'https://tarktee.transpordiamet.ee/'
 CZ_NDIC_ROADS_URL = 'https://gis.brno.cz/ags3/rest/services/PUBLIC/uzavirky_ndic/MapServer/0/query'
 CZ_NDIC_ROADS_SOURCE = 'https://gis.brno.cz/ost/edas/public/3c5ff253-35f3-4ac0-86ab-db9e06586552'
+PRAGUE_ROADS_URL = 'https://opravujeme.to/api/action'
 BRNO_WAZE_URL = 'https://gis.brno.cz/ags1/rest/services/Hosted/WazeAlerts/FeatureServer/0/query'
 BRNO_WAZE_SOURCE = 'https://gis.brno.cz/ags1/rest/services/Hosted/WazeAlerts/FeatureServer/0'
 BRATISLAVA_WORKS_URL = ('https://services8.arcgis.com/pRlN1m0su5BYaFAS/arcgis/rest/services/'
@@ -168,6 +169,7 @@ _STALE_SECONDS = 900
 _BORDEAUX_FLOW_LOCK = threading.Lock()
 _BORDEAUX_FLOW_CACHE = {'until': 0, 'data': None}
 _PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
+_PRAGUE_ROADS_CACHE = {'until': 0, 'payload': None, 'lock': threading.Lock()}
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
 _NH_ROADWORKS_CACHE = {'until': 0, 'url': '', 'published': '', 'activities': []}
 _FRANCE_SENSOR_REFERENCES = {'until': 0, 'points': {}}
@@ -4534,6 +4536,66 @@ def _cz_ndic_roads():
     return _parse_cz_ndic_roads(pages)
 
 
+def _prague_time(value):
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo('Europe/Prague'))
+        return parsed.timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_prague_roadworks(payload, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(payload, dict) or not isinstance(payload.get('data'), list):
+        raise ValueError('Prague road restriction feed is invalid')
+    rows = payload['data']
+    if not rows or len(rows) > 3000:
+        raise ValueError('Prague road restriction feed has an invalid size')
+    features = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get('state') != 'ACTIVE' or row.get('approved') is not True or row.get('hidden') is True:
+            continue
+        start, end = _prague_time(row.get('start')), _prague_time(row.get('end'))
+        if start is None or end is None or not start <= now <= end:
+            continue
+        try:
+            event_id = int(row['id'])
+            point = [float(row['lon']), float(row['lat'])]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if event_id <= 0 or not (13.9 <= point[0] <= 14.8 and 49.8 <= point[1] <= 50.3):
+            continue
+        road = _clean(row.get('street'), 80)
+        name = _clean(row.get('name'), 140)
+        subject = row.get('subject')
+        layer = 'construction' if subject == 'CONSTRUCTION' else 'incidents'
+        until = dt.datetime.fromtimestamp(end, ZoneInfo('Europe/Prague')).strftime('%d %b %Y')
+        detail = ' · '.join(part for part in ('Scheduled road restriction', name, f'Until {until}') if part)
+        features.append(_feature(point, {
+            'key': f'cz:prague:road:{event_id}', 'layer': layer,
+            'title': ('Roadworks' if layer == 'construction' else 'Road restriction')
+                     + (f' · {road}' if road else ''),
+            'detail': detail,
+            'source': 'City of Prague · opravujeme.to',
+            'source_url': f'https://opravujeme.to/action/{event_id}/',
+        }))
+    return features
+
+
+def _prague_roadworks():
+    cache = _PRAGUE_ROADS_CACHE
+    with cache['lock']:
+        if cache['payload'] is None or time.time() >= cache['until']:
+            payload = _get_json(PRAGUE_ROADS_URL)
+            if not isinstance(payload, dict) or not isinstance(payload.get('data'), list):
+                raise ValueError('Prague road restriction feed is invalid')
+            cache.update(payload=payload, until=time.time() + 1800)
+        payload = cache['payload']
+    return _parse_prague_roadworks(payload)
+
+
 def lithuania_camera_snapshot(camera_id):
     camera_id = str(camera_id)
     if not re.fullmatch(r'\d{1,6}', camera_id):
@@ -4635,6 +4697,7 @@ _FETCHERS = {
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
         'ee_tarktee_restrictions': _estonia_restrictions,
         'cz_ndic_roads': _cz_ndic_roads,
+        'cz_prague_roadworks': _prague_roadworks,
         'cz_brno_waze_alerts': _brno_waze_alerts,
         'sk_bratislava_roadworks': _bratislava_roadworks,
         'is_road_cameras': _iceland_cameras,

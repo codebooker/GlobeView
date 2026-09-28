@@ -294,6 +294,27 @@ class InfrastructureTests(unittest.TestCase):
             self.assertEqual(len(feeds._cz_ndic_roads()), 2)
             self.assertEqual(fetch.call_count, 2)
 
+    def test_prague_planned_works_require_active_valid_approved_records(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        base = {'id': 2444, 'name': '<b>Bridge works</b>', 'street': 'Lipská',
+                'subject': 'CONSTRUCTION', 'state': 'ACTIVE', 'approved': True,
+                'hidden': False, 'start': '2026-09-28T08:00:00',
+                'end': '2026-09-28T17:00:00', 'lon': 14.28, 'lat': 50.11,
+                'investor_phone': 'private contact 5555'}
+        payload = {'count': 6, 'data': [base,
+            {**base, 'id': 2, 'state': 'DONE'},
+            {**base, 'id': 3, 'start': '2026-09-29T08:00:00'},
+            {**base, 'id': 4, 'approved': False},
+            {**base, 'id': 5, 'hidden': True},
+            {**base, 'id': 6, 'lon': 17.0}]}
+        rows = feeds._parse_prague_roadworks(payload, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertEqual(rows[0]['properties']['source_url'], 'https://opravujeme.to/action/2444/')
+        self.assertNotIn('5555', str(rows))
+        self.assertNotIn('<b>', str(rows))
+        self.assertEqual(feeds._parse_prague_roadworks(payload, now + 4 * 3600), [])
+
     def test_brno_waze_reports_separate_works_and_reject_old_reports(self):
         now = dt.datetime(2026, 9, 27, 22, tzinfo=dt.timezone.utc).timestamp()
         def alert(number, kind, subtype='', age=600, coords=None):
