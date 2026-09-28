@@ -157,6 +157,9 @@ PARIS_EVENTS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
                      'datasets/circulation_evenement')
 PARIS_EVENTS_SOURCE = 'https://opendata.paris.fr/explore/dataset/circulation_evenement/'
 BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_geom/'
+VALENCIA_FLOW_SOURCE = 'https://opendata.vlci.valencia.es/en/dataset/estat-transit-temps-real-estado-trafico-tiempo-real'
+VALENCIA_FLOW_URL = ('https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/'
+                     'MapServer/192/query?where=1%3D1&outFields=gid%2Cdenominacion%2Cestado&f=geojson')
 BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                           'service=WFS&version=1.1.0&request=GetFeature&'
                           'typeName=bm_traffic:traffic_live_geom&outputFormat=json&srsName=EPSG:4326')
@@ -232,6 +235,8 @@ _RENNES_FLOW_LOCK = threading.Lock()
 _RENNES_FLOW_CACHE = {'until': 0, 'data': None}
 _BISON_FLOW_LOCK = threading.Lock()
 _BISON_FLOW_CACHE = {'until': 0, 'data': None}
+_VALENCIA_FLOW_LOCK = threading.Lock()
+_VALENCIA_FLOW_CACHE = {'until': 0, 'data': None}
 _BISON_FLOW_TRANSFORMER = Transformer.from_crs('EPSG:2154', 'EPSG:4326', always_xy=True)
 _FLORENCE_TRANSFORMER = Transformer.from_crs('EPSG:3003', 'EPSG:4326', always_xy=True)
 _PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
@@ -1392,11 +1397,54 @@ def bison_flow_snapshot():
             raise
 
 
+def _parse_valencia_flow(payload):
+    rows = payload.get('features') if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(rows, list) or not 100 <= len(rows) <= 2000:
+        raise ValueError('Valencia traffic publication is incomplete')
+    states = {0: 'FLUIDE', 1: 'DENSE', 2: 'EMBOUTEILLE', 3: 'IMPOSSIBLE',
+              5: 'FLUIDE', 6: 'DENSE', 7: 'EMBOUTEILLE', 8: 'IMPOSSIBLE'}
+    features = []
+    for row in rows:
+        try:
+            props = row['properties']
+            state = states.get(int(props['estado']))
+            if not state:
+                continue  # The authority uses 4 and 9 for "no data".
+            segment_id = int(props['gid'])
+            geometry = row['geometry']
+            if geometry['type'] != 'LineString':
+                continue
+            coordinates = [[float(lon), float(lat)] for lon, lat in geometry['coordinates']]
+            if not 2 <= len(coordinates) <= 150 or not all(
+                    -0.65 <= lon <= -0.1 and 39.2 <= lat <= 39.65 for lon, lat in coordinates):
+                continue
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        features.append({'type': 'Feature', 'id': f'valencia:{segment_id}',
+                         'geometry': {'type': 'LineString', 'coordinates': coordinates},
+                         'properties': {'state': state}})
+    if not features:
+        raise ValueError('Valencia traffic publication has no known road states')
+    return {'type': 'FeatureCollection', 'features': features,
+            'source': 'Valencia City Council · CC BY 4.0', 'source_url': VALENCIA_FLOW_SOURCE}
+
+
+def valencia_flow_snapshot():
+    with _VALENCIA_FLOW_LOCK:
+        now = time.time()
+        if now < _VALENCIA_FLOW_CACHE['until'] and _VALENCIA_FLOW_CACHE['data']:
+            return _VALENCIA_FLOW_CACHE['data']
+        data = _parse_valencia_flow(_get_json(VALENCIA_FLOW_URL))
+        _VALENCIA_FLOW_CACHE.update(until=now + 180, data=data)
+        return data
+
+
 def international_traffic_snapshot():
     sources = (('fr_bordeaux', bordeaux_flow_snapshot),
                ('fr_strasbourg', strasbourg_flow_snapshot),
                ('fr_rennes', rennes_flow_snapshot),
-               ('fr_bison', bison_flow_snapshot))
+               ('fr_bison', bison_flow_snapshot),
+               ('es_valencia', valencia_flow_snapshot))
     features, errors, active = [], [], []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
         futures = {executor.submit(loader): name for name, loader in sources}

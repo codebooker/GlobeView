@@ -3058,7 +3058,7 @@
 
   async function loadInternationalTraffic() {
     if (!enabled.traffic || document.hidden || !styleReady || map.getZoom() < 6) return;
-    if (!regionVisible({ bounds: { minLon: -5.5, maxLon: 9.8, minLat: 41.2, maxLat: 51.3 } }, currentBounds())) return;
+    if (!regionVisible({ bounds: { minLon: -10, maxLon: 9.8, minLat: 36, maxLat: 51.3 } }, currentBounds())) return;
     if (Date.now() - (fetchedAt.get('traffic') || 0) < 5 * 60 * 1000) return;
     requests.get('traffic')?.abort();
     const controller = new AbortController();
@@ -3196,7 +3196,7 @@
       });
       map.addLayer({ id: 'gm-traffic-layer', type: 'raster', source: 'gm-traffic', paint: { 'raster-opacity': 0.62, 'raster-fade-duration': 0 }, layout: { visibility: 'none' } });
       map.addSource('gm-international-traffic', { type: 'geojson', data: EMPTY,
-        attribution: '<a href="https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3">Bordeaux Métropole</a> · <a href="https://opendata.strasbourg.eu/explore/dataset/sirac_flux_trafic/">Eurométropole de Strasbourg</a> · <a href="https://transport.data.gouv.fr/datasets/etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede">Bison Futé</a> · Licence Ouverte; <a href="https://data.rennesmetropole.fr/explore/dataset/etat-du-trafic-en-temps-reel/">Rennes Métropole</a> · ODbL; <a href="https://www.data.gouv.fr/datasets/etat-du-trafic-de-la-metropole-de-lyon-disponibilites-temps-reel">Métropole de Lyon</a> · public domain' });
+        attribution: '<a href="https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3">Bordeaux Métropole</a> · <a href="https://opendata.strasbourg.eu/explore/dataset/sirac_flux_trafic/">Eurométropole de Strasbourg</a> · <a href="https://transport.data.gouv.fr/datasets/etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede">Bison Futé</a> · Licence Ouverte; <a href="https://data.rennesmetropole.fr/explore/dataset/etat-du-trafic-en-temps-reel/">Rennes Métropole</a> · ODbL; <a href="https://www.data.gouv.fr/datasets/etat-du-trafic-de-la-metropole-de-lyon-disponibilites-temps-reel">Métropole de Lyon</a> · public domain; <a href="https://opendata.vlci.valencia.es/en/dataset/estat-transit-temps-real-estado-trafico-tiempo-real">Ajuntament de València</a> · CC BY 4.0' });
       map.addLayer({ id: 'gm-international-traffic-layer', type: 'line', source: 'gm-international-traffic',
         minzoom: 6, layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': ['match', ['get', 'state'], 'FLUIDE', '#54bd87', 'DENSE', '#e6ad54',

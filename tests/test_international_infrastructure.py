@@ -27,6 +27,23 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_valencia_flow_uses_current_segment_states_and_omits_no_data(self):
+        def row(index, state):
+            return {'geometry': {'type': 'LineString', 'coordinates':
+                                 [[-0.4, 39.47], [-0.39, 39.48]]},
+                    'properties': {'gid': index, 'estado': state}}
+
+        payload = {'type': 'FeatureCollection',
+                   'features': [row(index, 0) for index in range(94)] +
+                               [row(94, 1), row(95, 2), row(96, 3), row(97, 5),
+                                row(98, 4), row(99, 9)]}
+        result = feeds._parse_valencia_flow(payload)
+        self.assertEqual(len(result['features']), 98)
+        self.assertEqual([feature['properties']['state'] for feature in result['features'][-4:]],
+                         ['DENSE', 'EMBOUTEILLE', 'IMPOSSIBLE', 'FLUIDE'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_valencia_flow({'type': 'FeatureCollection', 'features': payload['features'][:50]})
+
     def test_cold_road_snapshot_returns_completed_sources_while_others_load(self):
         release_slow = threading.Event()
         fast_done = threading.Event()
@@ -318,12 +335,13 @@ class InfrastructureTests(unittest.TestCase):
         with patch.object(feeds, 'bordeaux_flow_snapshot', side_effect=OSError('offline')), \
                 patch.object(feeds, 'strasbourg_flow_snapshot', return_value={'features': [segment]}), \
                 patch.object(feeds, 'rennes_flow_snapshot', side_effect=OSError('offline')), \
-                patch.object(feeds, 'bison_flow_snapshot', side_effect=OSError('offline')):
+                patch.object(feeds, 'bison_flow_snapshot', side_effect=OSError('offline')), \
+                patch.object(feeds, 'valencia_flow_snapshot', side_effect=OSError('offline')):
             result = feeds.international_traffic_snapshot()
         self.assertEqual(result['features'], [segment])
         self.assertEqual(result['sources'], ['fr_strasbourg'])
         self.assertEqual({error.split(':', 1)[0] for error in result['sourceErrors']},
-                         {'fr_bordeaux', 'fr_rennes', 'fr_bison'})
+                         {'fr_bordeaux', 'fr_rennes', 'fr_bison', 'es_valencia'})
 
     def test_bison_flow_joins_located_stations_and_rejects_stale_states(self):
         header = ('code_pme;source;source_2;code_insee_commune;axe;pr_debut;'
