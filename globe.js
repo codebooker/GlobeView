@@ -140,6 +140,7 @@
   const refs = new Map(Object.keys(POINT).map(type => [type, new Map()]));
   const counts = new Map();
   const requests = new Map();
+  const requestStartedAt = new Map();
   const arcgisQueryKeys = new Map();
   const fetchedAt = new Map();
   const roadCache = new Map();
@@ -1394,6 +1395,7 @@
     requests.get(type)?.abort();
     const controller = new AbortController();
     requests.set(type, controller);
+    requestStartedAt.set(type, Date.now());
     const bounds = currentBounds();
     const internationalVisible = ['signs', 'incidents', 'construction', 'cameras', 'sensors'].includes(type) && [
       { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } },
@@ -2145,6 +2147,7 @@
     requests.get(type)?.abort();
     const controller = new AbortController();
     requests.set(type, controller);
+    requestStartedAt.set(type, Date.now());
     const path = { emergency: '/emergency', sensors: '/sensors', temperature: '/temperature-stations', lpr: '/lpr' }[type];
     let paths = [path];
     if (type === 'lpr') {
@@ -3949,6 +3952,10 @@
     if (document.hidden) return;
     for (const type of Object.keys(POINT)) {
       if (!enabled[type] || zoomHint(type)) continue;
+      // A slow road response must get a chance to finish before the next tick.
+      // Viewport changes still start a fresh request through scheduleViewportLoad.
+      const started = requestStartedAt.get(type) || 0;
+      if (started > (fetchedAt.get(type) || 0) && Date.now() - started < 90000) continue;
       const refreshMs = (type === 'govair' || type === 'civair') && map.getZoom() < 6 ? 900000 : POINT[type].refreshMs;
       if (Date.now() - (fetchedAt.get(type) || 0) >= refreshMs) loadLayer(type);
     }
