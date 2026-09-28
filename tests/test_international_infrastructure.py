@@ -1087,8 +1087,7 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_madrid_cameras(root, NOW)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
-        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
-                         'https://informo.madrid.es/cameras/Camara06303.jpg')
+        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
 
     def test_tfl_cameras_require_available_official_image_and_location(self):
         def camera(camera_id, image=None, available='true', lat=51.5):
@@ -1220,8 +1219,9 @@ class InfrastructureTests(unittest.TestCase):
         cameras = [{'properties': {'key': f'es:madrid:camera:{camera_id}'}}
                    for camera_id in ('06303', '06304', '06305')]
         previous = dict(feeds._MADRID_CAMERA_HEALTH)
+        previous_stills = dict(feeds._MADRID_CAMERA_STILLS)
         try:
-            feeds._MADRID_CAMERA_HEALTH.update(until=0, unavailable=set())
+            feeds._MADRID_CAMERA_HEALTH.clear()
             def image(request, timeout):
                 self.assertNotEqual(request.get_method(), 'HEAD')
                 body = (b'not a jpeg' if request.full_url.endswith('06304.jpg')
@@ -1232,9 +1232,38 @@ class InfrastructureTests(unittest.TestCase):
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=image):
                 self.assertEqual(feeds._madrid_unavailable_cameras(cameras),
                                  {'es:madrid:camera:06304', 'es:madrid:camera:06305'})
+            with patch.object(feeds.time, 'time', return_value=NOW + 60), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=OSError('offline')):
+                self.assertEqual(feeds.madrid_camera_snapshot('06303')[0], madrid_jpeg_header())
         finally:
             feeds._MADRID_CAMERA_HEALTH.clear()
             feeds._MADRID_CAMERA_HEALTH.update(previous)
+            feeds._MADRID_CAMERA_STILLS.clear()
+            feeds._MADRID_CAMERA_STILLS.update(previous_stills)
+
+    def test_madrid_camera_audit_checks_only_visible_markers(self):
+        cameras = [feeds._feature([lon, 40.42], {
+            'key': f'es:madrid:camera:{camera_id}', 'layer': 'cameras',
+            'snapshot_url': f'/madrid-camera/{camera_id}',
+        }) for lon, camera_id in ((-3.7, '06303'), (-3.5, '06304'))]
+        previous = dict(feeds._MADRID_CAMERA_HEALTH)
+        previous_stills = dict(feeds._MADRID_CAMERA_STILLS)
+        try:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_STILLS.clear()
+            with patch.object(feeds, '_snapshot', return_value={
+                    'sources': {'es_madrid_cameras': cameras}, 'errors': []}), \
+                    patch.object(feeds, '_dgt_unavailable_cameras', return_value=set()), \
+                    patch.object(feeds, '_tfl_unavailable_cameras', return_value=set()), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=FileNotFoundError) as open_image:
+                feeds.road_snapshot('cameras', (-3.75, 40.35, -3.65, 40.5))
+            self.assertEqual(open_image.call_count, 1)
+            self.assertIn('06303', open_image.call_args.args[0].full_url)
+        finally:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_HEALTH.update(previous)
+            feeds._MADRID_CAMERA_STILLS.clear()
+            feeds._MADRID_CAMERA_STILLS.update(previous_stills)
 
     def test_lyon_cameras_require_fresh_official_stills(self):
         observed = dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat()
@@ -1263,6 +1292,7 @@ class InfrastructureTests(unittest.TestCase):
             self.assertEqual(feeds.lyon_camera_snapshot('CWL9018')[1], 'image/jpeg')
 
     def test_madrid_camera_proxy_validates_id_and_image(self):
+        feeds._MADRID_CAMERA_STILLS.clear()
         class Response(io.BytesIO):
             url = 'https://informo.madrid.es/cameras/Camara06303.jpg'
             headers = {'Content-Type': 'image/jpeg', 'Content-Length': '100000',
@@ -1316,19 +1346,23 @@ class InfrastructureTests(unittest.TestCase):
             'key': f'es:madrid:camera:{camera_id}', 'layer': 'cameras',
         }) for camera_id in ('06303', '09305', '04301', '07313')]
         previous = dict(feeds._MADRID_CAMERA_HEALTH)
+        previous_stills = dict(feeds._MADRID_CAMERA_STILLS)
         def load(request, timeout):
             if '07313' in request.full_url:
                 raise FileNotFoundError('missing camera')
             return Response(request.full_url)
         try:
-            feeds._MADRID_CAMERA_HEALTH['until'] = 0
+            feeds._MADRID_CAMERA_HEALTH.clear()
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=load):
                 bad = feeds._madrid_unavailable_cameras(cameras)
             self.assertEqual(bad, {'es:madrid:camera:09305', 'es:madrid:camera:04301',
                                    'es:madrid:camera:07313'})
         finally:
+            feeds._MADRID_CAMERA_HEALTH.clear()
             feeds._MADRID_CAMERA_HEALTH.update(previous)
+            feeds._MADRID_CAMERA_STILLS.clear()
+            feeds._MADRID_CAMERA_STILLS.update(previous_stills)
 
     def test_failed_madrid_still_is_removed_from_next_map_response(self):
         camera = feeds._feature([-3.7, 40.42], {
@@ -1337,7 +1371,7 @@ class InfrastructureTests(unittest.TestCase):
         })
         previous = dict(feeds._MADRID_CAMERA_HEALTH)
         try:
-            feeds._MADRID_CAMERA_HEALTH.update(until=NOW + 900, unavailable=set())
+            feeds._MADRID_CAMERA_HEALTH.clear()
             with patch.object(feeds.urllib.request, 'urlopen', side_effect=FileNotFoundError):
                 with self.assertRaises(FileNotFoundError):
                     feeds.madrid_camera_snapshot('01315')

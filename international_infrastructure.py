@@ -757,7 +757,6 @@ def _parse_madrid_cameras(root, published):
             'title': _clean(data.get('Nombre'), 110) or f'Madrid road camera {camera_id}',
             'detail': 'Latest available still · normally updated every 5 min',
             'snapshot_url': f'/madrid-camera/{camera_id}',
-            'snapshot_fallback_url': _madrid_camera_url(camera_id),
             'snapshot_refresh_ms': 300000,
             'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_CAMERAS_SOURCE,
             'updated_at': published,
@@ -767,14 +766,14 @@ def _parse_madrid_cameras(root, published):
 
 def _madrid_cameras():
     root, published = _madrid_xml('CCTV.kml')
-    cameras = _parse_madrid_cameras(root, published)
-    unavailable = _madrid_unavailable_cameras(cameras)
-    return [camera for camera in cameras if camera['properties']['key'] not in unavailable]
+    return _parse_madrid_cameras(root, published)
 
 
-_MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
+_MADRID_CAMERA_HEALTH = {}
 _MADRID_CAMERA_HEALTH_LOCK = threading.Lock()
+_MADRID_CAMERA_AUDIT_LOCK = threading.Lock()
 _MADRID_CAMERA_PLACEHOLDER_BYTES = 17803
+_MADRID_CAMERA_STILLS = {}
 
 
 def _jpeg_dimensions(image):
@@ -814,8 +813,8 @@ def _madrid_camera_image_available(image):
 
 def _mark_madrid_camera_unavailable(camera_id):
     with _MADRID_CAMERA_HEALTH_LOCK:
-        _MADRID_CAMERA_HEALTH['unavailable'] = (
-            set(_MADRID_CAMERA_HEALTH['unavailable']) | {f'es:madrid:camera:{camera_id}'})
+        _MADRID_CAMERA_HEALTH[camera_id] = (time.time() + 60, False)
+        _MADRID_CAMERA_STILLS.pop(camera_id, None)
 
 
 def _madrid_camera_url(camera_id):
@@ -841,33 +840,56 @@ def _madrid_camera_headers_available(response, now):
 
 
 def _madrid_unavailable_cameras(cameras):
-    with _MADRID_CAMERA_HEALTH_LOCK:
-        now = time.time()
-        if now < _MADRID_CAMERA_HEALTH['until']:
-            return _MADRID_CAMERA_HEALTH['unavailable']
+    camera_ids = {item['properties']['key'].rsplit(':', 1)[-1]
+                  for item in cameras if item['properties']['key'].startswith('es:madrid:camera:')}
+    if not camera_ids:
+        return set()
+    with _MADRID_CAMERA_AUDIT_LOCK:
+        with _MADRID_CAMERA_HEALTH_LOCK:
+            now = time.time()
+            pending = [camera_id for camera_id in camera_ids
+                       if _MADRID_CAMERA_HEALTH.get(camera_id, (0, False))[0] <= now]
 
-        def unavailable(camera):
-            key = camera['properties']['key']
-            camera_id = key.rsplit(':', 1)[-1]
+        def available(camera_id):
             request = urllib.request.Request(_madrid_camera_url(camera_id),
                                              headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
             try:
                 with urllib.request.urlopen(request, timeout=8) as response:
-                    usable = (_madrid_camera_headers_available(response, now)
-                              and _madrid_camera_image_available(response.read(16 * 1024)))
-                    return None if usable else key
+                    if not _madrid_camera_headers_available(response, now):
+                        return camera_id, None
+                    image = response.read(2_000_001)
+                    if len(image) > 2_000_000 or not _madrid_camera_image_available(image):
+                        return camera_id, None
+                    return camera_id, image
             except (OSError, ValueError):
-                return key
+                return camera_id, None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-            unavailable_ids = {key for key in executor.map(unavailable, cameras) if key}
-        _MADRID_CAMERA_HEALTH.update(until=now + 300, unavailable=unavailable_ids)
-        return unavailable_ids
+        if pending:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+                results = list(executor.map(available, pending))
+        else:
+            results = []
+        # Serve the same verified still that made a marker eligible. A camera can
+        # switch to the provider's unavailable JPEG between the audit and a click.
+        with _MADRID_CAMERA_HEALTH_LOCK:
+            expires = time.time() + 300
+            for camera_id, image in results:
+                _MADRID_CAMERA_HEALTH[camera_id] = (expires, image is not None)
+                if image is not None:
+                    _MADRID_CAMERA_STILLS[camera_id] = (expires, image)
+                else:
+                    _MADRID_CAMERA_STILLS.pop(camera_id, None)
+            return {f'es:madrid:camera:{camera_id}' for camera_id in camera_ids
+                    if not _MADRID_CAMERA_HEALTH.get(camera_id, (0, False))[1]}
 
 
 def madrid_camera_snapshot(camera_id):
     if not re.fullmatch(r'\d{4,6}', str(camera_id)):
         raise ValueError('Invalid Madrid camera ID')
+    with _MADRID_CAMERA_HEALTH_LOCK:
+        cached = _MADRID_CAMERA_STILLS.get(camera_id)
+        if cached and cached[0] > time.time():
+            return cached[1], 'image/jpeg'
     request = urllib.request.Request(_madrid_camera_url(camera_id), headers={
         'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
     try:
@@ -6134,8 +6156,7 @@ def road_snapshot(layer, bbox=None):
     if layer == 'cameras':
         unavailable = _dgt_unavailable_cameras(features)
         unavailable.update(_tfl_unavailable_cameras(features))
-        with _MADRID_CAMERA_HEALTH_LOCK:
-            unavailable.update(_MADRID_CAMERA_HEALTH['unavailable'])
+        unavailable.update(_madrid_unavailable_cameras(features))
         with _LUXEMBOURG_CAMERA_HEALTH_LOCK:
             unavailable.update(_LUXEMBOURG_CAMERA_HEALTH['unavailable'])
         features = [item for item in features if item['properties']['key'] not in unavailable]
