@@ -76,6 +76,23 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_vejle_roadworks(dict(payload, exceededTransferLimit=True), now)
 
+    def test_vejle_roadworks_uses_public_active_layer_when_open_data_fails(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        payload = {'spatialReference': {'wkid': 4326}, 'features': [{
+            'attributes': {'serialnumber': '20260001', 'fromdate': '2026-09-27',
+                           'todate': '2026-09-29', 'datestatus': 'Aktiv',
+                           'externalstatustranslated': 'Tilladelse',
+                           'traficstatus': 'Trafikudmeldt'},
+            'geometry': {'rings': [[[9.5, 55.7], [9.501, 55.7],
+                                    [9.501, 55.701], [9.5, 55.7]]]}}]}
+        with patch.object(feeds, '_get_json', side_effect=[urllib.error.HTTPError(
+                feeds.VEJLE_WORKS_URL, 500, 'Server error', None, None), payload]) as get_json, \
+                patch.object(feeds.time, 'time', return_value=now):
+            rows = feeds._vejle_roadworks()
+        self.assertEqual(rows[0]['properties']['key'], 'dk:vejle:works:20260001')
+        self.assertEqual(get_json.call_count, 2)
+        self.assertTrue(get_json.call_args.args[0].startswith(feeds.VEJLE_WORKS_FALLBACK_URL))
+
     def test_copenhagen_roadworks_filter_dates_road_effect_and_duplicate_shapes(self):
         now = 1790611200
 

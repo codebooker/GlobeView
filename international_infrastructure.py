@@ -35,6 +35,8 @@ DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
 COPENHAGEN_WORKS_SOURCE = 'https://www.opendata.dk/city-of-copenhagen/raden-over-vej-med-historik'
 VEJLE_WORKS_URL = 'https://kortservice.vejle.dk/gis/rest/services/OPENDATA/Vejle/MapServer/25/query'
+VEJLE_WORKS_FALLBACK_URL = ('https://kortservice.vejle.dk/gis/rest/services/'
+                            'Vej_Trafik/Vejdrift_simplekort/MapServer/33/query')
 VEJLE_WORKS_SOURCE = 'https://www.opendata.dk/city-of-vejle/gravetilladelser1'
 ZAGREB_CLOSURES_URL = ('https://data.zagreb.hr/dataset/7ff5514d-0a1f-4f6c-86bd-8ed9a3c55eee/'
                        'resource/e48b6992-add0-45a1-ae95-c5d97d8db259/download/data.json')
@@ -521,7 +523,13 @@ def _vejle_roadworks():
                       'datestatus,traficstatus'),
         'returnGeometry': 'true', 'outSR': 4326, 'f': 'json',
     })
-    return _parse_vejle_roadworks(_get_json(f'{VEJLE_WORKS_URL}?{query}'))
+    error = None
+    for url in (VEJLE_WORKS_URL, VEJLE_WORKS_FALLBACK_URL):
+        try:
+            return _parse_vejle_roadworks(_get_json(f'{url}?{query}'))
+        except (OSError, ValueError) as exc:
+            error = exc
+    raise RuntimeError('Vejle roadwork layers are unavailable') from error
 
 
 def _parse_zagreb_closures(rows, published, now=None):
