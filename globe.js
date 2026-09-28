@@ -1256,17 +1256,19 @@
     }
     const point = map.project(coordinates);
     const visibleLeft = window.innerWidth > 900 && !document.body.classList.contains('panel-collapsed') ? 288 : 0;
-    // Side anchors can push a 315 px popup off a phone-sized map. Keep mobile
-    // popups centered over or under their point instead.
+    // Keep phone popups inside the map even when their marker is near an edge.
     const verticalAnchor = point.y < map.getCanvas().clientHeight * (type === 'webcams' || type === 'cameras' ? 0.6 : 0.5)
       ? 'top' : 'bottom';
-    const anchor = map.getCanvas().clientWidth < 600 ? verticalAnchor
+    const mobileWidth = map.getCanvas().clientWidth;
+    const mobileAnchor = point.x < 174 ? `${verticalAnchor}-left`
+      : point.x > mobileWidth - 174 ? `${verticalAnchor}-right` : verticalAnchor;
+    const anchor = mobileWidth < 600 ? mobileAnchor
       : point.x < visibleLeft + 180 ? 'left' : point.x > map.getCanvas().clientWidth - 180 ? 'right'
         : verticalAnchor;
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '315px', offset: 14, anchor })
       .setLngLat(coordinates).setDOMContent(root).addTo(map);
-    if (type === 'cameras' && (anchor === 'top' || anchor === 'bottom')) {
-      const room = anchor === 'top' ? map.getCanvas().clientHeight - point.y : point.y;
+    if (type === 'cameras' && (anchor.startsWith('top') || anchor.startsWith('bottom'))) {
+      const room = anchor.startsWith('top') ? map.getCanvas().clientHeight - point.y : point.y;
       popup.getElement().querySelector('.maplibregl-popup-content').style.maxHeight = `${Math.max(150, Math.floor(room - 30))}px`;
     }
     activePointPopup = popup;
@@ -1459,9 +1461,14 @@
       const ref = String(p.key || `abroad:${type}:${lat}:${lon}`);
       if (seen.has(ref)) continue;
       seen.add(ref);
+      const updatedAt = Number.isFinite(p.updated_at) && p.updated_at > 1e9
+        ? `${new Date(p.updated_at * 1000).toLocaleString('en-US', {
+          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC'
+        })} UTC`
+        : p.updated_at;
       records.set(ref, {
         title: p.title || POINT[type].label,
-        detail: [p.detail, p.updated_at ? `Updated ${p.updated_at}` : ''].filter(Boolean).join(' · '),
+        detail: [p.detail, updatedAt ? `Updated ${updatedAt}` : ''].filter(Boolean).join(' · '),
         source: p.source || 'Public road authority', sourceUrl: p.source_url,
         signImage: type === 'signs' ? p.image_data || '' : '',
         snapshotUrl: type === 'cameras' ? p.snapshot_url || '' : '',
