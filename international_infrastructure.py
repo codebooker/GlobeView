@@ -4623,6 +4623,7 @@ _ESTONIA_CAMERA_INDEX = {'until': 0, 'entries': {}, 'lock': threading.Lock()}
 _ESTONIA_CAMERA_LOCATIONS = {'until': 0, 'source': None, 'payload': None,
                              'read_at': 0, 'lock': threading.Lock()}
 _ESTONIA_VMS_SITES = {'until': 0, 'root': None, 'read_at': 0, 'lock': threading.Lock()}
+_ESTONIA_WEATHER_SITES = {'until': 0, 'root': None, 'read_at': 0, 'lock': threading.Lock()}
 
 
 def _estonia_xml(path):
@@ -4859,6 +4860,74 @@ def _estonia_signs():
         sites_root, read_at = cache['root'], cache['read_at']
     messages_root = _estonia_xml('vms')
     return _parse_estonia_signs(sites_root, messages_root, read_at)
+
+
+def _parse_estonia_weather(sites_root, weather_root, sites_read_at, now=None):
+    now = time.time() if now is None else now
+    _estonia_publication_time(sites_root, sites_read_at)
+    _estonia_publication_time(weather_root, now)
+    sites = {}
+    for table in sites_root.findall('.//{*}measurementSiteTable'):
+        if table.get('id') != 'WEATHER_STATION_SITES':
+            continue
+        for record in table.findall('{*}measurementSiteRecord'):
+            station_id = record.get('id')
+            try:
+                lat = float(record.findtext('.//{*}pointCoordinates/{*}latitude'))
+                lon = float(record.findtext('.//{*}pointCoordinates/{*}longitude'))
+            except (TypeError, ValueError):
+                continue
+            if station_id and 57.4 <= lat <= 59.9 and 21.5 <= lon <= 28.3:
+                name = _clean(record.findtext('.//{*}measurementSiteName/{*}values/{*}value'), 90)
+                sites[station_id] = ([lon, lat], name)
+    features = []
+    for measurement in weather_root.findall('.//{*}siteMeasurements'):
+        reference = measurement.find('{*}measurementSiteReference')
+        station_id = reference.get('id') if reference is not None else None
+        if station_id not in sites:
+            continue
+        observed = _timestamp(measurement.findtext('{*}measurementTimeDefault'))
+        if observed is None or not -300 <= now - observed <= 30 * 60:
+            continue
+        def value(path, low, high):
+            try:
+                number = float(measurement.findtext(path))
+            except (TypeError, ValueError):
+                return None
+            return number if math.isfinite(number) and low <= number <= high else None
+        air = value('.//{*}airTemperature/{*}temperature', -80, 60)
+        road = value('.//{*}roadSurfaceTemperature/{*}temperature', -80, 90)
+        wind = value('.//{*}windSpeed/{*}speed', 0, 100)
+        surface = _clean(measurement.findtext('.//{*}weatherRelatedRoadConditionType'), 50)
+        if air is None and road is None and wind is None and not surface:
+            continue
+        point, name = sites[station_id]
+        observed_label = dt.datetime.fromtimestamp(observed, dt.timezone.utc).strftime('%H:%M UTC')
+        detail = [f'Air {air:g}°C' if air is not None else '',
+                  f'Road {road:g}°C' if road is not None else '',
+                  surface.replace('slipperyRoad', 'Slippery').replace('snowOnTheRoad', 'Snow on road').capitalize(),
+                  f'Wind {wind:g} m/s' if wind is not None else '', observed_label]
+        features.append(_feature(point, {
+            'key': f'ee:tarktee:weather:{station_id}', 'layer': 'sensors',
+            'title': f'Road weather · {name}' if name else 'Road weather station',
+            'detail': ' · '.join(item for item in detail if item),
+            'source': 'Estonian Transport Administration · Tark Tee',
+            'source_url': ESTONIA_RESTRICTIONS_SOURCE,
+        }))
+    return features
+
+
+def _estonia_weather():
+    cache = _ESTONIA_WEATHER_SITES
+    with cache['lock']:
+        if time.time() >= cache['until']:
+            read_at = time.time()
+            root = _estonia_xml('measurementSites')
+            _estonia_publication_time(root, read_at)
+            cache.update(until=time.time() + 6 * 3600, root=root, read_at=read_at)
+        sites_root, read_at = cache['root'], cache['read_at']
+    weather_root = _estonia_xml('weatherData')
+    return _parse_estonia_weather(sites_root, weather_root, read_at)
 
 
 def _parse_estonia_restrictions(payload, now=None):
@@ -5304,6 +5373,7 @@ _FETCHERS = {
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
         'ee_tarktee_cameras': _estonia_cameras,
         'ee_tarktee_signs': _estonia_signs,
+        'ee_tarktee_weather': _estonia_weather,
         'ee_tarktee_restrictions': _estonia_restrictions,
         'cz_ndic_roads': _cz_ndic_roads,
         'cz_prague_roadworks': _prague_roadworks,

@@ -470,6 +470,35 @@ class InfrastructureTests(unittest.TestCase):
         self.assertIn('USE CAUTION', rows[0]['properties']['detail'])
         self.assertNotIn('172.16.0.5', str(rows))
 
+    def test_estonia_weather_joins_recent_station_measurements(self):
+        published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).isoformat()
+        old = dt.datetime.fromtimestamp(NOW - 3600, dt.timezone.utc).isoformat()
+        sites = ET.fromstring(f'''<d2LogicalModel><payloadPublication>
+          <publicationTime>{published}</publicationTime>
+          <measurementSiteTable id="WEATHER_STATION_SITES">
+          <measurementSiteRecord id="station-1"><measurementSiteName><values><value>Maltsa</value>
+          </values></measurementSiteName><measurementSiteLocation><pointByCoordinates>
+          <pointCoordinates><latitude>58.13</latitude><longitude>25.99</longitude>
+          </pointCoordinates></pointByCoordinates></measurementSiteLocation>
+          </measurementSiteRecord></measurementSiteTable></payloadPublication></d2LogicalModel>''')
+        data = ET.fromstring(f'''<d2LogicalModel><payloadPublication>
+          <publicationTime>{published}</publicationTime>
+          <siteMeasurements><measurementSiteReference id="station-1"/>
+          <measurementTimeDefault>{published}</measurementTimeDefault>
+          <measuredValue><measuredValue><basicData><temperature><airTemperature>
+          <temperature>7.3</temperature></airTemperature></temperature>
+          <roadSurfaceConditionMeasurements><roadSurfaceTemperature><temperature>11.8</temperature>
+          </roadSurfaceTemperature></roadSurfaceConditionMeasurements>
+          <weatherRelatedRoadConditionType>dry</weatherRelatedRoadConditionType>
+          </basicData></measuredValue></measuredValue></siteMeasurements>
+          <siteMeasurements><measurementSiteReference id="station-1"/>
+          <measurementTimeDefault>{old}</measurementTimeDefault></siteMeasurements>
+          </payloadPublication></d2LogicalModel>''')
+        rows = feeds._parse_estonia_weather(sites, data, NOW, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [25.99, 58.13])
+        self.assertIn('Air 7.3°C · Road 11.8°C · Dry', rows[0]['properties']['detail'])
+
     def test_czech_ndic_roads_use_current_records_and_complete_pages(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def event(number, category='Práce na silnici', start='27.09.2026 19:00',
