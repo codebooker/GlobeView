@@ -135,6 +135,12 @@ STRASBOURG_FLOW_BASE = ('https://opendata.strasbourg.eu/api/explore/v2.1/catalog
 RENNES_FLOW_SOURCE = 'https://data.rennesmetropole.fr/explore/dataset/etat-du-trafic-en-temps-reel/'
 RENNES_FLOW_BASE = ('https://data.rennesmetropole.fr/api/explore/v2.1/catalog/'
                     'datasets/etat-du-trafic-en-temps-reel')
+BISON_FLOW_SOURCE = ('https://transport.data.gouv.fr/datasets/'
+                     'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
+BISON_FLOW_BASE = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/'
+BISON_FLOW_CITIES = ('TraficCaen', 'TraficDirmc', 'TraficErato', 'TraficGentiane',
+                     'TraficHyrondelle', 'TraficLimoges', 'TraficLyon', 'TraficMarius',
+                     'TraficRouen')
 BORDEAUX_SIGNS_BASE = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/'
                       'catalog/datasets/pc_pmv_p')
 BORDEAUX_SIGNS_SOURCE = 'https://datahub.bordeaux-metropole.fr/explore/dataset/pc_pmv_p/'
@@ -218,6 +224,9 @@ _STRASBOURG_FLOW_LOCK = threading.Lock()
 _STRASBOURG_FLOW_CACHE = {'until': 0, 'data': None}
 _RENNES_FLOW_LOCK = threading.Lock()
 _RENNES_FLOW_CACHE = {'until': 0, 'data': None}
+_BISON_FLOW_LOCK = threading.Lock()
+_BISON_FLOW_CACHE = {'until': 0, 'data': None}
+_BISON_FLOW_TRANSFORMER = Transformer.from_crs('EPSG:2154', 'EPSG:4326', always_xy=True)
 _PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
 _PRAGUE_ROADS_CACHE = {'until': 0, 'payload': None, 'lock': threading.Lock()}
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
@@ -1230,12 +1239,142 @@ def rennes_flow_snapshot():
             raise
 
 
+def _bison_local_timestamp(value):
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo('Europe/Paris'))
+        return parsed.timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_bison_stations(body):
+    rows = list(csv.reader(io.StringIO(body.decode('utf-8-sig')), delimiter=';'))
+    expected = ('code_pme', 'source', 'source_2', 'code_insee_commune', 'axe',
+                'pr_debut', 'abscisse_debut', 'pr_fin', 'abscisse_fin',
+                'sens_gestionnaire', 'sens_cardinal', 'sens_migratoire',
+                'sens_giratoire', 'longueur', 'nb_voies', 'x_deb', 'y_deb',
+                'x_fin', 'y_fin', 'code_traficolor')
+    if not rows or tuple(rows[0]) != expected:
+        raise ValueError('Bison Futé station table has changed')
+    # The current CSV header includes code_insee_commune but every data row
+    # omits that field. Accept a corrected 20-column row as well.
+    stations = {}
+    for values in rows[1:]:
+        if len(values) == 19:
+            fields = dict(zip((name for name in expected if name != 'code_insee_commune'), values))
+        elif len(values) == 20:
+            fields = dict(zip(expected, values))
+        else:
+            continue
+        try:
+            points = [float(fields[name]) for name in ('x_deb', 'y_deb', 'x_fin', 'y_fin')]
+            length = math.hypot(points[0] - points[2], points[1] - points[3])
+            if not 10 <= length <= 3000:
+                continue
+            start = _BISON_FLOW_TRANSFORMER.transform(points[0], points[1])
+            end = _BISON_FLOW_TRANSFORMER.transform(points[2], points[3])
+            if not all(-5.5 <= lon <= 9.8 and 41.2 <= lat <= 51.3 for lon, lat in (start, end)):
+                continue
+            station_id = fields['code_pme']
+            if not re.fullmatch(r'[A-Za-z0-9.\-]{2,32}', station_id):
+                continue
+            stations[station_id] = [list(start), list(end)]
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+    if not stations:
+        raise ValueError('Bison Futé station table has no usable locations')
+    return stations
+
+
+def _parse_bison_flow(root, stations, city, now=None):
+    now = time.time() if now is None else now
+    if root.tag.rsplit('}', 1)[-1] != 'd2LogicalModel':
+        raise ValueError('Bison Futé traffic publication is invalid')
+    published = _bison_local_timestamp(root.findtext('.//{*}publicationTime'))
+    if published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('Bison Futé traffic publication is stale')
+    states = {'freeFlow': 'FLUIDE', 'heavy': 'DENSE',
+              'congested': 'EMBOUTEILLE', 'impossible': 'IMPOSSIBLE'}
+    features = []
+    for site in root.findall('.//{*}siteMeasurements'):
+        reference = site.find('.//{*}measurementSiteReference')
+        station_id = reference.get('id') if reference is not None else None
+        state = states.get(site.findtext('.//{*}trafficStatusValue'))
+        updated = _bison_local_timestamp(site.findtext('.//{*}measurementTimeDefault'))
+        if not station_id or station_id not in stations or not state or updated is None:
+            continue
+        if not -300 <= now - updated <= 20 * 60:
+            continue
+        features.append({'type': 'Feature', 'id': f'bison:{city}:{station_id}',
+                         'geometry': {'type': 'LineString', 'coordinates': stations[station_id]},
+                         'properties': {'state': state, 'updated_at': updated}})
+    return features
+
+
+def _bison_read(url, limit):
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        if not response.url.startswith(BISON_FLOW_BASE):
+            raise ValueError('Unexpected Bison Futé redirect')
+        body = response.read(limit + 1)
+        modified = response.headers.get('Last-Modified')
+    if len(body) > limit:
+        raise ValueError('Bison Futé response exceeded size limit')
+    return body, modified
+
+
+def _bison_city_flow(city, stations, now):
+    base = f'{BISON_FLOW_BASE}TRAFICOLOR-DIR/{city}/'
+    listing, _ = _bison_read(base, 100_000)
+    filenames = re.findall(rb'href="([A-Za-z0-9_]+_DataTRT_\d{8}_\d{6}\.xml)"', listing)
+    filenames = [name for name in filenames if name.startswith((city + '_').encode())]
+    if not filenames:
+        raise ValueError(f'Bison Futé {city} has no traffic publication')
+    filename = max(filenames, key=lambda name: name[-19:-4])
+    body, _ = _bison_read(base + filename.decode('ascii'), 600_000)
+    return _parse_bison_flow(ET.fromstring(body), stations, city, now)
+
+
+def bison_flow_snapshot():
+    now = time.time()
+    with _BISON_FLOW_LOCK:
+        if now < _BISON_FLOW_CACHE['until'] and _BISON_FLOW_CACHE['data']:
+            return _current_bordeaux_flow(_BISON_FLOW_CACHE['data'], now, 20 * 60)
+        try:
+            table, modified = _bison_read(BISON_FLOW_BASE + 'QTV-DIR/refDir.csv', 250_000)
+            if not modified or now - email.utils.parsedate_to_datetime(modified).timestamp() > 30 * 86400:
+                raise ValueError('Bison Futé station reference is stale')
+            stations = _parse_bison_stations(table)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                futures = [executor.submit(_bison_city_flow, city, stations, now)
+                           for city in BISON_FLOW_CITIES]
+                groups = []
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        groups.extend(future.result())
+                    except (OSError, ValueError, ET.ParseError):
+                        continue
+            if not groups:
+                raise ValueError('Bison Futé has no current located traffic states')
+            data = {'type': 'FeatureCollection', 'features': groups,
+                    'source': 'Bison Futé · Licence Ouverte', 'source_url': BISON_FLOW_SOURCE}
+            _BISON_FLOW_CACHE.update(until=now + 300, data=data)
+            return data
+        except (OSError, ValueError, ET.ParseError):
+            if _BISON_FLOW_CACHE['data'] and now < _BISON_FLOW_CACHE['until'] + 600:
+                return _current_bordeaux_flow(_BISON_FLOW_CACHE['data'], now, 20 * 60)
+            raise
+
+
 def international_traffic_snapshot():
     sources = (('fr_bordeaux', bordeaux_flow_snapshot),
                ('fr_strasbourg', strasbourg_flow_snapshot),
-               ('fr_rennes', rennes_flow_snapshot))
+               ('fr_rennes', rennes_flow_snapshot),
+               ('fr_bison', bison_flow_snapshot))
     features, errors, active = [], [], []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(loader): name for name, loader in sources}
         for future in concurrent.futures.as_completed(futures):
             name = futures[future]

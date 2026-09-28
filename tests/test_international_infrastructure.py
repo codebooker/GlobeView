@@ -317,12 +317,40 @@ class InfrastructureTests(unittest.TestCase):
                    'properties': {'state': 'FLUIDE'}}
         with patch.object(feeds, 'bordeaux_flow_snapshot', side_effect=OSError('offline')), \
                 patch.object(feeds, 'strasbourg_flow_snapshot', return_value={'features': [segment]}), \
-                patch.object(feeds, 'rennes_flow_snapshot', side_effect=OSError('offline')):
+                patch.object(feeds, 'rennes_flow_snapshot', side_effect=OSError('offline')), \
+                patch.object(feeds, 'bison_flow_snapshot', side_effect=OSError('offline')):
             result = feeds.international_traffic_snapshot()
         self.assertEqual(result['features'], [segment])
         self.assertEqual(result['sources'], ['fr_strasbourg'])
         self.assertEqual({error.split(':', 1)[0] for error in result['sourceErrors']},
-                         {'fr_bordeaux', 'fr_rennes'})
+                         {'fr_bordeaux', 'fr_rennes', 'fr_bison'})
+
+    def test_bison_flow_joins_located_stations_and_rejects_stale_states(self):
+        header = ('code_pme;source;source_2;code_insee_commune;axe;pr_debut;'
+                  'abscisse_debut;pr_fin;abscisse_fin;sens_gestionnaire;'
+                  'sens_cardinal;sens_migratoire;sens_giratoire;longueur;nb_voies;'
+                  'x_deb;y_deb;x_fin;y_fin;code_traficolor')
+        row = ('MY769.S1;DIRCE;826969296;A7;69PR13D;828;69PR15D;652;1;'
+               'NORD_SUD;Y;;1991;0;842538.6;6506689.0;841577.7;6504945.0;LY69')
+        stations = feeds._parse_bison_stations((header + '\n' + row + '\n').encode())
+        self.assertEqual(len(stations), 1)
+        self.assertAlmostEqual(stations['MY769.S1'][0][0], 4.9, delta=.5)
+        xml = '''<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0">
+          <publicationTime>2026-09-28T17:15:00</publicationTime>
+          <siteMeasurements><measurementSiteReference id="MY769.S1"/>
+            <measurementTimeDefault>2026-09-28T17:14:00+02:00</measurementTimeDefault>
+            <trafficStatusValue>heavy</trafficStatusValue></siteMeasurements>
+          <siteMeasurements><measurementSiteReference id="MY769.S1"/>
+            <measurementTimeDefault>2026-09-28T17:14:00+02:00</measurementTimeDefault>
+            <trafficStatusValue>unknown</trafficStatusValue></siteMeasurements>
+        </d2LogicalModel>'''
+        now = dt.datetime(2026, 9, 28, 15, 16, tzinfo=dt.timezone.utc).timestamp()
+        data = feeds._parse_bison_flow(ET.fromstring(xml), stations, 'TraficLyon', now)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['properties']['state'], 'DENSE')
+        self.assertEqual(data[0]['id'], 'bison:TraficLyon:MY769.S1')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_bison_flow(ET.fromstring(xml), stations, 'TraficLyon', now + 3600)
 
     def test_bordeaux_signs_show_only_readable_text_from_fresh_publication(self):
         now = dt.datetime(2026, 9, 28, 0, 40, tzinfo=dt.timezone.utc).timestamp()
