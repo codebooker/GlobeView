@@ -32,6 +32,7 @@ from radio_catalog import catalog_snapshot as radio_catalog_snapshot, record_sta
 from cyclone_guidance import guidance_snapshot as cyclone_guidance_snapshot
 from trip_routing import RouteBusy, RouteNotFound, RouteTooLong, RouteUnavailable, parse_point as parse_route_point, route_snapshot
 from arcgis_catalog import arcgis_viewport
+from dutch_anpr import SEARCH_URL as DUTCH_ANPR_SEARCH_URL, latest_plan as dutch_anpr_latest_plan, parse_plan as parse_dutch_anpr_plan, plan_for_bbox as dutch_anpr_for_bbox
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = os.getenv('AMERICAMAP_HOST', os.getenv('FLORIDAMAP_HOST', '127.0.0.1'))
@@ -18589,17 +18590,33 @@ def lithuania_toll_plate_readers(payload, bbox, now=None):
     return elements
 
 
+def cached_dutch_anpr_catalog():
+    def load():
+        search = fetch_text_url(DUTCH_ANPR_SEARCH_URL, timeout=20)
+        source_url, quarter = dutch_anpr_latest_plan(search)
+        page = fetch_text_url(source_url, timeout=35)
+        elements = parse_dutch_anpr_plan(page, source_url, quarter)
+        return json.dumps(elements, separators=(',', ':')).encode(), 'application/json'
+
+    content, _, _ = API_RESPONSE_CACHE.get_or_load(
+        'nl-police-anpr-current-plan:v1', load, ttl=21600, stale_ttl=86400,
+        persist=False, wait_timeout=60)
+    return json.loads(content)
+
+
 def fetch_deflock_lpr_content(bbox, limit=10000):
     min_lon, min_lat, max_lon, max_lat = bbox
     elements_by_id = {}
     lithuania_visible = (min_lon <= 26.9 and max_lon >= 20.8
                          and min_lat <= 56.5 and max_lat >= 53.8)
+    dutch_visible = (min_lon <= 7.3 and max_lon >= 3.1
+                     and min_lat <= 53.7 and max_lat >= 50.7)
     source_errors = []
     try:
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not lithuania_visible:
+        if not (lithuania_visible or dutch_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18632,7 +18649,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not lithuania_visible:
+        if not (lithuania_visible or dutch_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -18647,6 +18664,12 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Via Lietuva: {error}')
+    if dutch_visible:
+        try:
+            for item in dutch_anpr_for_bbox(cached_dutch_anpr_catalog(), bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as error:
+            source_errors.append(f'Dutch ANPR plan: {error}')
     if source_errors:
         print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 

@@ -82,6 +82,16 @@ class GlobalPlateReaderTests(unittest.TestCase):
         self.assertEqual([row['id'] for row in payload['elements']], ['lt:via:toll:60'])
         self.assertTrue(payload['sourceErrors'])
 
+    def test_dutch_police_plan_survives_deflock_outage(self):
+        official = [{'type': 'node', 'id': 'nl:politie:anpr:1234', 'lat': 52.4, 'lon': 4.8,
+                     'title': 'A10 West', 'detail': 'Q3 2026 camera plan · status unverified',
+                     'source': 'Dutch Police', 'source_url': 'https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html'}]
+        with patch.object(proxy, 'cached_deflock_json', side_effect=OSError('index unavailable')), \
+                patch.object(proxy, 'cached_dutch_anpr_catalog', return_value=official):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((4.7, 52.3, 4.9, 52.5)))
+        self.assertEqual(payload['elements'], official)
+        self.assertTrue(payload['sourceErrors'])
+
 
 if __name__ == '__main__':
     unittest.main()
