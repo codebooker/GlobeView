@@ -5,6 +5,7 @@ import datetime as dt
 import email.utils
 import io
 import threading
+import urllib.error
 import xml.etree.ElementTree as ET
 import zipfile
 from unittest.mock import patch
@@ -795,6 +796,12 @@ class InfrastructureTests(unittest.TestCase):
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen',
                              side_effect=[TimeoutError(), Response(b'\xff\xd8\xffimage')]) as open_image:
+            self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
+            self.assertEqual(open_image.call_count, 2)
+        temporary_error = urllib.error.HTTPError(Response.url, 503, 'busy', {}, None)
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen',
+                             side_effect=[temporary_error, Response(b'\xff\xd8\xffimage')]) as open_image:
             self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
             self.assertEqual(open_image.call_count, 2)
         with patch.object(feeds.time, 'time', return_value=NOW), \

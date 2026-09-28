@@ -954,7 +954,7 @@
     const snapshot = detail?.snapshot_url || meta.item.expando?.snapshotUrl;
     const fallback = detail?.snapshot_fallback_url || meta.item.expando?.snapshotFallbackUrl;
     if (snapshot) {
-      const img = document.createElement('img');
+      let img = document.createElement('img');
       img.className = 'popup-media';
       img.alt = 'Latest road camera snapshot';
       // Popups are positioned inside MapLibre's transformed map container. Safari can
@@ -967,6 +967,7 @@
       let usingFallback = false;
       let retryTimer;
       let loading = false;
+      let lastLoadedAt = 0;
       const retryButton = textElement('button', 'popup-play', 'Retry camera image');
       retryButton.type = 'button';
       const loadImage = () => {
@@ -974,18 +975,27 @@
         loading = true;
         const url = usingFallback ? fallback : snapshot;
         const separator = url.includes('?') ? '&' : '?';
-        img.onload = () => {
+        const nextImage = document.createElement('img');
+        nextImage.className = img.className;
+        nextImage.alt = img.alt;
+        nextImage.loading = 'eager';
+        nextImage.referrerPolicy = 'no-referrer';
+        nextImage.onload = () => {
           loading = false;
           if (!popup.isOpen() || !img.isConnected) return;
-          img.hidden = false;
+          nextImage.hidden = false;
+          img.replaceWith(nextImage);
+          img = nextImage;
+          lastLoadedAt = Date.now();
+          usingFallback = false;
           retries = 0;
           status.remove();
           retryButton.remove();
         };
-        img.onerror = () => {
+        nextImage.onerror = () => {
           loading = false;
           if (!popup.isOpen() || !img.isConnected) return;
-          img.hidden = true;
+          if (lastLoadedAt && Date.now() - lastLoadedAt > 10 * 60 * 1000) img.hidden = true;
           if (fallback && !usingFallback) {
             usingFallback = true;
             loadImage();
@@ -993,16 +1003,18 @@
           }
           usingFallback = false;
           if (retries < 4) {
-            status.textContent = 'Camera image delayed · retrying…';
-            if (!status.isConnected && img.hidden) root.append(status);
+            status.textContent = img.hidden ? 'Camera image delayed · retrying…'
+              : 'Camera refresh delayed · showing last snapshot';
+            if (!status.isConnected) root.append(status);
             retryTimer = window.setTimeout(loadImage, [1500, 5000, 15000, 30000][retries++]);
           } else {
-            status.textContent = 'Camera image unavailable right now.';
-            if (!status.isConnected && img.hidden) root.append(status);
+            status.textContent = img.hidden ? 'Camera image unavailable right now.'
+              : 'Camera refresh unavailable · showing last snapshot';
+            if (!status.isConnected) root.append(status);
             if (!retryButton.isConnected) root.append(retryButton);
           }
         };
-        img.src = `${url}${separator}v=${Date.now()}`;
+        nextImage.src = `${url}${separator}v=${Date.now()}`;
       };
       retryButton.addEventListener('click', () => {
         window.clearTimeout(retryTimer);

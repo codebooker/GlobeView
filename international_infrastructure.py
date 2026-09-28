@@ -743,13 +743,14 @@ def madrid_camera_snapshot(camera_id):
     try:
         for attempt in range(2):
             try:
-                with urllib.request.urlopen(request, timeout=8) as response:
+                with urllib.request.urlopen(request, timeout=5) as response:
                     if not _madrid_camera_headers_available(response, time.time()):
                         raise FileNotFoundError('Madrid camera still is unavailable or stale')
                     image = response.read(2_000_001)
                 break
-            except urllib.error.HTTPError:
-                raise
+            except urllib.error.HTTPError as error:
+                if error.code not in (502, 503, 504) or attempt:
+                    raise
             except (TimeoutError, urllib.error.URLError):
                 if attempt:
                     raise
