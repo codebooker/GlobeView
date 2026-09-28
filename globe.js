@@ -961,6 +961,7 @@
       // defer lazy images there even while the popup is visible, so load on selection.
       img.loading = 'eager';
       img.hidden = true;
+      const status = textElement('span', 'popup-detail', 'Loading camera image…');
       let retries = 0;
       let usingFallback = false;
       let retryTimer;
@@ -979,27 +980,38 @@
           img.src = next.src;
           img.hidden = false;
           retries = 0;
+          status.remove();
           retryButton.remove();
         };
         next.onerror = () => {
           loading = false;
           if (!popup.isOpen() || !img.isConnected) return;
-          if (retries++ === 0) retryTimer = window.setTimeout(loadImage, 1500);
+          if (retries < 4) {
+            status.textContent = 'Camera image delayed · retrying…';
+            if (!status.isConnected && img.hidden) root.append(status);
+            retryTimer = window.setTimeout(loadImage, [1500, 5000, 15000, 30000][retries++]);
+          }
           else if (fallback && !usingFallback) {
             usingFallback = true;
             retries = 0;
             loadImage();
-          } else if (!retryButton.isConnected) root.append(retryButton);
+          } else {
+            status.textContent = 'Camera image unavailable right now.';
+            if (!status.isConnected && img.hidden) root.append(status);
+            if (!retryButton.isConnected) root.append(retryButton);
+          }
         };
         next.src = `${url}${separator}v=${Date.now()}`;
       };
       retryButton.addEventListener('click', () => {
+        window.clearTimeout(retryTimer);
         retries = 0;
         usingFallback = false;
         retryButton.remove();
+        status.textContent = 'Loading camera image…';
         loadImage();
       });
-      root.append(img);
+      root.append(status, img);
       loadImage();
       const refreshMs = Number(meta.item.expando?.snapshotRefreshMs);
       if (refreshMs >= 60000) {
