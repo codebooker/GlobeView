@@ -2706,7 +2706,7 @@ def _parse_luxembourg_cameras(root):
             'key': f'lu:cita:camera:{camera_id}', 'layer': 'cameras',
             'title': name or f'Motorway camera {camera_id}',
             'detail': 'Recent still image',
-            'snapshot_url': f'https://www.cita.lu/info_trafic/cameras/images/cccam_{camera_id}.jpg',
+            'snapshot_url': f'/luxembourg-camera/{camera_id}',
             'snapshot_refresh_ms': 120000,
             'source': 'Luxembourg CITA · CC0 catalog', 'source_url': LUXEMBOURG_CAMERAS_SOURCE,
         }))
@@ -2716,7 +2716,80 @@ def _parse_luxembourg_cameras(root):
 
 
 def _luxembourg_cameras():
-    return _parse_luxembourg_cameras(_get_xml(LUXEMBOURG_CAMERAS_URL))
+    cameras = _parse_luxembourg_cameras(_get_xml(LUXEMBOURG_CAMERAS_URL))
+    unavailable = _luxembourg_unavailable_cameras(cameras)
+    usable = [camera for camera in cameras if camera['properties']['key'] not in unavailable]
+    if not usable:
+        raise ValueError('Luxembourg camera stills are all unavailable')
+    return usable
+
+
+_LUXEMBOURG_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
+_LUXEMBOURG_CAMERA_HEALTH_LOCK = threading.Lock()
+
+
+def _luxembourg_camera_url(camera_id):
+    if not re.fullmatch(r'\d{1,8}', str(camera_id)):
+        raise ValueError('Invalid Luxembourg camera ID')
+    return f'https://www.cita.lu/info_trafic/cameras/images/cccam_{camera_id}.jpg'
+
+
+def _luxembourg_camera_headers_usable(response, now):
+    if urllib.parse.urlsplit(response.url).hostname != 'www.cita.lu':
+        return False
+    headers = response.headers
+    if headers.get('Content-Type', '').split(';')[0] != 'image/jpeg':
+        return False
+    try:
+        size = int(headers.get('Content-Length', '0'))
+        age = now - email.utils.parsedate_to_datetime(headers['Last-Modified']).timestamp()
+    except (KeyError, TypeError, ValueError):
+        return False
+    # CITA serves small but valid JPEGs saying "camera unavailable" or "No video".
+    # The 90 working images checked on 28 Sep 2026 were all over 33 KB.
+    return 12_000 <= size <= 2_000_000 and -300 <= age <= 30 * 60
+
+
+def _luxembourg_unavailable_cameras(cameras):
+    with _LUXEMBOURG_CAMERA_HEALTH_LOCK:
+        now = time.time()
+        if now < _LUXEMBOURG_CAMERA_HEALTH['until']:
+            return set(_LUXEMBOURG_CAMERA_HEALTH['unavailable'])
+
+    def unavailable(camera):
+        key = camera['properties']['key']
+        camera_id = key.rsplit(':', 1)[-1]
+        request = urllib.request.Request(_luxembourg_camera_url(camera_id), method='HEAD',
+                                         headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                return None if _luxembourg_camera_headers_usable(response, now) else key
+        except (OSError, ValueError):
+            return key
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        unavailable_ids = {key for key in executor.map(unavailable, cameras) if key}
+    with _LUXEMBOURG_CAMERA_HEALTH_LOCK:
+        _LUXEMBOURG_CAMERA_HEALTH.update(until=now + 600, unavailable=unavailable_ids)
+    return unavailable_ids
+
+
+def luxembourg_camera_snapshot(camera_id):
+    request = urllib.request.Request(_luxembourg_camera_url(camera_id), headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            if not _luxembourg_camera_headers_usable(response, time.time()):
+                raise FileNotFoundError('Luxembourg camera still is unavailable or stale')
+            image = response.read(2_000_001)
+        if not 12_000 <= len(image) <= 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+            raise ValueError('Luxembourg camera returned no usable JPEG still')
+        return image, 'image/jpeg'
+    except (OSError, ValueError):
+        with _LUXEMBOURG_CAMERA_HEALTH_LOCK:
+            _LUXEMBOURG_CAMERA_HEALTH['unavailable'] = (
+                set(_LUXEMBOURG_CAMERA_HEALTH['unavailable']) | {f'lu:cita:camera:{camera_id}'})
+        raise
 
 
 def _parse_luxembourg_traffic(root, road, now=None):
@@ -3733,6 +3806,11 @@ def _dgt_camera_headers_available(response, now):
     if headers.get('Content-Type', '').split(';')[0] != 'image/jpeg':
         return False
     if headers.get('Content-Length') in _DGT_CAMERA_PLACEHOLDER_BYTES:
+        return False
+    try:
+        if int(headers.get('Content-Length', '0')) < 12_000:
+            return False
+    except ValueError:
         return False
     modified = headers.get('Last-Modified')
     if not modified:
@@ -5534,6 +5612,8 @@ def road_snapshot(layer, bbox=None):
         unavailable = _dgt_unavailable_cameras(features)
         with _MADRID_CAMERA_HEALTH_LOCK:
             unavailable.update(_MADRID_CAMERA_HEALTH['unavailable'])
+        with _LUXEMBOURG_CAMERA_HEALTH_LOCK:
+            unavailable.update(_LUXEMBOURG_CAMERA_HEALTH['unavailable'])
         features = [item for item in features if item['properties']['key'] not in unavailable]
     return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': errors,
             'sources': sources}

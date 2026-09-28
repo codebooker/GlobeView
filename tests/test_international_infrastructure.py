@@ -9,7 +9,7 @@ import time
 import urllib.error
 import xml.etree.ElementTree as ET
 import zipfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import international_infrastructure as feeds
@@ -1201,7 +1201,8 @@ class InfrastructureTests(unittest.TestCase):
                 self.url = url
                 camera_id = url.rsplit('/', 1)[-1]
                 self.headers = {'Content-Type': 'image/jpeg',
-                                'Content-Length': {'923.jpg': '32634', '1103.jpg': '9422'}.get(
+                                'Content-Length': {'923.jpg': '32634', '1103.jpg': '9422',
+                                                   '962.jpg': '11224'}.get(
                                     camera_id, '125668'),
                                 'Last-Modified': email.utils.formatdate(
                                     NOW - (3600 if camera_id == '1104.jpg' else 300), usegmt=True)}
@@ -1212,19 +1213,19 @@ class InfrastructureTests(unittest.TestCase):
         items = [feeds._feature([-4.13, 40.7], {
             'key': f'es:dgt:camera:{number + 10000}', 'layer': 'cameras',
             'snapshot_url': f'/dgt-camera/{number}',
-        }) for number in (923, 1103, 1104, 1105, 929)]
+        }) for number in (923, 1103, 1104, 1105, 962, 929)]
         previous = dict(feeds._DGT_CAMERA_HEALTH)
         try:
             feeds._DGT_CAMERA_HEALTH.clear()
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
                 self.assertEqual(feeds._dgt_unavailable_cameras(items),
-                                 {item['properties']['key'] for item in items[:4]})
+                                 {item['properties']['key'] for item in items[:5]})
             # A second map request uses the health cache without another upstream request.
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=AssertionError):
                 self.assertEqual(feeds._dgt_unavailable_cameras(items),
-                                 {item['properties']['key'] for item in items[:4]})
+                                 {item['properties']['key'] for item in items[:5]})
             with patch.object(feeds, '_snapshot', return_value={
                     'sources': {'es_dgt_cameras': items}, 'errors': []}), \
                     patch.object(feeds.time, 'time', return_value=NOW):
@@ -1411,10 +1412,58 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['geometry']['coordinates'], [5.962785, 49.636012])
         self.assertEqual(rows[0]['properties']['snapshot_url'],
-                         'https://www.cita.lu/info_trafic/cameras/images/cccam_6006.jpg')
+                         '/luxembourg-camera/6006')
         self.assertEqual(rows[0]['properties']['snapshot_refresh_ms'], 120000)
         with self.assertRaisesRegex(ValueError, 'no usable cameras'):
             feeds._parse_luxembourg_cameras(ET.fromstring('<kml xmlns="http://www.opengis.net/kml/2.2"/>'))
+
+    def test_luxembourg_cameras_hide_successful_placeholder_jpegs(self):
+        root = ET.fromstring('''<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+          <Placemark id="camera_46"><Point><coordinates>6.1,49.6,0</coordinates></Point></Placemark>
+          <Placemark id="camera_53"><Point><coordinates>6.2,49.7,0</coordinates></Point></Placemark>
+        </Document></kml>''')
+        modified = email.utils.formatdate(NOW - 60, usegmt=True)
+        original = dict(feeds._LUXEMBOURG_CAMERA_HEALTH)
+
+        def head(request, timeout):
+            camera_id = request.full_url.rsplit('_', 1)[-1].removesuffix('.jpg')
+            response = MagicMock()
+            response.url = request.full_url
+            response.headers = {'Content-Type': 'image/jpeg', 'Last-Modified': modified,
+                                'Content-Length': '6024' if camera_id == '46' else '41991'}
+            response.__enter__.return_value = response
+            return response
+
+        try:
+            feeds._LUXEMBOURG_CAMERA_HEALTH.update(until=0, unavailable=set())
+            with patch.object(feeds, '_get_xml', return_value=root), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=head), \
+                    patch.object(feeds.time, 'time', return_value=NOW):
+                rows = feeds._luxembourg_cameras()
+            self.assertEqual([row['properties']['key'] for row in rows], ['lu:cita:camera:53'])
+            self.assertIn('lu:cita:camera:46', feeds._LUXEMBOURG_CAMERA_HEALTH['unavailable'])
+        finally:
+            feeds._LUXEMBOURG_CAMERA_HEALTH.update(original)
+
+    def test_luxembourg_snapshot_rejects_unavailable_still(self):
+        modified = email.utils.formatdate(NOW - 60, usegmt=True)
+        original = dict(feeds._LUXEMBOURG_CAMERA_HEALTH)
+        response = MagicMock()
+        response.url = 'https://www.cita.lu/info_trafic/cameras/images/cccam_46.jpg'
+        response.headers = {'Content-Type': 'image/jpeg', 'Content-Length': '6024',
+                            'Last-Modified': modified}
+        response.__enter__.return_value = response
+        try:
+            feeds._LUXEMBOURG_CAMERA_HEALTH.update(until=NOW + 600, unavailable=set())
+            with patch.object(feeds.urllib.request, 'urlopen', return_value=response), \
+                    patch.object(feeds.time, 'time', return_value=NOW):
+                with self.assertRaises(FileNotFoundError):
+                    feeds.luxembourg_camera_snapshot('46')
+            self.assertIn('lu:cita:camera:46', feeds._LUXEMBOURG_CAMERA_HEALTH['unavailable'])
+            with self.assertRaisesRegex(ValueError, 'Invalid Luxembourg camera ID'):
+                feeds.luxembourg_camera_snapshot('../46')
+        finally:
+            feeds._LUXEMBOURG_CAMERA_HEALTH.update(original)
 
     def test_luxembourg_traffic_sensors_require_recent_measurements(self):
         now = dt.datetime(2026, 9, 27, 9, 15, tzinfo=dt.timezone.utc).timestamp()
