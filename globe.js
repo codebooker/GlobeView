@@ -1255,8 +1255,13 @@
     }
     const point = map.project(coordinates);
     const visibleLeft = window.innerWidth > 900 && !document.body.classList.contains('panel-collapsed') ? 288 : 0;
-    const anchor = point.x < visibleLeft + 180 ? 'left' : point.x > map.getCanvas().clientWidth - 180 ? 'right'
-      : point.y < map.getCanvas().clientHeight * (type === 'webcams' || type === 'cameras' ? 0.6 : 0.5) ? 'top' : 'bottom';
+    // Side anchors can push a 315 px popup off a phone-sized map. Keep mobile
+    // popups centered over or under their point instead.
+    const verticalAnchor = point.y < map.getCanvas().clientHeight * (type === 'webcams' || type === 'cameras' ? 0.6 : 0.5)
+      ? 'top' : 'bottom';
+    const anchor = map.getCanvas().clientWidth < 600 ? verticalAnchor
+      : point.x < visibleLeft + 180 ? 'left' : point.x > map.getCanvas().clientWidth - 180 ? 'right'
+        : verticalAnchor;
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '315px', offset: 14, anchor })
       .setLngLat(coordinates).setDOMContent(root).addTo(map);
     if (type === 'cameras' && (anchor === 'top' || anchor === 'bottom')) {
