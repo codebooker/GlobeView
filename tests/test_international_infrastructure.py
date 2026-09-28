@@ -1412,6 +1412,34 @@ class InfrastructureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'no JPEG still'):
                 feeds.madrid_camera_snapshot('06303')
 
+    def test_madrid_camera_recent_still_survives_transport_failure_only(self):
+        previous_health = dict(feeds._MADRID_CAMERA_HEALTH)
+        previous_stills = dict(feeds._MADRID_CAMERA_STILLS)
+        try:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_STILLS.clear()
+            still = madrid_jpeg_header()
+            feeds._MADRID_CAMERA_STILLS['06303'] = (NOW - 10, still)
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
+                self.assertEqual(feeds.madrid_camera_snapshot('06303'), (still, 'image/jpeg'))
+            self.assertIn('06303', feeds._MADRID_CAMERA_STILLS)
+            with patch.object(feeds.time, 'time', return_value=NOW + 301), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
+                with self.assertRaises(TimeoutError):
+                    feeds.madrid_camera_snapshot('06303')
+            feeds._MADRID_CAMERA_STILLS['06303'] = (NOW - 10, still)
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen',
+                                 side_effect=urllib.error.HTTPError('camera', 404, 'gone', {}, None)):
+                with self.assertRaises(urllib.error.HTTPError):
+                    feeds.madrid_camera_snapshot('06303')
+        finally:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_HEALTH.update(previous_health)
+            feeds._MADRID_CAMERA_STILLS.clear()
+            feeds._MADRID_CAMERA_STILLS.update(previous_stills)
+
     def test_madrid_camera_catalog_hides_offline_and_stale_stills(self):
         class Response:
             def __init__(self, url):

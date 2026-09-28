@@ -899,9 +899,10 @@ def _madrid_unavailable_cameras(cameras):
 def madrid_camera_snapshot(camera_id):
     if not re.fullmatch(r'\d{4,6}', str(camera_id)):
         raise ValueError('Invalid Madrid camera ID')
+    now = time.time()
     with _MADRID_CAMERA_HEALTH_LOCK:
         cached = _MADRID_CAMERA_STILLS.get(camera_id)
-        if cached and cached[0] > time.time():
+        if cached and cached[0] > now:
             return cached[1], 'image/jpeg'
     request = urllib.request.Request(_madrid_camera_url(camera_id), headers={
         'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
@@ -922,7 +923,14 @@ def madrid_camera_snapshot(camera_id):
         if len(image) > 2_000_000 or not _madrid_camera_image_available(image):
             raise ValueError('Madrid camera returned no JPEG still')
         return image, 'image/jpeg'
-    except (OSError, ValueError):
+    except (OSError, ValueError) as error:
+        # A brief transport failure should not blank a camera that was just
+        # verified by the map audit. Never reuse it for a genuine 404, stale
+        # origin timestamp, or the authority's unavailable JPEG.
+        transient = isinstance(error, (TimeoutError, urllib.error.URLError)) and (
+            not isinstance(error, urllib.error.HTTPError) or error.code in (502, 503, 504))
+        if transient and cached and cached[0] + 300 > time.time():
+            return cached[1], 'image/jpeg'
         _mark_madrid_camera_unavailable(camera_id)
         raise
 
