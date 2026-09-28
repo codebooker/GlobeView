@@ -162,6 +162,10 @@ ESTONIA_RESTRICTIONS_URL = (
 )
 ESTONIA_RESTRICTIONS_SOURCE = 'https://tarktee.transpordiamet.ee/'
 ESTONIA_CAMERAS_BASE = 'https://tarktee.transpordiamet.ee/api/v1/datex/'
+ESTONIA_CAMERAS_ARCGIS = (
+    'https://tarktee.transpordiamet.ee/tarktee/rest/services/road_cameras/MapServer/0/query?'
+    'where=1%3D1&outFields=site_name%2Cimage_path&returnGeometry=true&outSR=4326&f=geojson'
+)
 CZ_NDIC_ROADS_URL = 'https://gis.brno.cz/ags3/rest/services/PUBLIC/uzavirky_ndic/MapServer/0/query'
 CZ_NDIC_ROADS_SOURCE = 'https://gis.brno.cz/ost/edas/public/3c5ff253-35f3-4ac0-86ab-db9e06586552'
 PRAGUE_ROADS_URL = 'https://opravujeme.to/api/action'
@@ -4616,6 +4620,8 @@ def _lithuania_road_weather():
 
 
 _ESTONIA_CAMERA_INDEX = {'until': 0, 'entries': {}, 'lock': threading.Lock()}
+_ESTONIA_CAMERA_LOCATIONS = {'until': 0, 'source': None, 'payload': None,
+                             'read_at': 0, 'lock': threading.Lock()}
 
 
 def _estonia_publication_time(root, now):
@@ -4657,9 +4663,17 @@ def _estonia_camera_index():
         now = time.time()
         if now < cache['until']:
             return cache['entries']
-        root = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraImages')
-        entries = _parse_estonia_camera_index(root, now)
-        cache.update(until=time.time() + 120, entries=entries)
+        try:
+            root = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraImages')
+            entries = _parse_estonia_camera_index(root, now)
+        except (OSError, ValueError):
+            recent = {key: value for key, value in cache['entries'].items()
+                      if -300 <= now - value[2] <= 30 * 60}
+            if not recent:
+                raise
+            cache.update(until=now + 60, entries=recent)
+            return recent
+        cache.update(until=time.time() + 600, entries=entries)
         return entries
 
 
@@ -4687,7 +4701,7 @@ def _parse_estonia_cameras(root, entries, now=None):
             'title': f'Traffic camera · {name}' if name else 'Traffic camera',
             'detail': 'Road camera still · updated periodically',
             'snapshot_url': f'/estonia-camera/{camera_id}',
-            'snapshot_refresh_ms': 120000,
+            'snapshot_refresh_ms': 600000,
             'source': 'Estonian Transport Administration · Tark Tee',
             'source_url': ESTONIA_RESTRICTIONS_SOURCE,
         }))
@@ -4696,9 +4710,58 @@ def _parse_estonia_cameras(root, entries, now=None):
     return features
 
 
+def _parse_estonia_arcgis_cameras(payload, entries):
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list) or payload.get('exceededTransferLimit')):
+        raise ValueError('Estonia camera location catalog is invalid')
+    locations = {}
+    for item in payload['features']:
+        if not isinstance(item, dict):
+            continue
+        props = item.get('properties') or {}
+        if not isinstance(props, dict):
+            continue
+        match = re.fullmatch(r'(\d{1,6})/\1_\d{12}\.jpg', str(props.get('image_path') or ''))
+        point = _point(item.get('geometry'))
+        if match and point and 21.5 <= point[0] <= 28.3 and 57.4 <= point[1] <= 59.9:
+            locations[match.group(1)] = (point, _clean(props.get('site_name'), 90))
+    features = []
+    for camera_id in entries:
+        if camera_id not in locations:
+            continue
+        point, name = locations[camera_id]
+        features.append(_feature(point, {
+            'key': f'ee:tarktee:camera:{camera_id}', 'layer': 'cameras',
+            'title': f'Traffic camera · {name}' if name else 'Traffic camera',
+            'detail': 'Road camera still · updated periodically',
+            'snapshot_url': f'/estonia-camera/{camera_id}',
+            'snapshot_refresh_ms': 600000,
+            'source': 'Estonian Transport Administration · Tark Tee',
+            'source_url': ESTONIA_RESTRICTIONS_SOURCE,
+        }))
+    if not features:
+        raise ValueError('Estonia camera location catalog has no current images')
+    return features
+
+
 def _estonia_cameras():
-    locations = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraLocations')
-    return _parse_estonia_cameras(locations, _estonia_camera_index())
+    entries = _estonia_camera_index()
+    cache = _ESTONIA_CAMERA_LOCATIONS
+    with cache['lock']:
+        if time.time() >= cache['until']:
+            read_at = time.time()
+            try:
+                payload = _get_xml(ESTONIA_CAMERAS_BASE + 'roadCameraLocations')
+                _estonia_publication_time(payload, read_at)
+                source = 'datex'
+            except (OSError, ValueError):
+                payload = _get_json(ESTONIA_CAMERAS_ARCGIS)
+                source = 'arcgis'
+            cache.update(until=time.time() + 6 * 3600, source=source,
+                         payload=payload, read_at=read_at)
+        if cache['source'] == 'datex':
+            return _parse_estonia_cameras(cache['payload'], entries, cache['read_at'])
+        return _parse_estonia_arcgis_cameras(cache['payload'], entries)
 
 
 def estonia_camera_snapshot(camera_id):

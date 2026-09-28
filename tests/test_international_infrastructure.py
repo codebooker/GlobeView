@@ -403,6 +403,34 @@ class InfrastructureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'unexpected'):
                 feeds.estonia_camera_snapshot('987')
 
+    def test_estonia_camera_location_fallback_keeps_current_images(self):
+        url = 'https://tarktee.transpordiamet.ee/images/987/987_202609261800.jpg'
+        entries = {'987': ('station-1', url, NOW)}
+        arcgis = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [26.3853, 58.34474]},
+             'properties': {'site_name': 'Kaimi', 'image_path': '987/987_202606042056.jpg'}}]}
+        cache = {'until': 0, 'source': None, 'payload': None, 'read_at': 0,
+                 'lock': threading.Lock()}
+        with patch.object(feeds, '_ESTONIA_CAMERA_LOCATIONS', cache), \
+                patch.object(feeds, '_estonia_camera_index', return_value=entries), \
+                patch.object(feeds, '_get_xml', side_effect=TimeoutError()), \
+                patch.object(feeds, '_get_json', return_value=arcgis), \
+                patch.object(feeds.time, 'time', return_value=NOW):
+            rows = feeds._estonia_cameras()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['properties']['snapshot_url'], '/estonia-camera/987')
+            self.assertEqual(cache['source'], 'arcgis')
+
+    def test_estonia_camera_index_reuses_recent_images_when_source_times_out(self):
+        url = 'https://tarktee.transpordiamet.ee/images/987/987_202609261800.jpg'
+        cache = {'until': 0, 'entries': {'987': ('station-1', url, NOW - 120)},
+                 'lock': threading.Lock()}
+        with patch.object(feeds, '_ESTONIA_CAMERA_INDEX', cache), \
+                patch.object(feeds, '_get_xml', side_effect=TimeoutError()), \
+                patch.object(feeds.time, 'time', return_value=NOW):
+            self.assertIn('987', feeds._estonia_camera_index())
+            self.assertEqual(cache['until'], NOW + 60)
+
     def test_czech_ndic_roads_use_current_records_and_complete_pages(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def event(number, category='Práce na silnici', start='27.09.2026 19:00',

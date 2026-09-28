@@ -19679,7 +19679,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
                 f'estonia-camera:v1:{camera_id}',
                 lambda: estonia_camera_snapshot(camera_id),
-                ttl=120, stale_ttl=600, persist=False, wait_timeout=20)
+                ttl=600, stale_ttl=900, persist=False, wait_timeout=20)
             self._write_bytes(200, content, content_type,
                               cache_control='public, max-age=60, stale-while-revalidate=120',
                               extra_headers={'X-GlobeView-Cache': cache_status})
