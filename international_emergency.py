@@ -326,7 +326,13 @@ def parse_queensland(root, now=None):
 
 @lru_cache(maxsize=4096)
 def _england_area(area_id):
-    return _json(f'https://environment.data.gov.uk/flood-monitoring/id/floodAreas/{area_id}').get('items') or {}
+    base = f'https://environment.data.gov.uk/flood-monitoring/id/floodAreas/{area_id}'
+    try:
+        return _json(base + '.json').get('items') or {}
+    except (OSError, ValueError):
+        # The format-neutral route sometimes returns 503 for individual areas
+        # while the documented full-view JSON representation remains available.
+        return _json(base + '?_view=full').get('items') or {}
 
 
 def parse_england(payload):

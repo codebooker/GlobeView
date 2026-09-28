@@ -149,6 +149,15 @@ class InternationalEmergencyTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual((items[0]['lon'], items[0]['lat']), (0.8, 51.7))
 
+    def test_england_area_uses_json_route_with_full_view_fallback(self):
+        base = 'https://environment.data.gov.uk/flood-monitoring/id/floodAreas/ABC12'
+        with patch.object(feeds, '_json', side_effect=[OSError('temporary 503'),
+                                                       {'items': {'lat': 51.7, 'long': 0.8}}]) as fetch:
+            area = feeds._england_area.__wrapped__('ABC12')
+        self.assertEqual(area['lat'], 51.7)
+        self.assertEqual([call.args[0] for call in fetch.call_args_list],
+                         [base + '.json', base + '?_view=full'])
+
     def test_queensland_edxl_keeps_only_unexpired_public_alerts(self):
         xml = '''<EDXLDistribution xmlns="urn:oasis:names:tc:emergency:EDXL:DE:1.0"
                  xmlns:cap="urn:oasis:names:tc:emergency:cap:1.2"><contentObject><xmlContent>
