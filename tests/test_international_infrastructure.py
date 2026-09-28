@@ -431,6 +431,39 @@ class InfrastructureTests(unittest.TestCase):
             self.assertIn('987', feeds._estonia_camera_index())
             self.assertEqual(cache['until'], NOW + 60)
 
+    def test_estonia_signs_show_only_working_readable_messages(self):
+        published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).isoformat()
+        sites = ET.fromstring(f'''<d2LogicalModel><payloadPublication>
+          <publicationTime>{published}</publicationTime>
+          <vmsUnitRecord id="123"><vmsUnitIdentifier>Kanama South</vmsUnitIdentifier>
+          <vmsUnitIPAddress>172.16.0.5</vmsUnitIPAddress><vmsRecord>
+          <vmsLocation><pointByCoordinates><pointCoordinates><latitude>59.3</latitude>
+          <longitude>24.56</longitude></pointCoordinates></pointByCoordinates></vmsLocation>
+          </vmsRecord></vmsUnitRecord>
+          <vmsUnitRecord id="124"><vmsUnitIdentifier>Empty sign</vmsUnitIdentifier>
+          <vmsRecord><vmsLocation><pointByCoordinates><pointCoordinates>
+          <latitude>59.31</latitude><longitude>24.57</longitude>
+          </pointCoordinates></pointByCoordinates></vmsLocation></vmsRecord></vmsUnitRecord>
+          </payloadPublication></d2LogicalModel>''')
+        messages = ET.fromstring(f'''<d2LogicalModel><payloadPublication>
+          <publicationTime>{published}</publicationTime>
+          <vmsUnit><vmsUnitReference id="123"/><vms><vms><vmsWorking>true</vmsWorking>
+          <vmsMessage><vmsMessage><textPage><vmsText><vmsTextLine><vmsTextLine>
+          STOPPED VEHICLE</vmsTextLine></vmsTextLine></vmsText></textPage>
+          <textPage><vmsText><vmsTextLine><vmsTextLine>USE CAUTION</vmsTextLine>
+          </vmsTextLine></vmsText></textPage>
+          </vmsMessage></vmsMessage></vms></vms></vmsUnit>
+          <vmsUnit><vmsUnitReference id="124"/><vms><vms><vmsWorking>false</vmsWorking>
+          <vmsMessage><vmsMessage><textPage><vmsText><vmsTextLine><vmsTextLine>
+          CLOSED</vmsTextLine></vmsTextLine></vmsText></textPage>
+          </vmsMessage></vmsMessage></vms></vms></vmsUnit>
+          </payloadPublication></d2LogicalModel>''')
+        rows = feeds._parse_estonia_signs(sites, messages, NOW, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['title'], 'STOPPED VEHICLE')
+        self.assertIn('USE CAUTION', rows[0]['properties']['detail'])
+        self.assertNotIn('172.16.0.5', str(rows))
+
     def test_czech_ndic_roads_use_current_records_and_complete_pages(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def event(number, category='Práce na silnici', start='27.09.2026 19:00',

@@ -4622,6 +4622,7 @@ def _lithuania_road_weather():
 _ESTONIA_CAMERA_INDEX = {'until': 0, 'entries': {}, 'lock': threading.Lock()}
 _ESTONIA_CAMERA_LOCATIONS = {'until': 0, 'source': None, 'payload': None,
                              'read_at': 0, 'lock': threading.Lock()}
+_ESTONIA_VMS_SITES = {'until': 0, 'root': None, 'read_at': 0, 'lock': threading.Lock()}
 
 
 def _estonia_publication_time(root, now):
@@ -4782,6 +4783,64 @@ def estonia_camera_snapshot(camera_id):
     if len(image) > 1_000_000 or not image.startswith(b'\xff\xd8\xff'):
         raise ValueError('Estonia camera returned no JPEG still')
     return image, 'image/jpeg'
+
+
+def _parse_estonia_signs(sites_root, messages_root, sites_read_at, now=None):
+    now = time.time() if now is None else now
+    _estonia_publication_time(sites_root, sites_read_at)
+    _estonia_publication_time(messages_root, now)
+    sites = {}
+    for record in sites_root.findall('.//{*}vmsUnitRecord'):
+        sign_id = record.get('id')
+        try:
+            lat = float(record.findtext('.//{*}vmsLocation/{*}pointByCoordinates/{*}pointCoordinates/{*}latitude'))
+            lon = float(record.findtext('.//{*}vmsLocation/{*}pointByCoordinates/{*}pointCoordinates/{*}longitude'))
+        except (TypeError, ValueError):
+            continue
+        if sign_id and 57.4 <= lat <= 59.9 and 21.5 <= lon <= 28.3:
+            sites[sign_id] = ([lon, lat], _clean(record.findtext('{*}vmsUnitIdentifier'), 100))
+    features = []
+    seen = set()
+    for unit in messages_root.findall('.//{*}vmsUnit'):
+        reference = unit.find('{*}vmsUnitReference')
+        sign_id = reference.get('id') if reference is not None else None
+        if sign_id not in sites or sign_id in seen:
+            continue
+        pages = []
+        for display in unit.findall('{*}vms'):
+            if display.findtext('.//{*}vmsWorking') != 'true':
+                continue
+            for page in display.findall('.//{*}textPage'):
+                lines = [_clean(line.text, 80) for line in page.findall('.//{*}vmsTextLine')
+                         if (line.text or '').strip()]
+                message = ' / '.join(line for line in lines if line)
+                if message and message not in pages:
+                    pages.append(message)
+        if not pages:
+            continue
+        seen.add(sign_id)
+        point, name = sites[sign_id]
+        features.append(_feature(point, {
+            'key': f'ee:tarktee:sign:{sign_id}', 'layer': 'signs',
+            'title': _clean(pages[0], 110),
+            'detail': ' · '.join(part for part in (name, ' | '.join(pages[1:])) if part),
+            'source': 'Estonian Transport Administration · Tark Tee',
+            'source_url': ESTONIA_RESTRICTIONS_SOURCE,
+        }))
+    return features
+
+
+def _estonia_signs():
+    cache = _ESTONIA_VMS_SITES
+    with cache['lock']:
+        if time.time() >= cache['until']:
+            read_at = time.time()
+            root = _get_xml(ESTONIA_CAMERAS_BASE + 'vmsSites')
+            _estonia_publication_time(root, read_at)
+            cache.update(until=time.time() + 6 * 3600, root=root, read_at=read_at)
+        sites_root, read_at = cache['root'], cache['read_at']
+    messages_root = _get_xml(ESTONIA_CAMERAS_BASE + 'vms')
+    return _parse_estonia_signs(sites_root, messages_root, read_at)
 
 
 def _parse_estonia_restrictions(payload, now=None):
@@ -5226,6 +5285,7 @@ _FETCHERS = {
         'lt_eismoinfo_road_weather': _lithuania_road_weather,
         'lt_eismoinfo_restrictions': _lithuania_restrictions,
         'ee_tarktee_cameras': _estonia_cameras,
+        'ee_tarktee_signs': _estonia_signs,
         'ee_tarktee_restrictions': _estonia_restrictions,
         'cz_ndic_roads': _cz_ndic_roads,
         'cz_prague_roadworks': _prague_roadworks,
