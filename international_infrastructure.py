@@ -429,7 +429,13 @@ def _parse_vitoria_cameras(payload):
 
 
 def _vitoria_cameras():
-    return _parse_vitoria_cameras(_get_json(VITORIA_CAMERAS_URL + '?action=list&format=GEOJSON'))
+    url = VITORIA_CAMERAS_URL + '?action=list&format=GEOJSON'
+    try:
+        return _parse_vitoria_cameras(_get_json(url))
+    except ValueError:
+        # The city occasionally responds with a JSON payload other than the
+        # camera collection; retry once before dropping the shared snapshot.
+        return _parse_vitoria_cameras(_get_json(url))
 
 
 def vitoria_camera_snapshot(camera_id):

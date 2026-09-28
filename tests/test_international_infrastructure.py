@@ -339,6 +339,9 @@ class InfrastructureTests(unittest.TestCase):
             feeds._parse_vitoria_cameras({})
         with self.assertRaises(ValueError):
             feeds.vitoria_camera_snapshot('../CM03')
+        with patch.object(feeds, '_get_json', side_effect=[{'error': 'temporary'}, payload]) as fetch:
+            self.assertEqual(len(feeds._vitoria_cameras()), 1)
+            self.assertEqual(fetch.call_count, 2)
 
     def test_estonia_restrictions_use_active_dated_locations_and_strip_private_contacts(self):
         def event(event_id, cause='CONSTRUCTION', start=NOW - 3600, end=NOW + 86400,
