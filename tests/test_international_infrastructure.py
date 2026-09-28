@@ -19,6 +19,12 @@ import international_infrastructure as feeds
 NOW = 1790445600  # 2026-09-26 UTC
 
 
+def madrid_jpeg_header(width=1280, height=720):
+    return (b'\xff\xd8\xff\xe0\x00\x02\xff\xc0\x00\x0b\x08'
+            + height.to_bytes(2, 'big') + width.to_bytes(2, 'big')
+            + b'\x01\x01\x11\x00')
+
+
 class InfrastructureTests(unittest.TestCase):
     def test_ndw_sensors_join_current_sites_and_skip_bad_readings(self):
         publication = dt.datetime.fromtimestamp(NOW - 90, dt.timezone.utc).isoformat()
@@ -1050,8 +1056,43 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_madrid_cameras(root, NOW)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
-        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
-                         'https://informo.madrid.es/cameras/Camara06303.jpg')
+        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
+
+    def test_a22_announcements_require_current_road_effects(self):
+        now = dt.datetime(2026, 9, 28, 11, tzinfo=dt.timezone.utc).timestamp()
+        def record(identity, **changes):
+            item = {
+                'Id': f'urn:announcements:a22:{identity:08x}-0000-0000-0000-000000000000',
+                'Source': 'a22', 'Active': True,
+                'LicenseInfo': {'License': 'CC0', 'ClosedData': False},
+                'TagIds': ['announcement:traffic-event', 'traffic-event:road-work'],
+                'StartTime': '2026-09-25T10:00:00Z',
+                'EndTime': '2026-10-02T18:00:00Z',
+                'LastChange': '2026-09-27T09:50:00Z',
+                'Geo': {'position': {'Longitude': 10.91, 'Latitude': 45.32}},
+                'Shortname': 'Road Work - A22, km 238',
+                'Detail': {'it': {'BaseText': 'Lavori di pavimentazione vicino Verona'}},
+            }
+            item.update(changes)
+            return item
+        payload = {'Items': [
+            record(1),
+            record(2, TagIds=['announcement:traffic-event', 'traffic-event:current'],
+                   EndTime=None, LastChange='2026-09-27T09:50:00Z',
+                   Detail={'it': {'BaseText': 'Chiusura svincolo vicino Mantova'}}),
+            record(3, StartTime='2026-09-28T19:00:00Z'),
+            record(4, EndTime='2026-09-28T09:00:00Z'),
+            record(5, EndTime=None, LastChange='2026-09-07T08:40:00Z'),
+            record(6, Active=False),
+            record(7, LicenseInfo={'License': 'restricted', 'ClosedData': True}),
+        ], 'TotalResults': 7}
+        rows = feeds._parse_a22_announcements(payload, now)
+        self.assertEqual([row['properties']['layer'] for row in rows],
+                         ['construction', 'incidents'])
+        self.assertEqual(rows[0]['geometry']['coordinates'], [10.91, 45.32])
+        self.assertIn('Verona', rows[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_a22_announcements({**payload, 'TotalResults': 8}, now)
 
     def test_madrid_camera_health_checks_image_body(self):
         class Response(io.BytesIO):
@@ -1062,18 +1103,20 @@ class InfrastructureTests(unittest.TestCase):
                                 'Last-Modified': email.utils.formatdate(NOW - 120, usegmt=True)}
 
         cameras = [{'properties': {'key': f'es:madrid:camera:{camera_id}'}}
-                   for camera_id in ('06303', '06304')]
+                   for camera_id in ('06303', '06304', '06305')]
         previous = dict(feeds._MADRID_CAMERA_HEALTH)
         try:
             feeds._MADRID_CAMERA_HEALTH.update(until=0, unavailable=set())
             def image(request, timeout):
                 self.assertNotEqual(request.get_method(), 'HEAD')
-                body = b'not a jpeg' if request.full_url.endswith('06304.jpg') else b'\xff\xd8\xffvalid'
+                body = (b'not a jpeg' if request.full_url.endswith('06304.jpg')
+                        else madrid_jpeg_header(298, 217) if request.full_url.endswith('06305.jpg')
+                        else madrid_jpeg_header())
                 return Response(request.full_url, body)
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=image):
                 self.assertEqual(feeds._madrid_unavailable_cameras(cameras),
-                                 {'es:madrid:camera:06304'})
+                                 {'es:madrid:camera:06304', 'es:madrid:camera:06305'})
         finally:
             feeds._MADRID_CAMERA_HEALTH.clear()
             feeds._MADRID_CAMERA_HEALTH.update(previous)
@@ -1112,29 +1155,34 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             feeds.madrid_camera_snapshot('../bad')
         with patch.object(feeds.time, 'time', return_value=NOW), \
-                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(madrid_jpeg_header())):
             self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen',
-                             side_effect=[TimeoutError(), Response(b'\xff\xd8\xffimage')]) as open_image:
+                             side_effect=[TimeoutError(), Response(madrid_jpeg_header())]) as open_image:
             self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
             self.assertEqual(open_image.call_count, 2)
         temporary_error = urllib.error.HTTPError(Response.url, 503, 'busy', {}, None)
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen',
-                             side_effect=[temporary_error, Response(b'\xff\xd8\xffimage')]) as open_image:
+                             side_effect=[temporary_error, Response(madrid_jpeg_header())]) as open_image:
             self.assertEqual(feeds.madrid_camera_snapshot('06303')[1], 'image/jpeg')
             self.assertEqual(open_image.call_count, 2)
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'not an image')):
             with self.assertRaises(ValueError):
                 feeds.madrid_camera_snapshot('06303')
-        placeholder = Response(b'\xff\xd8\xffimage')
+        placeholder = Response(madrid_jpeg_header())
         placeholder.headers = dict(Response.headers, **{'Content-Length': '17803'})
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen', return_value=placeholder):
             with self.assertRaises(FileNotFoundError):
                 feeds.madrid_camera_snapshot('09305')
+        small_placeholder = Response(madrid_jpeg_header(298, 217))
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=small_placeholder):
+            with self.assertRaisesRegex(ValueError, 'no JPEG still'):
+                feeds.madrid_camera_snapshot('06303')
 
     def test_madrid_camera_catalog_hides_offline_and_stale_stills(self):
         class Response:
@@ -1147,7 +1195,7 @@ class InfrastructureTests(unittest.TestCase):
                                                   else 'Sat, 26 Sep 2026 18:00:00 GMT')}
             def __enter__(self): return self
             def __exit__(self, *_): return False
-            def read(self, size): return b'\xff\xd8\xff'[:size]
+            def read(self, size): return madrid_jpeg_header()[:size]
 
         cameras = [feeds._feature([-3.7, 40.4], {
             'key': f'es:madrid:camera:{camera_id}', 'layer': 'cameras',
@@ -1270,8 +1318,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'],
                          '/dgt-camera/168408')
-        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
-                         'https://etraffic.dgt.es/camarasEtraffic/168408.jpg')
+        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
         self.assertEqual(rows[0]['geometry']['coordinates'], [-0.4282263, 42.304092])
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)

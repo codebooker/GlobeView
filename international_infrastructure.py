@@ -53,6 +53,8 @@ MADRID_SIGN_LOCATIONS = ('https://datos.madrid.es/dataset/202535-0-paneles-infor
 SOUTH_TYROL_ROADS_URL = ('https://datex.api.opendatahub.com/datex/2/'
                          'province-bz/situation-publication.xml')
 SOUTH_TYROL_SOURCE = 'https://docs.opendatahub.com/use-data/datexii-api/reference/'
+A22_ANNOUNCEMENTS_URL = 'https://tourism.api.opendatahub.com/v1/Announcement'
+A22_ANNOUNCEMENTS_SOURCE = 'https://databrowser.opendatahub.com/'
 BERLIN_ROADS_URL = 'https://api.viz.berlin.de/tic3/baustellen_sperrungen_tic.json'
 BERLIN_ROADS_SOURCE = ('https://daten.berlin.de/datensaetze/'
                        'baustellen-sperrungen-und-sonstige-storungen-von-besonderem-verkehrlichem-interesse')
@@ -747,7 +749,6 @@ def _parse_madrid_cameras(root, published):
             'title': _clean(data.get('Nombre'), 110) or f'Madrid road camera {camera_id}',
             'detail': 'Latest available still · normally updated every 5 min',
             'snapshot_url': f'/madrid-camera/{camera_id}',
-            'snapshot_fallback_url': _madrid_camera_url(camera_id),
             'snapshot_refresh_ms': 300000,
             'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_CAMERAS_SOURCE,
             'updated_at': published,
@@ -765,6 +766,41 @@ def _madrid_cameras():
 _MADRID_CAMERA_HEALTH = {'until': 0, 'unavailable': set()}
 _MADRID_CAMERA_HEALTH_LOCK = threading.Lock()
 _MADRID_CAMERA_PLACEHOLDER_BYTES = 17803
+
+
+def _jpeg_dimensions(image):
+    if not image.startswith(b'\xff\xd8'):
+        return None
+    offset = 2
+    while offset + 9 < len(image):
+        if image[offset] != 0xff:
+            return None
+        while offset < len(image) and image[offset] == 0xff:
+            offset += 1
+        if offset >= len(image):
+            return None
+        marker = image[offset]
+        offset += 1
+        if marker in (0xd8, 0x01) or 0xd0 <= marker <= 0xd7:
+            continue
+        if marker in (0xd9, 0xda) or offset + 2 > len(image):
+            return None
+        length = int.from_bytes(image[offset:offset + 2], 'big')
+        if length < 2 or offset + length > len(image):
+            return None
+        if marker in (0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf):
+            if length < 7:
+                return None
+            height = int.from_bytes(image[offset + 3:offset + 5], 'big')
+            width = int.from_bytes(image[offset + 5:offset + 7], 'big')
+            return width, height
+        offset += length
+    return None
+
+
+def _madrid_camera_image_available(image):
+    dimensions = _jpeg_dimensions(image)
+    return dimensions is not None and dimensions[0] >= 600 and dimensions[1] >= 350
 
 
 def _mark_madrid_camera_unavailable(camera_id):
@@ -809,14 +845,14 @@ def _madrid_unavailable_cameras(cameras):
             try:
                 with urllib.request.urlopen(request, timeout=8) as response:
                     usable = (_madrid_camera_headers_available(response, now)
-                              and response.read(3) == b'\xff\xd8\xff')
+                              and _madrid_camera_image_available(response.read(16 * 1024)))
                     return None if usable else key
             except (OSError, ValueError):
                 return key
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
             unavailable_ids = {key for key in executor.map(unavailable, cameras) if key}
-        _MADRID_CAMERA_HEALTH.update(until=now + 900, unavailable=unavailable_ids)
+        _MADRID_CAMERA_HEALTH.update(until=now + 300, unavailable=unavailable_ids)
         return unavailable_ids
 
 
@@ -839,7 +875,7 @@ def madrid_camera_snapshot(camera_id):
             except (TimeoutError, urllib.error.URLError):
                 if attempt:
                     raise
-        if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        if len(image) > 2_000_000 or not _madrid_camera_image_available(image):
             raise ValueError('Madrid camera returned no JPEG still')
         return image, 'image/jpeg'
     except (OSError, ValueError):
@@ -1237,6 +1273,69 @@ def _parse_south_tyrol_roads(root, now=None):
 
 def _south_tyrol_roads():
     return _parse_south_tyrol_roads(_get_xml(SOUTH_TYROL_ROADS_URL))
+
+
+def _parse_a22_announcements(payload, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(payload, dict) or not isinstance(payload.get('Items'), list):
+        raise ValueError('A22 announcements are invalid')
+    if payload.get('TotalResults', 0) > len(payload['Items']):
+        raise ValueError('A22 announcements are incomplete')
+    features = []
+    for item in payload['Items']:
+        if not isinstance(item, dict) or item.get('Source') != 'a22' or item.get('Active') is not True:
+            continue
+        license_info = item.get('LicenseInfo') or {}
+        if license_info.get('ClosedData') or license_info.get('License') != 'CC0':
+            continue
+        tags = item.get('TagIds') or []
+        if 'announcement:traffic-event' not in tags:
+            continue
+        event_id = str(item.get('Id') or '').removeprefix('urn:announcements:a22:')
+        if not re.fullmatch(r'[0-9a-f-]{36}', event_id):
+            continue
+        start = _timestamp(item.get('StartTime'))
+        end = _timestamp(item.get('EndTime'))
+        changed = _timestamp(item.get('LastChange'))
+        if (start is None or start > now + 60 or (end is not None and end <= now)
+                or changed is None or changed > now + 300):
+            continue
+        # The API marks some years-old, open-ended records active. Require a
+        # recent source change when no end time constrains their validity.
+        if end is None and now - changed > 7 * 86400:
+            continue
+        position = (item.get('Geo') or {}).get('position') or {}
+        try:
+            lon, lat = float(position['Longitude']), float(position['Latitude'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (10.5 <= lon <= 12 and 44.3 <= lat <= 47.1):
+            continue
+        detail = item.get('Detail') or {}
+        detail_text = _clean((detail.get('en') or {}).get('BaseText')
+                             or (detail.get('it') or {}).get('BaseText'), 280)
+        title = _clean(item.get('Shortname'), 110) or 'A22 road event'
+        is_work = ('traffic-event:road-work' in tags
+                   or bool(re.search(r'\b(lavori|pavimentazione|cantiere)\b', detail_text, re.I)))
+        features.append(_feature([lon, lat], {
+            'key': f'it:a22:road:{event_id}',
+            'layer': 'construction' if is_work else 'incidents',
+            'title': title, 'detail': detail_text,
+            'source': 'Autostrada del Brennero · Open Data Hub · CC0',
+            'source_url': A22_ANNOUNCEMENTS_SOURCE,
+            'updated_at': item['LastChange'],
+        }))
+    return features
+
+
+def _a22_announcements():
+    now = dt.datetime.now(dt.timezone.utc)
+    params = urllib.parse.urlencode({
+        'source': 'a22', 'begin': now.isoformat(timespec='seconds'),
+        'end': (now + dt.timedelta(minutes=1)).isoformat(timespec='seconds'),
+        'pagesize': 200,
+    })
+    return _parse_a22_announcements(_get_json(f'{A22_ANNOUNCEMENTS_URL}?{params}'), now.timestamp())
 
 
 def _norway_wfs(layer, cql_filter=None):
@@ -3955,7 +4054,6 @@ def _parse_dgt_cameras(root, now=None):
             'detail': ' · '.join(part for part in (f'km {km}' if km else '', province,
                                               'Latest available still') if part),
             'snapshot_url': f'/dgt-camera/{image_id}', 'snapshot_refresh_ms': 120000,
-            'snapshot_fallback_url': _dgt_camera_url(image_id),
             'source': 'Spain DGT · CC BY', 'source_url': DGT_CAMERAS_SOURCE,
             'updated_at': published,
         }))
@@ -5716,6 +5814,7 @@ _FETCHERS = {
         'es_vitoria_cameras': _vitoria_cameras,
         'es_vigo_cameras': _vigo_cameras,
         'it_south_tyrol_roads': _south_tyrol_roads,
+        'it_a22_announcements': _a22_announcements,
         'pl_gddkia_roads': _poland_roads,
         'cy_nap_events': _cyprus_roads,
         'cy_waze_alerts': _cyprus_waze_alerts,
