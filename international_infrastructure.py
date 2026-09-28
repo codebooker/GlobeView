@@ -160,6 +160,10 @@ BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_
 VALENCIA_FLOW_SOURCE = 'https://opendata.vlci.valencia.es/en/dataset/estat-transit-temps-real-estado-trafico-tiempo-real'
 VALENCIA_FLOW_URL = ('https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/'
                      'MapServer/192/query?where=1%3D1&outFields=gid%2Cdenominacion%2Cestado&f=geojson')
+VALENCIA_OCCUPANCY_SOURCE = 'https://opendata.vlci.valencia.es/dataset/ocupacio-via-publica-ocupacion-via-publica'
+VALENCIA_OCCUPANCY_URL = ('https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/'
+                          'MapServer/209/query?where=1%3D1&outFields=id_incidencia%2Ctipo_incidencia%2C'
+                          'desc_calle%2Ctipo_afectacion%2Cfecha_inicio%2Cfecha_fin&f=geojson')
 BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                           'service=WFS&version=1.1.0&request=GetFeature&'
                           'typeName=bm_traffic:traffic_live_geom&outputFormat=json&srsName=EPSG:4326')
@@ -769,6 +773,58 @@ def _parse_madrid_incidents(root, published, now=None):
 def _madrid_incidents():
     root, published = _madrid_xml('incid_aytomadrid.xml')
     return _parse_madrid_incidents(root, published)
+
+
+def _parse_valencia_road_occupancy(payload, now=None):
+    """Only currently scheduled permits affecting a carriageway or lane."""
+    now = time.time() if now is None else now
+    rows = payload.get('features') if isinstance(payload, dict) else None
+    if (not isinstance(rows, list) or payload.get('type') != 'FeatureCollection'
+            or not 1 <= len(rows) < 2000):
+        raise ValueError('Valencia street-occupation publication is invalid or incomplete')
+    groups = {}
+    for row in rows:
+        try:
+            props = row['properties']
+            incident_id = int(props['id_incidencia'])
+            kind = str(props['tipo_incidencia']).upper()
+            effect = _clean(props['tipo_afectacion'], 120)
+            street = _clean(props['desc_calle'], 100)
+            start = int(props['fecha_inicio']) / 1000
+            end = int(props['fecha_fin']) / 1000
+            geometry = row['geometry']
+            if geometry['type'] != 'Point':
+                continue
+            lon, lat = map(float, geometry['coordinates'])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if (incident_id <= 0 or kind not in {'OBRAS', 'INCIDENCIAS', 'FESTEJOS'}
+                or not street or not start <= now <= end
+                or not -0.65 <= lon <= -0.1 or not 39.2 <= lat <= 39.65):
+            continue
+        if not re.search(r'CALZADA|CARRIL|CORTE DE CALLE|ROTONDA|CIRCULACI[OÓ]N|TR[AÁ]FICO', effect, re.I):
+            continue
+        groups.setdefault(incident_id, []).append((lon, lat, kind, street, effect, end))
+    features = []
+    for incident_id, points in groups.items():
+        center_lon = sum(point[0] for point in points) / len(points)
+        center_lat = sum(point[1] for point in points) / len(points)
+        lon, lat, kind, street, effect, end = min(
+            points, key=lambda point: (point[0] - center_lon) ** 2 + (point[1] - center_lat) ** 2)
+        end_date = dt.datetime.fromtimestamp(end, ZoneInfo('Europe/Madrid')).strftime('%d %b %Y')
+        label = 'Road works permit' if kind == 'OBRAS' else 'Road occupation permit'
+        features.append(_feature([lon, lat], {
+            'key': f'es:valencia:road-occupation:{incident_id}', 'layer': 'construction',
+            'title': f'{label} · {street}',
+            'detail': f'Scheduled through {end_date} · {effect} · Permit, not confirmed active closure',
+            'source': 'Valencia City Council · CC BY 4.0',
+            'source_url': VALENCIA_OCCUPANCY_SOURCE,
+        }))
+    return features
+
+
+def _valencia_road_occupancy():
+    return _parse_valencia_road_occupancy(_get_json(VALENCIA_OCCUPANCY_URL))
 
 
 def _parse_madrid_cameras(root, published):
@@ -6707,6 +6763,7 @@ _FETCHERS = {
         'es_sct_incidents': _sct_incidents,
         'es_sct_cameras': _sct_cameras,
         'es_madrid_incidents': _madrid_incidents,
+        'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
         'fr_paris_roadworks': _paris_roadworks,

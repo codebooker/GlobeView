@@ -27,6 +27,26 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_valencia_road_occupancy_maps_only_current_lanes_and_deduplicates(self):
+        now = 1790611200  # 28 September 2026 UTC
+
+        def row(identity, effect, start=now - 3600, end=now + 86400, lon=-0.38):
+            return {'type': 'Feature', 'geometry': {'type': 'Point',
+                    'coordinates': [lon, 39.47]}, 'properties': {
+                        'id_incidencia': identity, 'tipo_incidencia': 'OBRAS',
+                        'tipo_afectacion': effect, 'desc_calle': 'AV. TEST',
+                        'fecha_inicio': start * 1000, 'fecha_fin': end * 1000}}
+
+        payload = {'type': 'FeatureCollection', 'features': [
+            row(1, '100% CALZADA'), row(1, '100% CALZADA', lon=-0.381),
+            row(2, 'ACERA'), row(3, '1 CARRIL', start=now + 3600),
+            row(4, '1 CARRIL', end=now - 1), row(5, '1 CARRIL', lon=1.0)]}
+        rows = feeds._parse_valencia_road_occupancy(payload, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'es:valencia:road-occupation:1')
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertIn('not confirmed active closure', rows[0]['properties']['detail'])
+
     def test_valencia_flow_uses_current_segment_states_and_omits_no_data(self):
         def row(index, state):
             return {'geometry': {'type': 'LineString', 'coordinates':
