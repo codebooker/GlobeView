@@ -42,6 +42,11 @@ MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
 LYON_CAMERAS_SOURCE = 'https://www.data.gouv.fr/datasets/cameras-web-criter-de-la-metropole-de-lyon'
+LYON_WORKS_SOURCE = 'https://data.grandlyon.com/portail/fr/jeux-de-donnees/chantiers-perturbants-metropole-lyon/info'
+LYON_WORKS_METADATA_URL = 'https://www.data.gouv.fr/api/1/datasets/chantiers-perturbants-de-la-metropole-de-lyon/'
+LYON_WORKS_URL = ('https://data.grandlyon.com/geoserver/ogc/features/v1/collections/'
+                  'metropole-de-lyon%3Apvo_patrimoine_voirie.pvochantierperturbant/items?'
+                  'f=application%2Fgeo%2Bjson&limit=1000')
 LYON_CAMERAS_URL = ('https://data.grandlyon.com/geoserver/metropole-de-lyon/ows?'
                    'SERVICE=WFS&VERSION=2.0.0&request=GetFeature&'
                    'typename=metropole-de-lyon:pvo_patrimoine_voirie.pvocameracriter&'
@@ -1324,6 +1329,62 @@ def _lyon_cameras():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         return [row for row, available in zip(rows, executor.map(image_available, rows)) if available]
+
+
+def _parse_lyon_roadworks(metadata, publication, now=None):
+    now = time.time() if now is None else now
+    resources = metadata.get('resources') if isinstance(metadata, dict) else None
+    geojson = next((item for item in resources or [] if item.get('format') == 'geojson'), None)
+    published = geojson.get('last_modified') if geojson else None
+    modified = _timestamp(published)
+    if modified is None or not -300 <= now - modified <= 2 * 86400:
+        raise ValueError('Lyon roadworks publication is stale')
+    rows = publication.get('features') if isinstance(publication, dict) else None
+    count = publication.get('numberMatched') if isinstance(publication, dict) else None
+    if (not isinstance(publication, dict) or publication.get('type') != 'FeatureCollection'
+            or not isinstance(rows, list)
+            or not isinstance(count, int) or not 0 < count <= 1000
+            or publication.get('numberReturned') != count or len(rows) != count):
+        raise ValueError('Lyon roadworks publication is incomplete')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/Paris')).date()
+    features = []
+    seen = set()
+    for row in rows:
+        props = row.get('properties') or {}
+        work_id = props.get('gid')
+        if not isinstance(work_id, int) or work_id <= 0 or work_id in seen:
+            continue
+        try:
+            start = dt.date.fromisoformat(props['debutchantier'][:10])
+            end = dt.date.fromisoformat(props['finchantier'][:10])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (not start <= today <= end or props.get('avancement') != 'Chantier en cours'
+                or not str(props.get('typeperturbation') or '').startswith('Circulation ')):
+            continue
+        point = _point(row.get('geometry'))
+        if not point or not 4.6 <= point[0] <= 5.2 or not 45.5 <= point[1] <= 46.1:
+            continue
+        seen.add(work_id)
+        street = _clean(props.get('nom'), 85) or 'Lyon road'
+        effect = _clean(props.get('typeperturbation'), 75)
+        place = _clean(props.get('commune1'), 65)
+        detail = _clean(props.get('nomchantier'), 110)
+        features.append(_feature(point, {
+            'key': f'fr:lyon:works:{work_id}', 'layer': 'construction',
+            'title': f'Roadworks · {street}',
+            'detail': ' · '.join(filter(None, (effect, detail, place,
+                                               f'Scheduled through {end:%d %b %Y}'))),
+            'source': 'Métropole de Lyon · Licence Ouverte 2.0',
+            'source_url': LYON_WORKS_SOURCE, 'updated_at': published,
+        }))
+    return features
+
+
+def _lyon_roadworks():
+    metadata = _get_json(LYON_WORKS_METADATA_URL)
+    publication = _get_json(LYON_WORKS_URL)
+    return _parse_lyon_roadworks(metadata, publication)
 
 
 def lyon_camera_snapshot(camera_id):
@@ -7005,6 +7066,7 @@ _FETCHERS = {
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
+        'fr_lyon_roadworks': _lyon_roadworks,
         'fr_paris_roadworks': _paris_roadworks,
         'fr_toulouse_roadworks': _toulouse_roadworks,
         'fr_paris_traffic_events': _paris_traffic_events,

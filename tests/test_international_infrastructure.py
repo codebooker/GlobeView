@@ -1614,6 +1614,31 @@ class InfrastructureTests(unittest.TestCase):
             feeds._MADRID_CAMERA_STILLS.clear()
             feeds._MADRID_CAMERA_STILLS.update(previous_stills)
 
+    def test_lyon_roadworks_require_current_schedule_and_complete_publication(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'resources': [{'format': 'geojson',
+                                   'last_modified': '2026-09-28T06:00:00+00:00'}]}
+        def work(identity, start='2026-09-01', end='2026-10-01',
+                 status='Chantier en cours', lon=4.8):
+            return {'geometry': {'type': 'Point', 'coordinates': [lon, 45.75]},
+                    'properties': {'gid': identity, 'nom': 'Rue Centrale',
+                                   'nomchantier': 'Pipe replacement',
+                                   'commune1': 'Lyon', 'debutchantier': start,
+                                   'finchantier': end, 'avancement': status,
+                                   'typeperturbation': 'Circulation réduite'}}
+        rows = [work(10), work(11, start='2026-10-01'),
+                work(12, status='Chantier terminé'), work(13, lon=10)]
+        publication = {'type': 'FeatureCollection', 'features': rows,
+                       'numberMatched': 4, 'numberReturned': 4}
+        features = feeds._parse_lyon_roadworks(metadata, publication, now)
+        self.assertEqual([row['properties']['key'] for row in features],
+                         ['fr:lyon:works:10'])
+        self.assertIn('Circulation réduite', features[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_lyon_roadworks(metadata, {**publication, 'numberMatched': 5}, now)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_lyon_roadworks(metadata, publication, now + 3 * 86400)
+
     def test_lyon_cameras_require_fresh_official_stills(self):
         observed = dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat()
         def camera(camera_id, url=None, updated=observed):
