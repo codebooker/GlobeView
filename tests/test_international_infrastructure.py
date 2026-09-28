@@ -167,6 +167,28 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale or empty'):
             feeds._parse_gdynia_sensors(segments, speeds, intensities, now + 3600)
 
+    def test_gdynia_road_weather_uses_current_station_measurements(self):
+        now = dt.datetime(2026, 9, 28, 10, 30, tzinfo=ZoneInfo('Europe/Warsaw')).timestamp()
+        stations = [
+            {'id': 5, 'street': 'Morska', 'location': {'type': 'Point',
+                                                       'coordinates': [18.5, 54.5]}},
+            {'id': 6, 'street': 'Outside Gdynia', 'location': {'type': 'Point',
+                                                               'coordinates': [19.5, 54.5]}},
+        ]
+        readings = [
+            {'weatherStationId': 5, 'measureTime': '2026-09-28 10:26:00',
+             'airTemperature': 16.2, 'surfaceTemperature': 19.4,
+             'visibility': 2000, 'windSpeed': 1.5},
+            {'weatherStationId': 6, 'measureTime': '2026-09-28 10:26:00',
+             'airTemperature': 16.2},
+        ]
+        rows = feeds._parse_gdynia_road_weather(stations, readings, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'pl:gdynia:weather:5')
+        self.assertIn('Road surface 19.4°C', rows[0]['properties']['detail'])
+        self.assertIn('Visibility 2000 m', rows[0]['properties']['detail'])
+        self.assertEqual(feeds._parse_gdynia_road_weather(stations, readings, now + 3600), [])
+
     def test_bordeaux_flow_keeps_fresh_road_segments_only(self):
         now = dt.datetime(2026, 9, 27, 20, 40, tzinfo=dt.timezone.utc).timestamp()
         def road(gid, state='DENSE', modified='2026-09-27T20:35:00+00:00', lon=-0.60):

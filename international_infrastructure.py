@@ -202,7 +202,7 @@ _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Loc
                        for service in ('cameras', 'sign_locations')}
 _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
-                    for name in ('vms', 'road_segments')}
+                    for name in ('vms', 'road_segments', 'weather_stations')}
 _LITHUANIA_TRANSFORMER = Transformer.from_crs('EPSG:3346', 'EPSG:4326', always_xy=True)
 _NIE_TRANSFORMER = Transformer.from_crs('EPSG:29903', 'EPSG:4326', always_xy=True)
 
@@ -4216,7 +4216,8 @@ def _gdynia_catalog(name):
         if time.time() < cache['until']:
             return cache['rows']
         payload = _get_json(GDYNIA_ROADS_BASE + name)
-        rows = payload.get(name) if isinstance(payload, dict) else None
+        field = 'weatherStations' if name == 'weather_stations' else name
+        rows = payload.get(field) if isinstance(payload, dict) else None
         if not isinstance(rows, list) or not rows:
             raise ValueError(f'Gdynia {name} catalog is empty or invalid')
         cache.update(until=time.time() + 24 * 3600, rows=rows)
@@ -4370,6 +4371,61 @@ def _gdynia_sensors():
         speeds = executor.submit(_get_json, GDYNIA_ROADS_BASE + 'traffic_speeds')
         intensities = executor.submit(_get_json, GDYNIA_ROADS_BASE + 'traffic_intensities')
         return _parse_gdynia_sensors(segments, speeds.result(), intensities.result())
+
+
+def _parse_gdynia_road_weather(stations, readings, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(readings, list):
+        raise ValueError('Gdynia road weather measurements are invalid')
+    locations = {}
+    for station in stations:
+        if not isinstance(station, dict):
+            continue
+        point = _point(station.get('location'))
+        station_id = str(station.get('id') or '')
+        if (point and 18.3 <= point[0] <= 18.9 and 54.2 <= point[1] <= 54.7
+                and re.fullmatch(r'\d{1,8}', station_id)):
+            locations[station_id] = (point, _clean(station.get('street'), 100))
+    features = []
+    for reading in readings:
+        if not isinstance(reading, dict):
+            continue
+        station_id = str(reading.get('weatherStationId') or '')
+        location = locations.get(station_id)
+        measured = _gdynia_time(reading.get('measureTime'))
+        if not location or measured is None or not -300 <= now - measured <= 20 * 60:
+            continue
+        def bounded(field, low, high):
+            try:
+                value = float(reading[field])
+            except (KeyError, TypeError, ValueError):
+                return None
+            return value if math.isfinite(value) and low <= value <= high else None
+        air = bounded('airTemperature', -60, 60)
+        surface = bounded('surfaceTemperature', -60, 80)
+        visibility = bounded('visibility', 0, 50000)
+        wind = bounded('windSpeed', 0, 60)
+        detail = ' · '.join(part for part in (
+            f'Air {air:.1f}°C' if air is not None else '',
+            f'Road surface {surface:.1f}°C' if surface is not None else '',
+            f'Visibility {visibility:.0f} m' if visibility is not None else '',
+            f'Wind {wind:.1f} m/s' if wind is not None else '') if part)
+        if not detail:
+            continue
+        features.append(_feature(location[0], {
+            'key': f'pl:gdynia:weather:{station_id}', 'layer': 'sensors',
+            'title': 'Gdynia road weather',
+            'detail': ' · '.join(part for part in (location[1], detail) if part),
+            'source': 'Gdynia ZDiZ · TRISTAR', 'source_url': GDYNIA_ROADS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(measured, dt.timezone.utc).isoformat(),
+        }))
+    return features
+
+
+def _gdynia_road_weather():
+    stations = _gdynia_catalog('weather_stations')
+    readings = _get_json(GDYNIA_ROADS_BASE + 'weather_stations_data')
+    return _parse_gdynia_road_weather(stations, readings)
 
 
 _TII_CAMERA_CACHE = {'until': 0, 'items': {}}
@@ -5491,6 +5547,7 @@ _FETCHERS = {
         'cy_waze_alerts': _cyprus_waze_alerts,
         'pl_gdynia_signs': _gdynia_signs,
         'pl_gdynia_sensors': _gdynia_sensors,
+        'pl_gdynia_road_weather': _gdynia_road_weather,
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
