@@ -213,6 +213,10 @@ ZURICH_ROADWORKS_SOURCE = 'https://data.stadt-zuerich.ch/dataset/d991a4a2-32ea-4
 GENEVA_ROADWORKS_URL = ('https://app2.ge.ch/tergeoservices/rest/services/Hosted/'
                         'INFOMOB_CHANTIER_POINT/FeatureServer/0/query')
 GENEVA_ROADWORKS_SOURCE = 'https://sitg.ge.ch/donnees/infomob-chantier-point'
+GENEVA_CAMERAS_URL = ('https://app2.ge.ch/tergeoservices/rest/services/Hosted/'
+                      'INFOMOB_CAMERA/FeatureServer/0/query')
+GENEVA_CAMERAS_SOURCE = 'https://sitg.ge.ch/donnees/infomob-camera'
+GENEVA_CAMERA_IMAGE_BASE = 'https://app2.ge.ch/tercameras/CAM_'
 VIENNA_ROADWORKS_BASE = ('https://data.wien.gv.at/daten/geo?service=WFS&request=GetFeature'
                          '&version=1.1.0&srsName=EPSG:4326&outputFormat=json&maxFeatures=1000&typeName=')
 VIENNA_ROADWORKS_SOURCE = 'https://data.wien.gv.at/daten/geo?service=WFS&request=GetCapabilities'
@@ -2703,6 +2707,97 @@ def _geneva_roadworks():
         'f': 'geojson',
     })
     return _parse_geneva_roadworks(_get_json(GENEVA_ROADWORKS_URL + '?' + query))
+
+
+def _parse_geneva_cameras(payload, available, now=None):
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list)
+            or payload.get('exceededTransferLimit') or len(payload['features']) >= 1000):
+        raise ValueError('Geneva camera catalog is invalid or incomplete')
+    retrieved = dt.datetime.fromtimestamp(time.time() if now is None else now,
+                                          ZoneInfo('Europe/Zurich')).strftime('%d %b %Y')
+    features = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict) or not isinstance(row.get('properties'), dict):
+            continue
+        props = row['properties']
+        point = _point(row.get('geometry'))
+        if not point or not (5.95 <= point[0] <= 6.35 and 46.10 <= point[1] <= 46.38):
+            continue
+        url = str(props.get('image_aller') or '')
+        match = re.fullmatch(r'https://app2\.ge\.ch/tercameras/CAM_(\d{1,3})\.jpg', url)
+        if not match:
+            continue
+        camera_id = match.group(1)
+        if camera_id in seen or camera_id not in available:
+            continue
+        seen.add(camera_id)
+        modified = available[camera_id]
+        features.append(_feature(point, {
+            'key': f'ch:ge:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(props.get('nom'), 95) or f'Geneva road camera {camera_id}',
+            'snapshot_url': f'/geneva-camera/{camera_id}', 'snapshot_refresh_ms': 60000,
+            'source': f'SITG · Canton of Geneva · retrieved {retrieved}',
+            'source_url': GENEVA_CAMERAS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(modified, dt.timezone.utc).strftime('%d %b %H:%M UTC'),
+        }))
+    return features
+
+
+def _geneva_cameras():
+    query = urllib.parse.urlencode({
+        'where': '1=1', 'outFields': 'nom,image_aller', 'returnGeometry': 'true',
+        'outSR': '4326', 'resultRecordCount': '1000', 'f': 'geojson',
+    })
+    payload = _get_json(GENEVA_CAMERAS_URL + '?' + query)
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list) or len(payload['features']) >= 1000):
+        raise ValueError('Geneva camera catalog is invalid or incomplete')
+    ids = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        url = str((row.get('properties') or {}).get('image_aller') or '')
+        match = re.fullmatch(r'https://app2\.ge\.ch/tercameras/CAM_(\d{1,3})\.jpg', url)
+        if match:
+            ids.add(match.group(1))
+    now = time.time()
+
+    def probe(camera_id):
+        request = urllib.request.Request(GENEVA_CAMERA_IMAGE_BASE + camera_id + '.jpg',
+                                         method='HEAD', headers={'User-Agent': 'GlobeView/1.0'})
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                if (urllib.parse.urlsplit(response.url).hostname != 'app2.ge.ch'
+                        or response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg'):
+                    return None
+                modified = email.utils.parsedate_to_datetime(response.headers['Last-Modified']).timestamp()
+                return (camera_id, modified) if -300 <= now - modified <= 15 * 60 else None
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        available = dict(result for result in executor.map(probe, ids) if result)
+    return _parse_geneva_cameras(payload, available, now)
+
+
+def geneva_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{1,3}', str(camera_id)):
+        raise ValueError('Invalid Geneva camera ID')
+    request = urllib.request.Request(GENEVA_CAMERA_IMAGE_BASE + str(camera_id) + '.jpg',
+                                     headers={'User-Agent': 'GlobeView/1.0'})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        if (urllib.parse.urlsplit(response.url).hostname != 'app2.ge.ch'
+                or response.headers.get('Content-Type', '').split(';')[0] != 'image/jpeg'):
+            raise ValueError('Unexpected Geneva camera response')
+        modified = email.utils.parsedate_to_datetime(response.headers['Last-Modified']).timestamp()
+        if not -300 <= time.time() - modified <= 15 * 60:
+            raise FileNotFoundError('Geneva camera still is stale')
+        image = response.read(1_000_001)
+    if len(image) > 1_000_000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Geneva camera returned no JPEG still')
+    return image, 'image/jpeg'
 
 
 def _parse_vienna_roadworks(publications, now=None):
@@ -7410,6 +7505,7 @@ _FETCHERS = {
         'nl_ndw_sensors': _ndw_sensors,
         'ch_zurich_roadworks': _zurich_roadworks,
         'ch_geneva_roadworks': _geneva_roadworks,
+        'ch_geneva_cameras': _geneva_cameras,
         'at_vienna_roadworks': _vienna_roadworks,
         'ch_zurich_sensors': _zurich_sensors,
         'no_road_events': _norway_roads,

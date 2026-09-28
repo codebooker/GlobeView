@@ -2454,6 +2454,43 @@ class InfrastructureTests(unittest.TestCase):
             feeds._parse_geneva_roadworks({'type': 'FeatureCollection',
                                            'features': [], 'exceededTransferLimit': True}, now)
 
+    def test_geneva_cameras_require_current_official_jpegs(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        row = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [6.14, 46.21]},
+               'properties': {'nom': 'Bachet',
+                              'image_aller': 'https://app2.ge.ch/tercameras/CAM_16.jpg'}}
+        bad_host = {**row, 'properties': {**row['properties'],
+                    'image_aller': 'https://example.com/tercameras/CAM_16.jpg'}}
+        elsewhere = {**row, 'geometry': {'type': 'Point', 'coordinates': [0, 0]}}
+        payload = {'type': 'FeatureCollection', 'features': [row, row, bad_host, elsewhere]}
+        rows = feeds._parse_geneva_cameras(payload, {'16': now - 60}, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/geneva-camera/16')
+        self.assertIn('28 Sep 2026', rows[0]['properties']['source'])
+        self.assertEqual(feeds._parse_geneva_cameras(payload, {}, now), [])
+        with self.assertRaises(ValueError):
+            feeds.geneva_camera_snapshot('../16')
+
+        class Response(io.BytesIO):
+            def __init__(self, modified, final_url='https://app2.ge.ch/tercameras/CAM_16.jpg'):
+                super().__init__(b'\xff\xd8\xffimage')
+                self.url = final_url
+                self.headers = {'Content-Type': 'image/jpeg',
+                                'Last-Modified': email.utils.formatdate(modified, usegmt=True)}
+
+        with patch.object(feeds.time, 'time', return_value=now), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(now - 60)):
+            self.assertEqual(feeds.geneva_camera_snapshot('16')[1], 'image/jpeg')
+        with patch.object(feeds.time, 'time', return_value=now), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(now - 3600)):
+            with self.assertRaises(FileNotFoundError):
+                feeds.geneva_camera_snapshot('16')
+        with patch.object(feeds.time, 'time', return_value=now), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(
+                    now - 60, 'https://example.com/CAM_16.jpg')):
+            with self.assertRaises(ValueError):
+                feeds.geneva_camera_snapshot('16')
+
     def test_autobahn_excludes_future_works_and_maps_current_closure(self):
         payload = {'closure': [
             {'identifier': 'current', 'future': False, 'title': 'A1 | Junction',

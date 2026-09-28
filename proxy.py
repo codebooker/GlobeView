@@ -23,6 +23,7 @@ from international_infrastructure import (road_snapshot as international_road_sn
                                           tfl_camera_snapshot,
                                           estonia_camera_snapshot,
                                           lyon_camera_snapshot,
+                                          geneva_camera_snapshot,
                                           vitoria_camera_snapshot,
                                           vigo_camera_snapshot,
                                           luxembourg_camera_snapshot,
@@ -19375,6 +19376,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_estonia_camera(parsed)
         elif parsed.path.startswith('/lyon-camera/'):
             self._handle_lyon_camera(parsed)
+        elif parsed.path.startswith('/geneva-camera/'):
+            self._handle_geneva_camera(parsed)
         elif parsed.path.startswith('/vitoria-camera/'):
             self._handle_vitoria_camera(parsed)
         elif parsed.path.startswith('/vigo-camera/'):
@@ -19863,6 +19866,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, 'Snapshot unavailable')
         except Exception as exc:
             self._log_exception('lyon-camera', exc)
+            self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_geneva_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/geneva-camera/')
+        if not re.fullmatch(r'\d{1,3}', camera_id):
+            self.send_error(400, 'Invalid camera ID'); return
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'geneva-camera:v1:{camera_id}',
+                lambda: geneva_camera_snapshot(camera_id),
+                ttl=60, stale_ttl=180, persist=False, wait_timeout=20)
+            self._write_bytes(200, content, content_type,
+                              cache_control='public, max-age=60, stale-while-revalidate=120',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except FileNotFoundError:
+            self.send_error(404, 'Snapshot unavailable')
+        except Exception as exc:
+            self._log_exception('geneva-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
 
     def _handle_vitoria_camera(self, parsed):
