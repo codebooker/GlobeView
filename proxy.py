@@ -944,6 +944,7 @@ ALLOWED_STREAM_HOST_SUFFIXES = (
 PUBLIC_STATIC_FILES = frozenset({
     'index.html',
     'globe.js',
+    'cyber-trails.js',
     'maplibre-gl.mjs',
     'maplibre-gl-shared.mjs',
     'maplibre-gl-worker.mjs',
@@ -20487,11 +20488,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_cyber(self, parsed):
         try:
             feed = urllib.parse.parse_qs(parsed.query).get('feed', [''])[0]
+            if feed not in ('scans', 'kev', 'outbreaks', 'attacks'):
+                raise ValueError('Invalid cyber feed')
+            live = feed == 'attacks'
             content, _, _ = API_RESPONSE_CACHE.get_or_load(
                 f'cyber:v2:{feed}', lambda: (cyber_snapshot(feed), 'application/json'),
-                ttl=3600, stale_ttl=86400, wait_timeout=120,
+                ttl=60 if live else 3600, stale_ttl=120 if live else 86400,
+                wait_timeout=20 if live else 120,
             )
-            self._write_bytes(200, content, 'application/json', cache_control='public, max-age=300')
+            self._write_bytes(200, content, 'application/json',
+                              cache_control='public, max-age=30' if live else 'public, max-age=300')
         except ValueError:
             self.send_error(400, 'Invalid cyber feed')
         except Exception as e:

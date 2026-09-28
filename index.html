@@ -17,6 +17,7 @@
 </head>
 <body>
   <div id="map" role="application" aria-label="Interactive globe"></div>
+  <canvas id="cyber-trails" aria-hidden="true" hidden></canvas>
   <div class="app-loading" id="app-loading" role="status" aria-live="polite">
     <div class="app-loading-content">
       <div class="app-loading-mark" aria-hidden="true"><span class="app-loading-orbit"></span><img src="/globeview-mark.svg" alt=""></div>
@@ -141,21 +142,8 @@
       <p class="source-note">Rail sources: <a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/railroads/" target="_blank" rel="noopener noreferrer">Natural Earth</a> provides a generalized worldwide overview with uneven coverage; <a href="https://railroads.dot.gov/rail-network-development/maps-and-data/maps-geographic-information-system/maps-geographic" target="_blank" rel="noopener noreferrer">FRA / BTS</a> provides detailed U.S., Canada, and Mexico rail lines (updated July 2026). These show infrastructure, not live trains.</p>
       <details class="source-details"><summary>Sources, dates &amp; licensing</summary><p>U.S. grid and pipelines: <a href="https://arcgis.netl.doe.gov/server/rest/services/Hosted/Energy_Transition_Atlas_493d6/FeatureServer/18" target="_blank" rel="noopener noreferrer">DOE / HIFLD transmission (2022)</a> and <a href="https://arcgis.netl.doe.gov/server/rest/services/Hosted/Natural_Gas_Pipelines/FeatureServer/10" target="_blank" rel="noopener noreferrer">gas pipelines (2019)</a>. Renewable sites: <a href="https://energy.usgs.gov/uswtdb/" target="_blank" rel="noopener noreferrer">USGS wind</a> and <a href="https://energy.usgs.gov/uspvdb/" target="_blank" rel="noopener noreferrer">solar</a>. Worldwide plants: <a href="https://www.wri.org/research/global-database-power-plants" target="_blank" rel="noopener noreferrer">WRI</a> (historical catalog). Faults: <a href="https://www.globalquakemodel.org/product/active-faults-database" target="_blank" rel="noopener noreferrer">GEM</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>; hosted copy last edited 2024). <a href="https://services.arcgis.com/e8gGAYmR5kxEFApE/ArcGIS/rest/services/Meteorites/FeatureServer/0" target="_blank" rel="noopener noreferrer">Impact structures</a> are an older ArcGIS archive including probable sites; it is not a current scientific census.</p></details>
       <div class="layer-group" data-layer-group="cyber"><span>Cybersecurity</span><button class="group-toggle" type="button" role="checkbox" aria-label="All cybersecurity map layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
-      <button class="switch-row" type="button" data-layer="scans" aria-pressed="false"><span class="row-icon"></span><span class="row-label">Observed scan sources</span><span class="row-count" data-count="scans"></span><span class="switch"></span></button>
-      <button class="intel-button" id="cyber-toggle" type="button" aria-expanded="false" aria-controls="cyber-panel"><span>Cyber briefing</span><span aria-hidden="true">⌄</span></button>
-      <div class="intel-panel" id="cyber-panel" hidden>
-        <p class="intel-intro">Public signals with different meanings. Network locations are approximate. These feeds do not show every attack or confirm a compromise.</p>
-        <h3>Observed scan sources</h3>
-        <p class="cyber-caption" id="scan-summary">Loading source list…</p>
-        <div id="scan-country-list" aria-live="polite"></div>
-        <h3>FortiGuard outbreak alerts</h3>
-        <p class="cyber-caption">Published reports about broader threats; they are not map locations.</p>
-        <div id="outbreak-list" aria-live="polite">Loading alerts…</div>
-        <h3>Known exploited vulnerabilities</h3>
-        <p class="cyber-caption">Recent additions to CISA’s catalog, with evidence of exploitation in the wild.</p>
-        <div id="kev-list" aria-live="polite">Loading catalog…</div>
-        <div class="cyber-links"><a href="https://fortiguard.fortinet.com/threat-map" target="_blank" rel="noopener noreferrer">Explore FortiGuard threat map ↗</a><a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog" target="_blank" rel="noopener noreferrer">Full CISA catalog ↗</a></div>
-      </div>
+      <button class="switch-row" type="button" data-layer="cyber" aria-pressed="false"><span class="row-icon">✶</span><span class="row-label">Cyber activity</span><span class="row-count" data-count="cyber"></span><span class="switch"></span></button>
+      <p class="layer-note"><a href="https://fortiguard.fortinet.com/threat-map" target="_blank" rel="noopener noreferrer">FortiGuard</a> detections · approximate locations · refreshed each minute.</p>
       <div class="layer-group" data-layer-group="roads"><span>Roads</span><button class="group-toggle" type="button" role="checkbox" aria-label="All road layers" aria-checked="false"><span>All</span><span class="group-switch" aria-hidden="true"></span></button></div>
       <button class="switch-row" type="button" data-layer="signs" data-default-on aria-pressed="true"><span class="row-icon"></span><span class="row-label">Road signs &amp; messages</span><span class="row-count" data-count="signs"></span><span class="switch"></span></button>
       <button class="switch-row" type="button" data-layer="incidents" data-default-on aria-pressed="true"><span class="row-icon"></span><span class="row-label">Road incidents</span><span class="row-count" data-count="incidents"></span><span class="switch"></span></button>

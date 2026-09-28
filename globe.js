@@ -1,4 +1,5 @@
 /* One MapLibre map renders the globe and every live layer. */
+import { createCyberTrails } from './cyber-trails.js';
 (async () => {
   'use strict';
 
@@ -103,7 +104,7 @@
     construction: 'Construction'
   };
   const RASTER = { traffic: { minZoom: 6 }, radar: { minZoom: 0 }, imagery: { minZoom: 0 }, goes: { minZoom: 0 }, fire_hotspots: { minZoom: 0 }, daynight: { minZoom: 0 } };
-  const MODES = { marine: { minZoom: 0 }, radio: { minZoom: 0 } };
+  const MODES = { marine: { minZoom: 0 }, radio: { minZoom: 0 }, cyber: { minZoom: 0 } };
   const ARCGIS = {
     transmission: { label: 'Transmission lines', minZoom: 7, kind: 'line', color: '#efbb70', source: 'U.S. DOE / HIFLD 2022' },
     gas_pipelines: { label: 'Gas pipelines', minZoom: 7, kind: 'line', color: '#b89bd9', source: 'U.S. DOE / HIFLD 2019' },
@@ -355,6 +356,11 @@
     minZoom: 0, maxZoom: 19, maxPitch: 75, renderWorldCopies: false,
     attributionControl: false, antialias: false, fadeDuration: 0
   });
+  const cyberTrails = createCyberTrails(map, document.getElementById('cyber-trails'),
+    count => setCount('cyber', count), error => {
+      console.warn('FortiGuard activity:', error);
+      showStatus('Cyber activity is temporarily unavailable.', true);
+    });
   const DEG_TO_RAD = Math.PI / 180;
   function setGlobeFrontVector() {
     const { lat, lng } = map.getCenter();
@@ -2696,113 +2702,6 @@
     }
   }
 
-  let scanBriefingLoadedAt = 0;
-  async function loadScanBriefing() {
-    if (Date.now() - scanBriefingLoadedAt < 3600000) return;
-    const summary = document.getElementById('scan-summary');
-    const list = document.getElementById('scan-country-list');
-    summary.textContent = 'Loading source list…';
-    try {
-      const response = await fetch('/cyber?feed=scans');
-      if (!response.ok) throw new Error(`SANS feed: ${response.status}`);
-      const data = await response.json();
-      const items = (data.items || []).filter(item => item.country && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lon)));
-      const countsByCountry = new Map();
-      for (const item of items) countsByCountry.set(item.country, (countsByCountry.get(item.country) || 0) + 1);
-      const ranked = [...countsByCountry].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5);
-      list.replaceChildren();
-      const countryNames = typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames([navigator.language], { type: 'region' }) : null;
-      for (const [country, count] of ranked) {
-        const row = document.createElement('button'); row.type = 'button'; row.className = 'cyber-country';
-        let name = country;
-        try { if (/^[A-Z]{2}$/.test(country)) name = countryNames?.of(country) || country; } catch { /* Keep source code. */ }
-        row.setAttribute('aria-label', `Show ${count} mapped scan-source IP${count === 1 ? '' : 's'} in ${name}`);
-        const label = textElement('span', 'cyber-country-label', name);
-        const value = textElement('span', 'cyber-country-count', `${count} IP${count === 1 ? '' : 's'}`);
-        const track = document.createElement('div'); track.className = 'cyber-country-track';
-        const fill = document.createElement('span'); fill.style.width = `${Math.max(7, count / Math.max(1, ranked[0][1]) * 100)}%`;
-        track.append(fill); row.append(label, value, track);
-        row.addEventListener('click', () => {
-          stopRotation();
-          if (!enabled.scans) document.querySelector('[data-layer="scans"]')?.click();
-          const subset = items.filter(item => item.country === country);
-          const lon = subset.reduce((total, item) => total + Number(item.lon), 0) / subset.length;
-          const lat = subset.reduce((total, item) => total + Number(item.lat), 0) / subset.length;
-          if (validCoordinate(lat, lon)) map.flyTo({ center: [lon, lat], zoom: 4.5, duration: 950, essential: true });
-          if (window.innerWidth < 901) setPanelOpen(false);
-        });
-        list.append(row);
-      }
-      summary.textContent = `${items.length} mapped of ${Number(data.listed) || items.length} IPs in SANS's top source list · Feed retrieved ${observedLabel(data.observed)}. Counts are source IPs, not attack volume. Select a country to see them on the globe.`;
-      if (!ranked.length) list.textContent = 'No locations available in the current source list.';
-      scanBriefingLoadedAt = Date.now();
-    } catch (error) {
-      console.warn(error);
-      summary.textContent = 'Scan-source list is unavailable right now.';
-      list.replaceChildren();
-    }
-  }
-
-  let outbreakLoadedAt = 0;
-  async function loadOutbreaks() {
-    if (Date.now() - outbreakLoadedAt < 3600000) return;
-    const list = document.getElementById('outbreak-list');
-    list.textContent = 'Loading alerts…';
-    try {
-      const response = await fetch('/cyber?feed=outbreaks');
-      if (!response.ok) throw new Error(`FortiGuard feed: ${response.status}`);
-      const data = await response.json();
-      list.replaceChildren();
-      for (const item of (data.items || []).slice(0, 5)) {
-        let source;
-        try { source = new URL(item.sourceUrl); } catch { continue; }
-        if (source.protocol !== 'https:' || source.hostname !== 'fortiguard.fortinet.com') continue;
-        const row = document.createElement('article'); row.className = 'kev-item';
-        const link = document.createElement('a'); link.href = source.href;
-        link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = item.title || 'Outbreak alert';
-        row.append(link);
-        if (item.published) row.append(textElement('small', '', observedLabel(item.published)));
-        if (item.summary) row.append(textElement('p', '', item.summary));
-        list.append(row);
-      }
-      if (!list.childElementCount) list.textContent = 'No recent outbreak alerts available.';
-      outbreakLoadedAt = Date.now();
-    } catch (error) {
-      console.warn(error);
-      list.textContent = 'FortiGuard alerts are unavailable right now.';
-    }
-  }
-
-  let kevLoadedAt = 0;
-  async function loadKev() {
-    if (Date.now() - kevLoadedAt < 3600000) return;
-    const list = document.getElementById('kev-list');
-    list.textContent = 'Loading…';
-    try {
-      const response = await fetch('/cyber?feed=kev');
-      if (!response.ok) throw new Error(`CISA feed: ${response.status}`);
-      const data = await response.json();
-      list.replaceChildren();
-      for (const item of (data.items || []).slice(0, 6)) {
-        if (!/^CVE-\d{4}-\d{4,}$/.test(item.cve || '')) continue;
-        const row = document.createElement('article');
-        row.className = 'kev-item';
-        const link = document.createElement('a');
-        link.href = `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(item.cve)}`;
-        link.target = '_blank'; link.rel = 'noopener noreferrer';
-        link.textContent = item.cve;
-        row.append(link, textElement('small', '', [item.dateAdded, item.vendor, item.product].filter(Boolean).join(' · ')));
-        if (item.name) row.append(textElement('p', '', item.name));
-        list.append(row);
-      }
-      if (!list.childElementCount) list.textContent = 'No recent catalog entries available.';
-      kevLoadedAt = Date.now();
-    } catch (error) {
-      console.warn(error);
-      list.textContent = 'CISA catalog is unavailable. Try again later.';
-    }
-  }
-
   async function refreshRadar(force = false) {
     if (!styleReady || !enabled.radar || document.hidden) return;
     if (!force && Date.now() - radarTime < 300000) return;
@@ -3093,6 +2992,7 @@
     else if (type === 'cyclones' || type === 'earthquakes' || type === 'nws_alerts' || type === 'world_alerts' || type === 'fires' || type === 'floods' || type === 'volcanoes' || type === 'gdelt_events') loadHazards(type);
     else if (type === 'ports') loadPorts();
     else if (type === 'scans') loadScans();
+    else if (type === 'cyber') cyberTrails.setEnabled(true);
     else if (type === 'power') loadPower();
     else if (type === 'radar') refreshRadar();
     else if (type === 'traffic') loadInternationalTraffic();
@@ -3919,6 +3819,7 @@
     if (type === 'goes' && !enabled.goes) { stopGoesPlayback(); goesPreload = false; }
     updateGroupControls();
     if (!enabled[type]) {
+      if (type === 'cyber') cyberTrails.setEnabled(false);
       requests.get(type)?.abort();
       if (ARCGIS[type]) {
         arcgisQueryKeys.delete(type);
@@ -3957,18 +3858,6 @@
       showStatus(`${header.querySelector('span').textContent} enabled. Zoom in to see layers with local coverage.`, false, 5000);
     }
   }));
-  document.getElementById('cyber-toggle').addEventListener('click', event => {
-    const open = event.currentTarget.getAttribute('aria-expanded') !== 'true';
-    event.currentTarget.setAttribute('aria-expanded', String(open));
-    const panel = document.getElementById('cyber-panel');
-    panel.hidden = !open;
-    if (open) {
-      loadScanBriefing();
-      loadOutbreaks();
-      loadKev();
-      panel.scrollIntoView({ block: 'nearest' });
-    }
-  });
   document.getElementById('panel-toggle').addEventListener('click', event => {
     setPanelOpen(event.currentTarget.getAttribute('aria-expanded') !== 'true');
   });

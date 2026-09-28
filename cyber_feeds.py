@@ -1,10 +1,11 @@
-"""Small, cached cybersecurity feeds: scans, exploited vulnerabilities, and alerts."""
+"""Cached cybersecurity feeds, including FortiGuard's observed threat-map activity."""
 import concurrent.futures
 import datetime as dt
 from email.utils import parsedate_to_datetime
 import ipaddress
 import json
 import math
+import re
 import threading
 import time
 import urllib.parse
@@ -19,7 +20,7 @@ _INFLIGHT = {}
 _RETRY_AFTER = {}
 _GEO_CACHE = {}
 _GEO_LOCK = threading.Lock()
-_TTL = {'scans': 3600, 'kev': 3600, 'outbreaks': 3600}
+_TTL = {'scans': 3600, 'kev': 3600, 'outbreaks': 3600, 'attacks': 60}
 
 
 def _get(url, limit=5_000_000, timeout=20):
@@ -172,7 +173,59 @@ def _outbreaks():
     return {'source': 'FortiGuard Labs Outbreak Alerts', 'feedUrl': feed_url, 'items': items[:8]}
 
 
-_LOADERS = {'scans': _scans, 'kev': _kev, 'outbreaks': _outbreaks}
+def _fortiguard_attacks(payload, now=None):
+    """Keep only recent, geolocated detections; never expose source IPs."""
+    if not isinstance(payload, dict) or not isinstance(payload.get('ips'), dict):
+        raise ValueError('FortiGuard activity response is invalid')
+    now = time.time() if now is None else now
+    items = []
+    seen = set()
+    for bucket, rows in payload['ips'].items():
+        if not str(bucket).isdigit() or not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            event_id = str(row.get('redis_ms') or '')
+            if not re.fullmatch(r'\d{13}-\d+', event_id) or event_id in seen:
+                continue
+            try:
+                observed = int(event_id.split('-', 1)[0]) / 1000
+                src = [float(row['src_long']), float(row['src_lat'])]
+                dest = [float(row['dest_long']), float(row['dest_lat'])]
+            except (TypeError, ValueError, KeyError):
+                continue
+            if not (-10 <= now - observed <= 150):
+                continue
+            if not all(math.isfinite(v) for v in src + dest):
+                continue
+            if not (-180 <= src[0] <= 180 and -90 <= src[1] <= 90 and
+                    -180 <= dest[0] <= 180 and -90 <= dest[1] <= 90):
+                continue
+            if abs(src[0] - dest[0]) < .01 and abs(src[1] - dest[1]) < .01:
+                continue
+            seen.add(event_id)
+            items.append({
+                'id': event_id, 'observed': int(observed * 1000),
+                'src': src, 'dest': dest,
+                'srcLabel': ' · '.join(str(row.get(k) or '').strip()[:50] for k in ('src_city', 'src_country')).strip(' ·'),
+                'destLabel': ' · '.join(str(row.get(k) or '').strip()[:50] for k in ('dest_city', 'dest_country')).strip(' ·'),
+                'threat': str(row.get('vuln_name') or row.get('profile_type') or 'Threat detection')[:120],
+                'severity': str(row.get('severity') or '')[:20],
+            })
+    items.sort(key=lambda item: item['observed'], reverse=True)
+    return {'source': 'FortiGuard Labs threat map · observed detections',
+            'observed': items[0]['observed'] if items else None, 'items': items[:120]}
+
+
+def _attacks():
+    params = {'outbreak_id': 0, 'segment_sec': 5, 'replay': 'false',
+              'limit': 10, 'last_sec': 60, '_gv': int(time.time() // 60)}
+    url = 'https://fortiguard.fortinet.com/api/threatmap/live/outbreak?' + urllib.parse.urlencode(params)
+    return _fortiguard_attacks(json.loads(_get(url, limit=1_000_000, timeout=12)))
+
+
+_LOADERS = {'scans': _scans, 'kev': _kev, 'outbreaks': _outbreaks, 'attacks': _attacks}
 
 
 def cyber_snapshot(layer):
@@ -198,7 +251,7 @@ def cyber_snapshot(layer):
         body = json.dumps(_LOADERS[layer](), separators=(',', ':')).encode()
     except Exception:
         with _LOCK:
-            _RETRY_AFTER[layer] = time.monotonic() + 300
+            _RETRY_AFTER[layer] = time.monotonic() + (30 if layer == 'attacks' else 300)
             cached = _CACHE.get(layer)
             if cached and time.monotonic() < cached['stale']:
                 return cached['body']
@@ -206,7 +259,8 @@ def cyber_snapshot(layer):
     else:
         now = time.monotonic()
         with _LOCK:
-            _CACHE[layer] = {'body': body, 'expires': now + _TTL[layer], 'stale': now + 86400}
+            _CACHE[layer] = {'body': body, 'expires': now + _TTL[layer],
+                             'stale': now + (120 if layer == 'attacks' else 86400)}
             _RETRY_AFTER.pop(layer, None)
         return body
     finally:

@@ -6,6 +6,30 @@ import cyber_feeds
 
 
 class CyberFeedTests(unittest.TestCase):
+    def test_fortiguard_requests_share_one_minute_cache(self):
+        with patch.dict(cyber_feeds._CACHE, {}, clear=True), \
+                patch.dict(cyber_feeds._RETRY_AFTER, {}, clear=True), \
+                patch.object(cyber_feeds, '_get', return_value=b'{"ips":{}}') as get:
+            first = cyber_feeds.cyber_snapshot('attacks')
+            second = cyber_feeds.cyber_snapshot('attacks')
+        self.assertEqual(first, second)
+        self.assertEqual(get.call_count, 1)
+        self.assertIn('last_sec=60', get.call_args.args[0])
+
+    def test_fortiguard_attacks_keep_recent_geolocated_detections(self):
+        event = {'redis_ms': '1790629185612-0', 'src_long': 74.18, 'src_lat': 32.15,
+                 'dest_long': 121.29, 'dest_lat': 24.99, 'src_city': 'Gujranwala',
+                 'src_country': 'PK', 'dest_city': 'Taoyuan', 'dest_country': 'TW',
+                 'vuln_name': 'Router exploit', 'severity': 'High', 'src_ip': '192.0.2.3'}
+        stale = dict(event, redis_ms='1790628000000-1')
+        invalid = dict(event, redis_ms='1790629185612-2', dest_lat=999)
+        payload = {'ips': {'1790629185278': [event, event, stale, invalid]}, 'virus': None}
+        result = cyber_feeds._fortiguard_attacks(payload, now=1790629190)
+        self.assertEqual(len(result['items']), 1)
+        self.assertEqual(result['items'][0]['src'], [74.18, 32.15])
+        self.assertEqual(result['items'][0]['dest'], [121.29, 24.99])
+        self.assertNotIn('src_ip', result['items'][0])
+
     def test_scans_only_map_public_unique_sources(self):
         feed = b'23.94.68.19\thost.example\n10.0.0.1\tprivate\n23.94.68.19\tduplicate\n89.248.163.109\tsecond.example\n'
         location = {'lat': 42.0, 'lon': -78.0, 'country': 'US', 'city': 'Buffalo'}
