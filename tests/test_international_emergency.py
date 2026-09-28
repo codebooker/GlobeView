@@ -7,6 +7,27 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_poland_rso_maps_only_current_geocoded_advisories(self):
+        now = dt.datetime(2026, 9, 28, 6, tzinfo=dt.timezone.utc)
+        active = {'id': 23344126, 'title': 'Jakość wody przeznaczonej do spożycia',
+                  'shortcut': 'Water notice for Nowe Miasto Lubawskie',
+                  'longitude': 19.5923, 'latitude': 53.4239,
+                  'valid_from': '2026-09-18 11:40:00',
+                  'valid_to': '2026-10-02 23:59:00',
+                  'updated_at': '2026-09-18 11:42:38'}
+        rows = feeds.parse_poland_rso({'newses': [active, {**active, 'id': 2, 'latitude': None},
+                                                 {**active, 'id': 3, 'valid_to': '2026-09-27 00:00:00'},
+                                                 {**active, 'id': 4, 'longitude': 10}]}, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['id'], 'pl:rso:23344126')
+        self.assertEqual(rows[0]['category'], 'warning')
+        self.assertIn('Advisory', rows[0]['title'])
+        self.assertEqual(rows[0]['observed'], '2026-09-18T09:42:38Z')
+        self.assertEqual(feeds.parse_poland_rso({'newses': [active]},
+                         now + dt.timedelta(days=31)), [])
+        with self.assertRaisesRegex(ValueError, 'invalid'):
+            feeds.parse_poland_rso({'newses': 'bad'}, now)
+
     def test_usti_fire_reports_join_recent_status_and_map_coordinates(self):
         now = dt.datetime(2026, 9, 27, 22, 30, tzinfo=dt.timezone.utc)
         url = feeds.USTI_EMERGENCY_URL

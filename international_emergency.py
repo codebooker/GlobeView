@@ -36,6 +36,8 @@ CATALONIA_FIRE_URL = ('https://services7.arcgis.com/ZCqVt1fRXwwK6GF4/arcgis/rest
                       'returnGeometry=true&outSR=4326&resultRecordCount=1000&f=geojson')
 SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
 SWEDEN_POLICE_URL = 'https://polisen.se/api/events'
+POLAND_RSO_URL = 'https://komunikaty.tvp.pl/komunikatyxml/wszystkie/ogolne/0?_format=json'
+POLAND_RSO_SOURCE = 'https://komunikaty.tvp.pl/komunikaty/wszystkie/ogolne'
 USTI_EMERGENCY_URL = 'https://pkr.kr-ustecky.cz/pkr/zasahy-jednotek-pozarni-ochrany/'
 PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/services/'
                 'OcorrenciasSite/FeatureServer/0/query?where=1%3D1&outFields='
@@ -110,6 +112,44 @@ def _item(key, lon, lat, title, detail, source, source_url, observed, category='
     return {'id': key, 'lon': float(lon), 'lat': float(lat), 'title': _clean(title, 140),
             'detail': _clean(detail), 'source': source, 'sourceUrl': source_url,
             'observed': observed, 'category': category}
+
+
+def parse_poland_rso(payload, now=None):
+    """Public RSO advisories with supplied points; these are not dispatch calls."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    rows = payload.get('newses') if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or len(rows) > 1000:
+        raise ValueError('Poland RSO advisory feed is invalid')
+    output = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        identifier = row.get('id')
+        if not isinstance(identifier, int) or identifier <= 0:
+            continue
+        lon, lat = row.get('longitude'), row.get('latitude')
+        if not _valid(lon, lat) or not (14 <= float(lon) <= 24.3 and 48.8 <= float(lat) <= 55.2):
+            continue
+        start = _iso(row.get('valid_from'), 'Europe/Warsaw')
+        end = _iso(row.get('valid_to'), 'Europe/Warsaw')
+        updated = _iso(row.get('updated_at'), 'Europe/Warsaw')
+        if not start or not end or not updated:
+            continue
+        start_time = dt.datetime.fromisoformat(start.replace('Z', '+00:00'))
+        end_time = dt.datetime.fromisoformat(end.replace('Z', '+00:00'))
+        updated_time = dt.datetime.fromisoformat(updated.replace('Z', '+00:00'))
+        if not (start_time <= now <= end_time and
+                dt.timedelta(minutes=-5) <= now - updated_time <= dt.timedelta(days=30)):
+            continue
+        title = _clean(row.get('title'), 140)
+        detail = _clean(row.get('shortcut') or row.get('content'), 280)
+        if not title or not detail:
+            continue
+        output.append(_item(f'pl:rso:{identifier}', lon, lat,
+                            f'Advisory · {title}', detail,
+                            'Poland RSO · public advisory', POLAND_RSO_SOURCE,
+                            updated, 'warning'))
+    return output
 
 
 def _first_point(geometry):
@@ -851,6 +891,7 @@ _LOADERS = {
     'es_catalonia_fire': lambda: parse_catalonia_fires(_json(CATALONIA_FIRE_URL)),
     'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),
     'sweden_police': _sweden_police,
+    'poland_rso': lambda: parse_poland_rso(_json(POLAND_RSO_URL)),
     'cz_usti_fire': _usti_emergencies,
 }
 
