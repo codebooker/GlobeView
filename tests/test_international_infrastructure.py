@@ -27,6 +27,36 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_cold_road_snapshot_returns_completed_sources_while_others_load(self):
+        release_slow = threading.Event()
+        fast_done = threading.Event()
+        fast = feeds._feature([-3.7, 40.4], {'key': 'fast', 'layer': 'cameras'})
+
+        def fast_source():
+            fast_done.set()
+            return [fast]
+
+        def slow_source():
+            release_slow.wait(2)
+            return []
+
+        fresh_cache = {'until': 0, 'sources': {}, 'source_times': {},
+                       'errors': [], 'refreshing': False}
+        try:
+            with patch.dict(feeds._CACHE, {'roads': fresh_cache}), \
+                    patch.dict(feeds._FETCHERS, {'roads': {
+                        'fast': fast_source, 'slow': slow_source}}), \
+                    patch.object(feeds, '_COLD_WAIT_SECONDS', 0.15):
+                snapshot = feeds._snapshot('roads')
+                self.assertTrue(fast_done.is_set())
+                self.assertTrue(snapshot['loading'])
+                self.assertEqual(snapshot['sources']['fast'], [fast])
+                release_slow.set()
+                self.assertTrue(feeds._REFRESH_DONE['roads'].wait(2))
+                self.assertFalse(feeds._snapshot('roads')['loading'])
+        finally:
+            release_slow.set()
+
     def test_ndw_sensors_join_current_sites_and_skip_bad_readings(self):
         publication = dt.datetime.fromtimestamp(NOW - 90, dt.timezone.utc).isoformat()
         observed = dt.datetime.fromtimestamp(NOW - 120, dt.timezone.utc).isoformat()

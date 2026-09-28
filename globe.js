@@ -1498,6 +1498,12 @@
       return;
     }
     setPoints(type, features, records);
+    if (international?.loading) {
+      // The server is still filling its first road snapshot after a restart.
+      // Pick up additional camera and road sources without waiting for the
+      // normal layer refresh interval.
+      fetchedAt.set(type, Date.now() - POINT[type].refreshMs + 10000);
+    }
   }
 
   const GOV_CALLSIGNS = /^(CBP|FED|DOJ|DEA|FBI|ATF|FAMS|HSI|ALEA|GSP|MHP|FHP|FLHP|OPD|OCSO|PCSO|HCSO|BCSO|SCSO|LCSO|MCSO|FLPD|OIPD|SHERIFF|TROOPER|POLICE|PATROL|RESCUE|JOLLY|PEDRO|KING|REACH|EVAC|MEDEVAC|DUSTOFF)/i;

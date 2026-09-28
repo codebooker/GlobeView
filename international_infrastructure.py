@@ -199,6 +199,7 @@ _CACHE = {
     'power': {'until': 0, 'sources': {}, 'source_times': {}, 'errors': [], 'refreshing': False},
 }
 _STALE_SECONDS = 900
+_COLD_WAIT_SECONDS = 12
 _BORDEAUX_FLOW_LOCK = threading.Lock()
 _BORDEAUX_FLOW_CACHE = {'until': 0, 'data': None}
 _PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
@@ -5950,6 +5951,11 @@ def _refresh_snapshot(kind):
                     errors.append(f'{name}: {error}')
                     if now - source_times.get(name, 0) > _STALE_SECONDS:
                         sources.pop(name, None)
+                # A slow feed elsewhere in Europe must not hold every road layer
+                # hostage after a deploy. Publish each completed source at once.
+                with _LOCKS[kind]:
+                    cache.update({'sources': dict(sources),
+                                  'source_times': dict(source_times), 'errors': list(errors)})
         with _LOCKS[kind]:
             cache.update({'until': time.time() + (180 if kind == 'roads' else 300),
                           'sources': sources, 'source_times': source_times, 'errors': errors})
@@ -5960,27 +5966,22 @@ def _refresh_snapshot(kind):
 
 
 def _snapshot(kind):
-    wait_for_cold_refresh = False
     with _LOCKS[kind]:
         cache = _CACHE[kind]
         if time.time() < cache['until'] or (cache['refreshing'] and cache['sources']):
-            return {'sources': cache['sources'], 'errors': cache['errors']}
-        if cache['refreshing']:
-            wait_for_cold_refresh = True
-        else:
+            return {'sources': cache['sources'], 'errors': cache['errors'],
+                    'loading': cache['refreshing'] and cache['until'] == 0}
+        if not cache['refreshing']:
             cache['refreshing'] = True
             _REFRESH_DONE[kind].clear()
-        if not wait_for_cold_refresh and cache['sources']:
-            # Do not make every visitor wait for all European feeds on each refresh.
             threading.Thread(target=_refresh_snapshot, args=(kind,), daemon=True).start()
-            return {'sources': cache['sources'], 'errors': cache['errors']}
-    if wait_for_cold_refresh:
-        _REFRESH_DONE[kind].wait()
-    else:
-        _refresh_snapshot(kind)
+        if cache['sources']:
+            return {'sources': cache['sources'], 'errors': cache['errors'], 'loading': False}
+    _REFRESH_DONE[kind].wait(_COLD_WAIT_SECONDS)
     with _LOCKS[kind]:
         cache = _CACHE[kind]
-        return {'sources': cache['sources'], 'errors': cache['errors']}
+        return {'sources': cache['sources'], 'errors': cache['errors'],
+                'loading': cache['refreshing'] and cache['until'] == 0}
 
 
 def road_snapshot(layer, bbox=None):
@@ -6022,7 +6023,7 @@ def road_snapshot(layer, bbox=None):
             unavailable.update(_LUXEMBOURG_CAMERA_HEALTH['unavailable'])
         features = [item for item in features if item['properties']['key'] not in unavailable]
     return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': errors,
-            'sources': sources}
+            'sources': sources, 'loading': snapshot.get('loading', False)}
 
 
 def power_snapshot():
