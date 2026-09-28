@@ -210,6 +210,9 @@ ZURICH_ROADWORKS_URL = ('https://maps.zh.ch/wfs/TbaBaustellenZHWFS?SERVICE=WFS&R
                         '&VERSION=2.0.0&TYPENAMES=ms:baustellen-uebersicht'
                         '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
 ZURICH_ROADWORKS_SOURCE = 'https://data.stadt-zuerich.ch/dataset/d991a4a2-32ea-4f7a-93b5-0f31a016d71c'
+GENEVA_ROADWORKS_URL = ('https://app2.ge.ch/tergeoservices/rest/services/Hosted/'
+                        'INFOMOB_CHANTIER_POINT/FeatureServer/0/query')
+GENEVA_ROADWORKS_SOURCE = 'https://sitg.ge.ch/donnees/infomob-chantier-point'
 VIENNA_ROADWORKS_BASE = ('https://data.wien.gv.at/daten/geo?service=WFS&request=GetFeature'
                          '&version=1.1.0&srsName=EPSG:4326&outputFormat=json&maxFeatures=1000&typeName=')
 VIENNA_ROADWORKS_SOURCE = 'https://data.wien.gv.at/daten/geo?service=WFS&request=GetCapabilities'
@@ -2650,6 +2653,58 @@ def _zurich_roadworks():
     return _parse_zurich_roadworks(data.get('features') or [])
 
 
+def _parse_geneva_roadworks(payload, now=None):
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list)
+            or payload.get('exceededTransferLimit') or len(payload['features']) >= 2000):
+        raise ValueError('Geneva roadworks publication is invalid or incomplete')
+    today = dt.datetime.fromtimestamp(time.time() if now is None else now,
+                                      ZoneInfo('Europe/Zurich')).date()
+    features = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict) or not isinstance(row.get('properties'), dict):
+            continue
+        props = row['properties']
+        point = _point(row.get('geometry'))
+        if not point or not (5.95 <= point[0] <= 6.35 and 46.10 <= point[1] <= 46.38):
+            continue
+        work_id = str(props.get('globalid') or '').strip('{}').lower()
+        if not re.fullmatch(r'[a-f0-9-]{36}', work_id) or work_id in seen:
+            continue
+        if props.get('date_statut') != 'Ouvert':
+            continue
+        try:
+            start = dt.datetime.strptime(str(props.get('date_debut')), '%Y%m%d').date()
+            end = dt.datetime.strptime(str(props.get('date_fin')), '%Y%m%d').date()
+        except ValueError:
+            continue
+        if not start <= today <= end:
+            continue
+        seen.add(work_id)
+        address = _clean(props.get('adresse'), 95)
+        disruption = _clean(props.get('perturbation'), 200)
+        features.append(_feature(point, {
+            'key': f'ch:ge:work:{work_id}', 'layer': 'construction',
+            'title': 'Roadworks' + (f' · {address}' if address else ' · Geneva'),
+            'detail': ' · '.join(part for part in (
+                disruption, f'Scheduled through {end:%d %b %Y}') if part),
+            'source': f'SITG · Canton of Geneva · retrieved {today:%d %b %Y}',
+            'source_url': GENEVA_ROADWORKS_SOURCE,
+        }))
+    return features
+
+
+def _geneva_roadworks():
+    query = urllib.parse.urlencode({
+        'where': "date_statut = 'Ouvert'", 'outFields':
+        'globalid,date_debut,date_fin,date_statut,adresse,perturbation',
+        'returnGeometry': 'true', 'outSR': '4326', 'resultRecordCount': '2000',
+        'f': 'geojson',
+    })
+    return _parse_geneva_roadworks(_get_json(GENEVA_ROADWORKS_URL + '?' + query))
+
+
 def _parse_vienna_roadworks(publications, now=None):
     today = dt.datetime.fromtimestamp(time.time() if now is None else now,
                                        ZoneInfo('Europe/Vienna')).date()
@@ -5062,11 +5117,8 @@ def _parse_ndw_msi_signs(root, locations, published, now=None, min_states=10000)
         if not road or not isinstance(km, (int, float)) or not isinstance(lane, int):
             continue
         key = (road, carriageway, round(km, 3), round(point[0], 5), round(point[1], 5))
-        group = groups.setdefault(key, {'point': point, 'messages': [], 'updated': ''})
+        group = groups.setdefault(key, {'point': point, 'messages': []})
         group['messages'].append((lane, message))
-        event_time = event.findtext('{*}ts_state') or ''
-        if event_time > group['updated']:
-            group['updated'] = event_time
     if displays < min_states:
         raise ValueError('NDW MSI publication has too few sign states')
     features = []
@@ -5077,7 +5129,7 @@ def _parse_ndw_msi_signs(root, locations, published, now=None, min_states=10000)
             'key': f'nl:ndw:msi:{road}:{carriageway}:{km}:{lon}:{lat}', 'layer': 'signs',
             'title': f'{road} · km {km:g}', 'detail': detail,
             'source': 'NDW Open Data · lane signs', 'source_url': NDW_MSI_SOURCE,
-            'updated_at': group['updated'],
+            'updated_at': dt.datetime.fromtimestamp(published, dt.timezone.utc).isoformat().replace('+00:00', 'Z'),
         }))
     return features
 
@@ -7357,6 +7409,7 @@ _FETCHERS = {
         'nl_ndw_lane_signs': _ndw_msi_signs,
         'nl_ndw_sensors': _ndw_sensors,
         'ch_zurich_roadworks': _zurich_roadworks,
+        'ch_geneva_roadworks': _geneva_roadworks,
         'at_vienna_roadworks': _vienna_roadworks,
         'ch_zurich_sensors': _zurich_sensors,
         'no_road_events': _norway_roads,

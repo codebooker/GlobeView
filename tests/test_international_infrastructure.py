@@ -2430,6 +2430,30 @@ class InfrastructureTests(unittest.TestCase):
         self.assertNotIn('Private contact', str(rows[0]))
         self.assertNotIn('12345', str(rows[0]))
 
+    def test_geneva_roadworks_require_open_current_window_and_stable_id(self):
+        current = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [6.14, 46.21]},
+                   'properties': {'globalid': '{A225FD65-BFC4-47F8-937D-6BEA21538496}',
+                                  'date_debut': '20260920', 'date_fin': '20261010',
+                                  'date_statut': 'Ouvert', 'adresse': 'Route du Pont-BUTIN',
+                                  'perturbation': 'Suppression de voies, ralentissements.',
+                                  'moa': 'Private contact'}}
+        future = {**current, 'properties': {**current['properties'], 'globalid':
+                  '{B225FD65-BFC4-47F8-937D-6BEA21538496}', 'date_debut': '20261001'}}
+        closed = {**current, 'properties': {**current['properties'], 'globalid':
+                  '{C225FD65-BFC4-47F8-937D-6BEA21538496}', 'date_statut': 'Termine'}}
+        outside = {**current, 'geometry': {'type': 'Point', 'coordinates': [8.8, 47.5]}}
+        payload = {'type': 'FeatureCollection', 'features': [current, current, future, closed, outside]}
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        rows = feeds._parse_geneva_roadworks(payload, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertIn('Suppression de voies', rows[0]['properties']['detail'])
+        self.assertIn('28 Sep 2026', rows[0]['properties']['source'])
+        self.assertNotIn('Private contact', str(rows[0]))
+        with self.assertRaises(ValueError):
+            feeds._parse_geneva_roadworks({'type': 'FeatureCollection',
+                                           'features': [], 'exceededTransferLimit': True}, now)
+
     def test_autobahn_excludes_future_works_and_maps_current_closure(self):
         payload = {'closure': [
             {'identifier': 'current', 'future': False, 'title': 'A1 | Junction',
@@ -2620,6 +2644,8 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['geometry']['coordinates'], [5.0, 52.0])
         self.assertEqual(rows[0]['properties']['detail'],
                          'Lane 1: 80 km/h limit; Lane 2: Lane closed')
+        self.assertEqual(rows[0]['properties']['updated_at'],
+                         dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat().replace('+00:00', 'Z'))
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_ndw_msi_signs(root, locations, NOW - 3600, NOW, min_states=1)
         with self.assertRaisesRegex(ValueError, 'too few'):
