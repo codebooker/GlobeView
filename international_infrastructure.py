@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 from pyproj import Transformer
 from PIL import Image, UnidentifiedImageError
+import shapefile
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
@@ -121,6 +122,11 @@ GIPOD_SOURCE = ('https://www.vlaanderen.be/datavindplaats/catalogus/'
 NDW_BASE = 'https://opendata.ndw.nu/'
 NDW_SOURCE = 'https://docs.ndw.nu/producten/werkzaamhedenenevenementen/'
 NDW_SENSORS_FILE = 'snelheden_en_intensiteiten_meetgegevens_en_configuratie_meetlocaties.xml.gz'
+NDW_MSI_FILE = 'Matrixsignaalinformatie.xml.gz'
+NDW_MSI_SHAPES_FILE = 'ndw_msi_shapefiles_latest.zip'
+NDW_MSI_SOURCE = 'https://docs.ndw.nu/en/producten/msi/'
+_NDW_MSI_SHAPES = {'until': 0, 'locations': {}}
+_NDW_MSI_SHAPES_LOCK = threading.Lock()
 DGT_BASE = 'https://nap.dgt.es/datex2/v3/dgt/'
 DGT_CAMERAS_SOURCE = 'https://nap.dgt.es/es/dataset/camaras-dgt-datex2-v3-7'
 DGT_INCIDENTS_SOURCE = 'https://nap.dgt.es/es/dataset/incidencias-dgt-datex2-v3-7'
@@ -4980,6 +4986,120 @@ def _ndw_signs():
     return _parse_ndw_signs(_get_gzip_xml(NDW_BASE + 'dynamische_route_informatie_paneel.xml.gz'))
 
 
+def _ndw_msi_locations(now=None):
+    """Cache NDW's monthly WGS84 sign positions across road snapshot refreshes."""
+    now = time.time() if now is None else now
+    with _NDW_MSI_SHAPES_LOCK:
+        if now < _NDW_MSI_SHAPES['until'] and _NDW_MSI_SHAPES['locations']:
+            return _NDW_MSI_SHAPES['locations']
+        request = urllib.request.Request(NDW_BASE + NDW_MSI_SHAPES_FILE, headers={
+            'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/zip'})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                body = response.read(3 * 1024 * 1024 + 1)
+            if len(body) > 3 * 1024 * 1024:
+                raise ValueError('NDW MSI location archive exceeded size limit')
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                names = ('MSI/shapes.shp', 'MSI/shapes.shx', 'MSI/shapes.dbf')
+                if any(archive.getinfo(name).file_size > 8 * 1024 * 1024 for name in names):
+                    raise ValueError('NDW MSI location table exceeded size limit')
+                shp, shx, dbf = (io.BytesIO(archive.read(name)) for name in names)
+            locations = {}
+            with shapefile.Reader(shp=shp, shx=shx, dbf=dbf) as reader:
+                if len(reader) > 30000:
+                    raise ValueError('NDW MSI location count exceeded limit')
+                for item in reader.iterShapeRecords():
+                    record = item.record.as_dict()
+                    identifier = record.get('uuid')
+                    point = item.shape.points
+                    if not identifier or len(point) != 1:
+                        continue
+                    lonlat = _point({'coordinates': list(point[0])})
+                    if lonlat and 3.0 <= lonlat[0] <= 7.4 and 50.6 <= lonlat[1] <= 53.8:
+                        locations[identifier] = (lonlat, record)
+            if len(locations) < 10000:
+                raise ValueError('NDW MSI location archive has too few signs')
+            _NDW_MSI_SHAPES.update({'locations': locations, 'until': now + 24 * 3600})
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile, shapefile.ShapefileException):
+            if not _NDW_MSI_SHAPES['locations']:
+                raise
+            _NDW_MSI_SHAPES['until'] = now + 30 * 60
+        return _NDW_MSI_SHAPES['locations']
+
+
+def _parse_ndw_msi_signs(root, locations, published, now=None, min_states=10000):
+    """Join current lane displays to NDW's individual sign positions."""
+    now = time.time() if now is None else now
+    if published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('NDW MSI publication is stale or invalid')
+    groups = {}
+    displays = 0
+    for event in root.findall('.//{*}event'):
+        display = event.find('{*}display')
+        if display is None or not list(display):
+            continue
+        displays += 1
+        identifier = event.findtext('{*}sign_id/{*}uuid')
+        if identifier not in locations:
+            continue
+        state = list(display)[0]
+        kind = state.tag.rsplit('}', 1)[-1]
+        if kind == 'speedlimit' and re.fullmatch(r'\d{2,3}', state.text or ''):
+            message = f'{state.text} km/h limit'
+        elif kind == 'lane_closed':
+            message = 'Lane closed'
+        elif kind == 'lane_closed_ahead':
+            direction = next(iter(state), None)
+            direction = direction.tag.rsplit('}', 1)[-1].replace('_', ' ') if direction is not None else ''
+            message = 'Lane closed ahead' + (f' · {direction}' if direction else '')
+        else:
+            continue  # Blank/open/end states add no useful marker.
+        point, record = locations[identifier]
+        road = _clean(record.get('road'), 16)
+        carriageway = _clean(record.get('carriagew0'), 4)
+        km = record.get('km')
+        lane = record.get('lane')
+        if not road or not isinstance(km, (int, float)) or not isinstance(lane, int):
+            continue
+        key = (road, carriageway, round(km, 3), round(point[0], 5), round(point[1], 5))
+        group = groups.setdefault(key, {'point': point, 'messages': [], 'updated': ''})
+        group['messages'].append((lane, message))
+        event_time = event.findtext('{*}ts_state') or ''
+        if event_time > group['updated']:
+            group['updated'] = event_time
+    if displays < min_states:
+        raise ValueError('NDW MSI publication has too few sign states')
+    features = []
+    for (road, carriageway, km, lon, lat), group in groups.items():
+        messages = sorted(set(group['messages']))
+        detail = '; '.join(f'Lane {lane}: {message}' for lane, message in messages)
+        features.append(_feature(group['point'], {
+            'key': f'nl:ndw:msi:{road}:{carriageway}:{km}:{lon}:{lat}', 'layer': 'signs',
+            'title': f'{road} · km {km:g}', 'detail': detail,
+            'source': 'NDW Open Data · lane signs', 'source_url': NDW_MSI_SOURCE,
+            'updated_at': group['updated'],
+        }))
+    return features
+
+
+def _ndw_msi_signs():
+    request = urllib.request.Request(NDW_BASE + NDW_MSI_FILE, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/gzip'})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        modified = response.headers.get('Last-Modified')
+        compressed = response.read(2 * 1024 * 1024 + 1)
+    if len(compressed) > 2 * 1024 * 1024:
+        raise ValueError('NDW MSI publication exceeded compressed size limit')
+    if not modified:
+        raise ValueError('NDW MSI publication has no freshness date')
+    published = email.utils.parsedate_to_datetime(modified).timestamp()
+    with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as archive:
+        body = archive.read(12 * 1024 * 1024 + 1)
+    if len(body) > 12 * 1024 * 1024:
+        raise ValueError('NDW MSI publication exceeded expanded size limit')
+    return _parse_ndw_msi_signs(ET.fromstring(body), _ndw_msi_locations(), published)
+
+
 def _parse_ndw_sensors(compressed, now=None):
     """Stream NDW's combined DATEX site table and current speed/flow readings."""
     now = time.time() if now is None else now
@@ -7234,6 +7354,7 @@ _FETCHERS = {
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_bridge_openings': _ndw_bridge_openings,
         'nl_ndw_signs': _ndw_signs,
+        'nl_ndw_lane_signs': _ndw_msi_signs,
         'nl_ndw_sensors': _ndw_sensors,
         'ch_zurich_roadworks': _zurich_roadworks,
         'at_vienna_roadworks': _vienna_roadworks,

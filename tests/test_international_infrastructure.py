@@ -2602,6 +2602,29 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             feeds._parse_ndw_signs(root, NOW + 3600)
 
+    def test_ndw_lane_signs_group_active_displays_by_gantry(self):
+        root = ET.fromstring('''<Envelope><event><sign_id><uuid>a</uuid></sign_id>
+          <display><speedlimit>80</speedlimit></display><ts_state>2026-09-26T17:55:00Z</ts_state></event>
+          <event><sign_id><uuid>b</uuid></sign_id><display><lane_closed/></display>
+          <ts_state>2026-09-26T17:56:00Z</ts_state></event>
+          <event><sign_id><uuid>c</uuid></sign_id><display><blank/></display></event>
+          <event><sign_id><uuid>missing</uuid></sign_id><display><lane_closed/></display></event>
+          </Envelope>''')
+        locations = {
+            key: ([5.0, 52.0], {'road': 'A1', 'carriagew0': 'R',
+                                'km': 12.5, 'lane': lane})
+            for key, lane in [('a', 1), ('b', 2), ('c', 3)]
+        }
+        rows = feeds._parse_ndw_msi_signs(root, locations, NOW - 60, NOW, min_states=1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [5.0, 52.0])
+        self.assertEqual(rows[0]['properties']['detail'],
+                         'Lane 1: 80 km/h limit; Lane 2: Lane closed')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_ndw_msi_signs(root, locations, NOW - 3600, NOW, min_states=1)
+        with self.assertRaisesRegex(ValueError, 'too few'):
+            feeds._parse_ndw_msi_signs(root, locations, NOW, NOW)
+
     def test_opendatasoft_fetches_all_outage_pages(self):
         first = {'results': [{'id': i} for i in range(100)], 'total_count': 101}
         second = {'results': [{'id': 100}], 'total_count': 101}
