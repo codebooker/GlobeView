@@ -27,6 +27,32 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_vejle_roadworks_only_current_traffic_notified_permits(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+
+        def row(case, *, traffic='Trafikudmeldt', status='Tilladelse',
+                start='2026-09-27', end='2026-09-29', lon=9.5):
+            return {'attributes': {'serialnumber': case, 'fromdate': start,
+                                   'todate': end, 'datestatus': 'Aktiv',
+                                   'externalstatustranslated': status,
+                                   'traficstatus': traffic},
+                    'geometry': {'rings': [[[lon, 55.7], [lon + .001, 55.7],
+                                            [lon + .001, 55.701], [lon, 55.7]]]}}
+
+        rows = [row('20260001'), row('20260001', lon=9.51),
+                row('20260002', traffic='Ikke trafikudmeldt'),
+                row('20260003', status='Annulleret'),
+                row('20260004', start='2026-09-29'),
+                row('20260005', end='2026-09-27'),
+                row('20260006', lon=12.0)]
+        payload = {'spatialReference': {'wkid': 4326}, 'features': rows}
+        features = feeds._parse_vejle_roadworks(payload, now)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(features[0]['properties']['key'], 'dk:vejle:works:20260001')
+        self.assertIn('scheduled', features[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_vejle_roadworks(dict(payload, exceededTransferLimit=True), now)
+
     def test_copenhagen_roadworks_filter_dates_road_effect_and_duplicate_shapes(self):
         now = 1790611200
 

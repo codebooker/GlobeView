@@ -33,6 +33,8 @@ DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
 COPENHAGEN_WORKS_SOURCE = 'https://www.opendata.dk/city-of-copenhagen/raden-over-vej-med-historik'
+VEJLE_WORKS_URL = 'https://kortservice.vejle.dk/gis/rest/services/OPENDATA/Vejle/MapServer/25/query'
+VEJLE_WORKS_SOURCE = 'https://www.opendata.dk/city-of-vejle/gravetilladelser1'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
@@ -455,6 +457,53 @@ def _copenhagen_roadworks():
                        "(gravetype ILIKE '%Kørebane%' OR veje_spaerret_for_biltrafik = 'True')"),
     })
     return _parse_copenhagen_roadworks(_get_json(f'{COPENHAGEN_WORKS_BASE}?{query}'))
+
+
+def _parse_vejle_roadworks(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') if isinstance(payload, dict) else None
+    if (not isinstance(rows, list) or len(rows) > 200
+            or payload.get('spatialReference', {}).get('wkid') != 4326
+            or payload.get('exceededTransferLimit')):
+        raise ValueError('Vejle roadwork publication is incomplete')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/Copenhagen')).date()
+    cases = {}
+    for row in rows:
+        fields = row.get('attributes') or {}
+        case = str(fields.get('serialnumber') or '')
+        rings = (row.get('geometry') or {}).get('rings') or []
+        ring = rings[0] if rings else []
+        point = _point({'coordinates': ring[len(ring) // 2]}) if ring else None
+        try:
+            start = dt.date.fromisoformat(fields.get('fromdate'))
+            end = dt.date.fromisoformat(fields.get('todate'))
+        except (TypeError, ValueError):
+            continue
+        if (not re.fullmatch(r'\d{6,12}', case)
+                or fields.get('datestatus') != 'Aktiv'
+                or fields.get('externalstatustranslated') != 'Tilladelse'
+                or fields.get('traficstatus') != 'Trafikudmeldt'
+                or not start <= today <= end or not point
+                or not (9.0 <= point[0] <= 10.0 and 55.4 <= point[1] <= 56.1)
+                or case in cases):
+            continue
+        cases[case] = _feature(point, {
+            'key': f'dk:vejle:works:{case}', 'layer': 'construction',
+            'title': 'Road excavation permit · Vejle',
+            'detail': f'Traffic notice published · scheduled through {end:%-d %b %Y}; on-site status unverified',
+            'source': 'Vejle Kommune · CC BY 4.0', 'source_url': VEJLE_WORKS_SOURCE,
+        })
+    return list(cases.values())
+
+
+def _vejle_roadworks():
+    query = urllib.parse.urlencode({
+        'where': "datestatus = 'Aktiv' AND traficstatus = 'Trafikudmeldt'",
+        'outFields': ('serialnumber,fromdate,todate,externalstatustranslated,'
+                      'datestatus,traficstatus'),
+        'returnGeometry': 'true', 'outSR': 4326, 'f': 'json',
+    })
+    return _parse_vejle_roadworks(_get_json(f'{VEJLE_WORKS_URL}?{query}'))
 
 
 def _parse_dublin_closures(page, now=None):
@@ -6864,6 +6913,7 @@ _FETCHERS = {
         'ie_tii_events': _tii_events,
         'ie_tii_signs': _tii_signs,
         'dk_copenhagen_roadworks': _copenhagen_roadworks,
+        'dk_vejle_roadworks': _vejle_roadworks,
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
         'lt_eismoinfo_cameras': _lithuania_cameras,
