@@ -71,6 +71,8 @@ NGED_OUTAGES_URL = ('https://connecteddata.nationalgrid.co.uk/dataset/'
                     'd6672e1e-c684-4cea-bb78-c7e5248b62a2/resource/'
                     '292f788f-4339-455b-8cc0-153e14509d4d/download/power_outage_ext.csv')
 SSEN_OUTAGES_URL = 'https://external.distribution.prd.ssen.co.uk/opendataportal-prd/v4/api/getallfaults'
+NIE_OUTAGES_URL = 'https://powercheck.nienetworks.co.uk/NIEPowerCheckerWebAPI/api/faults'
+NIE_OUTAGES_SOURCE = 'https://powercheck.nienetworks.co.uk/'
 LIANDER_OUTAGES_URL = ('https://services1.arcgis.com/v6W5HAVrpgSg3vts/ArcGIS/rest/services/'
                        'IStoringen_Productie_V7/FeatureServer/0/query')
 LIANDER_OUTAGES_SOURCE = 'https://data.overheid.nl/dataset/storingsdata-liander-actuele-storingen'
@@ -190,6 +192,7 @@ _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
                     for name in ('vms', 'road_segments')}
 _LITHUANIA_TRANSFORMER = Transformer.from_crs('EPSG:3346', 'EPSG:4326', always_xy=True)
+_NIE_TRANSFORMER = Transformer.from_crs('EPSG:29903', 'EPSG:4326', always_xy=True)
 
 
 def _get_json(url, fintraffic=False):
@@ -2309,6 +2312,83 @@ def _ssen_outages():
             'source_updated': data.get('timestampUtc') or '',
         }))
     return features
+
+
+def _nie_local_time(value, now):
+    """Powercheck omits the year from its local start and update timestamps."""
+    if not isinstance(value, str):
+        return None
+    zone = ZoneInfo('Europe/London')
+    year = dt.datetime.fromtimestamp(now, zone).year
+    dates = []
+    for candidate_year in (year - 1, year, year + 1):
+        try:
+            local = dt.datetime.strptime(f'{value.strip()} {candidate_year}',
+                                         '%I:%M %p, %d %b %Y').replace(tzinfo=zone)
+            dates.append(local.timestamp())
+        except ValueError:
+            continue
+    return min(dates, key=lambda stamp: abs(stamp - now)) if dates else None
+
+
+def _parse_nie_outages(payload, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(payload, dict) or not isinstance(payload.get('outageMessage'), list):
+        raise ValueError('NIE Powercheck returned an invalid outage payload')
+    features = []
+    seen = set()
+    for row in payload['outageMessage']:
+        if not isinstance(row, dict):
+            continue
+        outage_id = str(row.get('outageId') or '')
+        if not re.fullmatch(r'\d{1,12}', outage_id) or outage_id in seen:
+            continue
+        kind = str(row.get('outageType') or '').lower()
+        if kind not in {'fault', 'planned'}:
+            continue
+        updated = _nie_local_time(row.get('updatedTimeStamp'), now)
+        start = _nie_local_time(row.get('startTime'), now)
+        if (updated is None or not -600 <= now - updated <= 2 * 3600
+                or start is None or start > now + 600):
+            continue
+        raw_point = row.get('point') or {}
+        try:
+            easting, northing = (float(part) for part in raw_point['coordinates'].split(','))
+            lon, lat = _NIE_TRANSFORMER.transform(easting, northing)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        if not (-8.3 <= lon <= -5.3 and 54 <= lat <= 55.5):
+            continue
+        seen.add(outage_id)
+        try:
+            affected = max(0, min(1_000_000, int(row.get('numCustAffected') or 0)))
+        except (TypeError, ValueError):
+            affected = 0
+        postcode = _clean(row.get('postCode'), 80).replace(' ;', ',')
+        estimate = row.get('estRestoreFullDateTime') or ''
+        try:
+            etr = (dt.datetime.strptime(estimate, '%I:%M %p, %d %b %Y')
+                   .replace(tzinfo=ZoneInfo('Europe/London'))
+                   .astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z'))
+        except (TypeError, ValueError):
+            etr = ''
+        reason = _clean(f"{_clean(row.get('causeMessage'))} "
+                        f"{_clean(row.get('statusMessage'))}", 180)
+        features.append(_feature([lon, lat], {
+            'key': f'uk:nie:{outage_id}', 'provider': 'NIE Networks',
+            'area_name': postcode or 'Northern Ireland',
+            'customers_affected': affected,
+            'status': 'Planned power cut' if kind == 'planned' else 'Power cut',
+            'reason': reason, 'etr': etr,
+            'source_label': 'NIE Networks Powercheck', 'source_url': NIE_OUTAGES_SOURCE,
+            'source_updated': dt.datetime.fromtimestamp(updated, dt.timezone.utc)
+                             .isoformat().replace('+00:00', 'Z'),
+        }))
+    return features
+
+
+def _nie_outages():
+    return _parse_nie_outages(_get_json(NIE_OUTAGES_URL))
 
 
 def _nged_outages(now=None):
@@ -4904,7 +4984,8 @@ _FETCHERS = {
         'no_travel_times': _norway_travel_times,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
-              'nged': _nged_outages, 'nl_liander': _liander_outages},
+              'nged': _nged_outages, 'nie': _nie_outages,
+              'nl_liander': _liander_outages},
 }
 
 

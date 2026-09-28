@@ -1775,6 +1775,30 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(result[0]['properties']['customers_affected'], 29)
         self.assertEqual(result[0]['properties']['source_updated'], '2026-09-27T12:00:00Z')
 
+    def test_nie_powercheck_maps_only_current_northern_ireland_outages(self):
+        now = dt.datetime(2026, 9, 28, 4, 15, tzinfo=dt.timezone.utc).timestamp()
+        base = {'outageId': '5936163', 'outageType': 'Fault',
+                'point': {'coordinates': '323622.71291400,361942.87419900'},
+                'startTime': '5:22 PM, 27 Sep', 'updatedTimeStamp': '5:10 AM, 28 Sep',
+                'postCode': 'BT27 5 ;BT27 6', 'numCustAffected': '4',
+                'causeMessage': 'Fallen trees', 'statusMessage': 'Repairs underway',
+                'estRestoreFullDateTime': '8:00 AM, 28 Sep 2026'}
+        payload = {'outageMessage': [base, dict(base),
+                   dict(base, outageId='5936166', outageType='Planned',
+                        startTime='8:00 AM, 28 Sep'),
+                   dict(base, outageId='5936164', updatedTimeStamp='1:00 AM, 28 Sep'),
+                   dict(base, outageId='5936165', point={'coordinates': '0,0'})]}
+        result = feeds._parse_nie_outages(payload, now)
+        self.assertEqual([item['properties']['key'] for item in result], ['uk:nie:5936163'])
+        self.assertAlmostEqual(result[0]['geometry']['coordinates'][0], -6.092999, places=5)
+        self.assertAlmostEqual(result[0]['geometry']['coordinates'][1], 54.49086, places=5)
+        self.assertEqual(result[0]['properties']['customers_affected'], 4)
+        self.assertEqual(result[0]['properties']['source_updated'], '2026-09-28T04:10:00Z')
+        self.assertEqual(result[0]['properties']['etr'], '2026-09-28T07:00:00Z')
+        self.assertEqual(feeds._parse_nie_outages({'outageMessage': []}, now), [])
+        self.assertEqual(feeds._parse_nie_outages(
+            {'outageMessage': [dict(base, updatedTimeStamp='1:00 AM, 28 Sep')]}, now), [])
+
     def test_nged_power_cuts_exclude_stale_restored_and_future_rows(self):
         now = dt.datetime(2026, 9, 27, 12, tzinfo=dt.timezone.utc)
         base = {'Upload Date': '2026-09-27T12:30:00', 'Status': 'In Progress',
