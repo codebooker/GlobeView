@@ -107,6 +107,9 @@ CYPRUS_WAZE_SOURCE = 'https://www.traffic4cyprus.org.cy/en/dataset/waze_alerts'
 POLAND_ROADS_SOURCE = 'https://www.gov.pl/web/gddkia/dane-xml'
 AUTOBAHN_BASE = 'https://verkehr.autobahn.de/o/autobahn/'
 AUTOBAHN_SOURCE = 'https://www.autobahn.de/betrieb-verkehr/verkehrsmeldungen'
+HAMBURG_ROADS_URL = ('https://api.hamburg.de/datasets/v1/verkehrsinformation/'
+                     'collections/hauptmeldungen_aktuell/items?f=json&limit=500')
+HAMBURG_ROADS_SOURCE = 'https://suche.transparenz.hamburg.de/dataset/aktuelle-verkehrsinformationen-polizei-hamburg4'
 FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                         'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 BORDEAUX_FLOW_SOURCE = 'https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3'
@@ -3208,6 +3211,68 @@ def _ndw_signs():
     return _parse_ndw_signs(_get_gzip_xml(NDW_BASE + 'dynamische_route_informatie_paneel.xml.gz'))
 
 
+def _parse_hamburg_roads(payload, now=None):
+    now = time.time() if now is None else now
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection':
+        raise ValueError('Hamburg road publication is invalid')
+    features = payload.get('features')
+    if not isinstance(features, list) or len(features) > 500:
+        raise ValueError('Hamburg road publication has an invalid size')
+    matched = payload.get('numberMatched')
+    if not isinstance(matched, int) or matched > len(features):
+        raise ValueError('Hamburg road publication is incomplete')
+    published = _timestamp(payload.get('timeStamp'))
+    if published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('Hamburg road publication is stale')
+    works = {'ConstructionWorks', 'MaintenanceWorks'}
+    incidents = {'RoadOrCarriagewayOrLaneManagement', 'AbnormalTraffic',
+                 'Accident', 'Conditions', 'EquipmentOrSystemFault'}
+    rows = []
+    seen = set()
+    for item in features:
+        if not isinstance(item, dict):
+            continue
+        properties = item.get('properties')
+        if not isinstance(properties, dict):
+            continue
+        kind = properties.get('art')
+        if kind not in works | incidents:
+            continue
+        identifier = str(item.get('id') or '')
+        if not re.fullmatch(r'\d{1,12}', identifier) or identifier in seen:
+            continue
+        point = _point(item.get('geometry'))
+        if point is None or not (9.4 <= point[0] <= 10.4 and 53.3 <= point[1] <= 53.9):
+            continue
+        start = _timestamp(properties.get('start'))
+        end = _timestamp(properties.get('end'))
+        if start is None or start > now or (end is not None and end <= now):
+            continue
+        if end is None and now - start > (90 * 86400 if kind in works else 24 * 3600):
+            # The publisher's “current” collection retains some months-old,
+            # open-ended crash and closure reports. Avoid presenting them as live.
+            continue
+        seen.add(identifier)
+        layer = 'construction' if kind in works else 'incidents'
+        title = {'ConstructionWorks': 'Roadworks', 'MaintenanceWorks': 'Road maintenance',
+                 'RoadOrCarriagewayOrLaneManagement': 'Road restriction',
+                 'AbnormalTraffic': 'Traffic alert', 'Accident': 'Crash',
+                 'Conditions': 'Road condition', 'EquipmentOrSystemFault': 'Traffic equipment fault'}[kind]
+        rows.append(_feature(point, {
+            'key': f'de:hamburg:road:{identifier}', 'layer': layer,
+            'title': f'Hamburg {title.lower()}',
+            'detail': _clean(properties.get('description'), 220),
+            'source': 'Freie und Hansestadt Hamburg, Polizei Hamburg · DL-DE/BY 2.0',
+            'source_url': HAMBURG_ROADS_SOURCE,
+            'updated_at': payload['timeStamp'],
+        }))
+    return rows
+
+
+def _hamburg_roads():
+    return _parse_hamburg_roads(_get_json(HAMBURG_ROADS_URL))
+
+
 def _parse_autobahn_items(service, road, payload, now=None):
     now = time.time() if now is None else now
     rows = payload.get(service, []) if isinstance(payload, dict) else []
@@ -4734,6 +4799,7 @@ _FETCHERS = {
         'uk_wales_construction': lambda: _wales_feed('construction'),
         'uk_scotland_construction': _scotland_roadworks,
         'fr_national_roads': _france_roads,
+        'de_hamburg_roads': _hamburg_roads,
         'lu_cita_roads': _luxembourg_roads,
         'lu_cita_cameras': _luxembourg_cameras,
         'lu_cita_traffic': _luxembourg_traffic,

@@ -1314,6 +1314,31 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['geometry']['coordinates'], [7.3, 51.2])
         self.assertEqual(rows[0]['properties']['layer'], 'incidents')
 
+    def test_hamburg_current_roads_reject_expired_future_and_old_open_incidents(self):
+        now = dt.datetime(2026, 9, 28, 2, 30, tzinfo=dt.timezone.utc).timestamp()
+        def item(identifier, kind, start, end='', point=None):
+            return {'id': identifier, 'geometry': {'type': 'Point', 'coordinates': point or [10.0, 53.55]},
+                    'properties': {'art': kind, 'description': 'Hamburg, road affected',
+                                   'start': start, 'end': end}}
+        payload = {'type': 'FeatureCollection', 'timeStamp': '2026-09-28T02:29:00Z',
+                   'numberMatched': 5, 'features': [
+                       item(1, 'ConstructionWorks', '2026-09-27 12:00:00', '2026-09-30 12:00:00'),
+                       item(2, 'Accident', '2026-09-28 01:30:00'),
+                       item(3, 'Accident', '2026-02-17 16:20:00'),
+                       item(4, 'MaintenanceWorks', '2026-09-29 00:00:00'),
+                       item(5, 'RoadOrCarriagewayOrLaneManagement', '2026-09-26 00:00:00',
+                            '2026-09-27 00:00:00')]}
+        rows = feeds._parse_hamburg_roads(payload, now)
+        self.assertEqual([row['properties']['key'] for row in rows],
+                         ['de:hamburg:road:1', 'de:hamburg:road:2'])
+        self.assertEqual([row['properties']['layer'] for row in rows],
+                         ['construction', 'incidents'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_hamburg_roads(payload, now + 3600)
+        payload['numberMatched'] = 501
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_hamburg_roads(payload, now)
+
     def test_autobahn_service_cache_is_shared_and_bounded(self):
         cache = {'until': 0, 'roads': {}, 'lock': threading.Lock()}
         calls = []
