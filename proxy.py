@@ -17,7 +17,7 @@ from cyber_feeds import cyber_snapshot
 from international_emergency import international_emergency_snapshot
 from international_infrastructure import (road_snapshot as international_road_snapshot,
                                           power_snapshot as international_power_snapshot,
-                                          bordeaux_flow_snapshot,
+                                          international_traffic_snapshot,
                                           zurich_sensor_sample, northern_ireland_camera_snapshot,
                                           madrid_camera_snapshot, dgt_camera_snapshot,
                                           tfl_camera_snapshot,
@@ -20760,7 +20760,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_international_traffic(self, parsed):
         try:
-            self._write_bytes(200, json.dumps(bordeaux_flow_snapshot()).encode(),
+            self._write_bytes(200, json.dumps(international_traffic_snapshot()).encode(),
                               'application/json', cache_control='public, max-age=60')
         except Exception as error:
             self._log_exception('international-traffic', error)

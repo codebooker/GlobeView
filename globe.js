@@ -524,7 +524,7 @@
           ? ['in', ['get', 'size'], ['literal', ['Large', 'Medium']]] : null);
       }
     } else if (type === 'traffic' && map.getLayer('gm-traffic-layer')) {
-      for (const id of ['gm-traffic-layer', 'gm-bordeaux-traffic-layer']) {
+      for (const id of ['gm-traffic-layer', 'gm-international-traffic-layer']) {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
       }
     } else if (type === 'radio') {
@@ -3056,22 +3056,23 @@
     }
   }
 
-  async function loadBordeauxTraffic() {
+  async function loadInternationalTraffic() {
     if (!enabled.traffic || document.hidden || !styleReady || map.getZoom() < 6) return;
-    if (!regionVisible({ bounds: { minLon: -0.9, maxLon: -0.3, minLat: 44.6, maxLat: 45.1 } }, currentBounds())) return;
+    if (![[-0.9, -0.3, 44.6, 45.1], [7.5, 8.0, 48.4, 48.8]].some(
+      ([minLon, maxLon, minLat, maxLat]) => regionVisible({ bounds: { minLon, maxLon, minLat, maxLat } }, currentBounds()))) return;
     if (Date.now() - (fetchedAt.get('traffic') || 0) < 5 * 60 * 1000) return;
     requests.get('traffic')?.abort();
     const controller = new AbortController();
     requests.set('traffic', controller);
     try {
       const response = await fetch('/international-traffic', { signal: controller.signal });
-      if (!response.ok) throw new Error(`Bordeaux traffic: ${response.status}`);
+      if (!response.ok) throw new Error(`European traffic: ${response.status}`);
       const data = await response.json();
       if (controller.signal.aborted || requests.get('traffic') !== controller || !enabled.traffic) return;
-      map.getSource('gm-bordeaux-traffic')?.setData(data);
+      map.getSource('gm-international-traffic')?.setData(data);
       fetchedAt.set('traffic', Date.now());
     } catch (error) {
-      if (error.name !== 'AbortError') console.warn('Bordeaux traffic flow:', error);
+      if (error.name !== 'AbortError') console.warn('European traffic flow:', error);
     }
   }
 
@@ -3088,7 +3089,7 @@
     else if (type === 'scans') loadScans();
     else if (type === 'power') loadPower();
     else if (type === 'radar') refreshRadar();
-    else if (type === 'traffic') loadBordeauxTraffic();
+    else if (type === 'traffic') loadInternationalTraffic();
     else if (type === 'goes') refreshGoesFrames();
     else if (type === 'radio') loadRadio();
     else if (type !== 'traffic' && type !== 'imagery' && type !== 'marine' && type !== 'fire_hotspots' && type !== 'daynight') loadStatic(type);
@@ -3195,9 +3196,9 @@
         attribution: 'Traffic data from supported 511 providers'
       });
       map.addLayer({ id: 'gm-traffic-layer', type: 'raster', source: 'gm-traffic', paint: { 'raster-opacity': 0.62, 'raster-fade-duration': 0 }, layout: { visibility: 'none' } });
-      map.addSource('gm-bordeaux-traffic', { type: 'geojson', data: EMPTY,
-        attribution: '<a href="https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3">Bordeaux Métropole · Licence Ouverte</a>' });
-      map.addLayer({ id: 'gm-bordeaux-traffic-layer', type: 'line', source: 'gm-bordeaux-traffic',
+      map.addSource('gm-international-traffic', { type: 'geojson', data: EMPTY,
+        attribution: '<a href="https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3">Bordeaux Métropole</a> · <a href="https://opendata.strasbourg.eu/explore/dataset/sirac_flux_trafic/">Eurométropole de Strasbourg</a> · Licence Ouverte' });
+      map.addLayer({ id: 'gm-international-traffic-layer', type: 'line', source: 'gm-international-traffic',
         minzoom: 6, layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': ['match', ['get', 'state'], 'FLUIDE', '#54bd87', 'DENSE', '#e6ad54',
           'EMBOUTEILLE', '#e46d65', 'IMPOSSIBLE', '#a75b79', '#9aa7a8'],
@@ -3384,7 +3385,7 @@
       resumeRotation();
       arcgisQueryKeys.clear();
       for (const type of Object.keys(enabled)) updateToggle(type);
-      if (enabled.traffic) loadBordeauxTraffic();
+      if (enabled.traffic) loadInternationalTraffic();
       if (Object.keys(ARCGIS).some(type => enabled[type])) scheduleViewportLoad();
       updateLocation();
       if (loadingMessage) loadingMessage.textContent = 'Drawing the globe';

@@ -270,6 +270,36 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no current'):
             feeds._parse_bordeaux_flow([road('18', 'INCONNU')], now)
 
+    def test_strasbourg_flow_keeps_current_road_segments_only(self):
+        now = dt.datetime(2026, 9, 28, 14, 30, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'data_processed': '2026-09-28T14:25:00+00:00'}}}
+        def road(identity, state=2, name='Route de Schirmeck', ts='2026-09-28T14:24:30+00:00', lon=7.72):
+            return {'ident': identity, 'name': name, 'etat': state, 'ts': ts,
+                    'geo_shape': {'geometry': {'type': 'LineString', 'coordinates':
+                                  [[lon, 48.57], [lon + .01, 48.58]]}}}
+        data = feeds._parse_strasbourg_flow(metadata, [
+            road(1), road(2, state=0), road(3, name='Cycl001'),
+            road(4, ts='2026-09-28T13:00:00+00:00'), road(5, lon=9.0)], now)
+        self.assertEqual(len(data['features']), 1)
+        self.assertEqual(data['features'][0]['properties']['state'], 'DENSE')
+        self.assertEqual(data['features'][0]['geometry']['coordinates'][0], [7.72, 48.57])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_strasbourg_flow({'metas': {'default': {
+                'data_processed': '2026-09-28T13:00:00+00:00'}}}, [road(1)], now)
+        with self.assertRaisesRegex(ValueError, 'no current'):
+            feeds._current_bordeaux_flow(data, now + 20 * 60, 15 * 60)
+
+    def test_international_traffic_keeps_working_city_when_other_feed_fails(self):
+        segment = {'type': 'Feature', 'geometry': {'type': 'LineString',
+                   'coordinates': [[7.72, 48.57], [7.73, 48.58]]},
+                   'properties': {'state': 'FLUIDE'}}
+        with patch.object(feeds, 'bordeaux_flow_snapshot', side_effect=OSError('offline')), \
+                patch.object(feeds, 'strasbourg_flow_snapshot', return_value={'features': [segment]}):
+            result = feeds.international_traffic_snapshot()
+        self.assertEqual(result['features'], [segment])
+        self.assertEqual(result['sources'], ['fr_strasbourg'])
+        self.assertIn('fr_bordeaux', result['sourceErrors'][0])
+
     def test_bordeaux_signs_show_only_readable_text_from_fresh_publication(self):
         now = dt.datetime(2026, 9, 28, 0, 40, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'metas': {'default': {'data_processed': '2026-09-28T00:35:00+00:00'}}}

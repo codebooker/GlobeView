@@ -129,6 +129,9 @@ FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
 BORDEAUX_FLOW_SOURCE = 'https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3'
 BORDEAUX_FLOW_API = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/catalog/'
                      'datasets/ci_trafi_l/records')
+STRASBOURG_FLOW_SOURCE = 'https://opendata.strasbourg.eu/explore/dataset/sirac_flux_trafic/'
+STRASBOURG_FLOW_BASE = ('https://opendata.strasbourg.eu/api/explore/v2.1/catalog/'
+                        'datasets/sirac_flux_trafic')
 BORDEAUX_SIGNS_BASE = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/'
                       'catalog/datasets/pc_pmv_p')
 BORDEAUX_SIGNS_SOURCE = 'https://datahub.bordeaux-metropole.fr/explore/dataset/pc_pmv_p/'
@@ -208,6 +211,8 @@ _STALE_SECONDS = 900
 _COLD_WAIT_SECONDS = 12
 _BORDEAUX_FLOW_LOCK = threading.Lock()
 _BORDEAUX_FLOW_CACHE = {'until': 0, 'data': None}
+_STRASBOURG_FLOW_LOCK = threading.Lock()
+_STRASBOURG_FLOW_CACHE = {'until': 0, 'data': None}
 _PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
 _PRAGUE_ROADS_CACHE = {'until': 0, 'payload': None, 'lock': threading.Lock()}
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
@@ -1042,11 +1047,11 @@ def _fetch_bordeaux_flow_page(offset):
     return json.loads(body)
 
 
-def _current_bordeaux_flow(data, now):
+def _current_bordeaux_flow(data, now, max_age=30 * 60):
     features = [feature for feature in data['features']
-                if -300 <= now - feature['properties']['updated_at'] <= 30 * 60]
+                if -300 <= now - feature['properties']['updated_at'] <= max_age]
     if not features:
-        raise ValueError('Bordeaux traffic cache has no current road states')
+        raise ValueError('Traffic cache has no current road states')
     return dict(data, features=features)
 
 
@@ -1078,6 +1083,98 @@ def bordeaux_flow_snapshot():
             if _BORDEAUX_FLOW_CACHE['data'] and now < _BORDEAUX_FLOW_CACHE['until'] + 600:
                 return _current_bordeaux_flow(_BORDEAUX_FLOW_CACHE['data'], now)
             raise
+
+
+def _parse_strasbourg_flow(metadata, rows, now=None):
+    now = time.time() if now is None else now
+    processed = (metadata.get('metas') or {}).get('default', {}).get('data_processed')
+    published = _timestamp(processed)
+    if published is None or not -300 <= now - published <= 15 * 60:
+        raise ValueError('Strasbourg traffic publication is stale')
+    states = {1: 'FLUIDE', 2: 'DENSE', 3: 'EMBOUTEILLE'}
+    features = []
+    for row in rows:
+        try:
+            state = states.get(int(row.get('etat')))
+            if not state or str(row.get('name') or '').lower().startswith('cycl'):
+                continue
+            updated = _timestamp(row.get('ts'))
+            if updated is None or not -300 <= now - updated <= 15 * 60:
+                continue
+            geometry = row['geo_shape']['geometry']
+            if geometry['type'] != 'LineString':
+                continue
+            coordinates = [[float(lon), float(lat)] for lon, lat in geometry['coordinates']]
+            segment_id = int(row['ident'])
+            if not (2 <= len(coordinates) <= 100 and all(
+                    7.5 <= lon <= 8.0 and 48.4 <= lat <= 48.8 for lon, lat in coordinates)):
+                continue
+        except (TypeError, ValueError, KeyError, IndexError):
+            continue
+        features.append({'type': 'Feature', 'id': f'strasbourg:{segment_id}',
+                         'geometry': {'type': 'LineString', 'coordinates': coordinates},
+                         'properties': {'state': state, 'updated_at': updated}})
+    if not features:
+        raise ValueError('Strasbourg traffic feed contains no current road states')
+    return {'type': 'FeatureCollection', 'features': features,
+            'source': 'Eurométropole de Strasbourg · Licence Ouverte',
+            'source_url': STRASBOURG_FLOW_SOURCE}
+
+
+def _fetch_strasbourg_flow_page(offset):
+    query = urllib.parse.urlencode({'limit': 100, 'offset': offset,
+                                    'select': 'ident,name,etat,ts,geo_shape'})
+    return _get_json(f'{STRASBOURG_FLOW_BASE}/records?{query}')
+
+
+def strasbourg_flow_snapshot():
+    with _STRASBOURG_FLOW_LOCK:
+        now = time.time()
+        if now < _STRASBOURG_FLOW_CACHE['until'] and _STRASBOURG_FLOW_CACHE['data']:
+            return _current_bordeaux_flow(_STRASBOURG_FLOW_CACHE['data'], now, 15 * 60)
+        try:
+            metadata = _get_json(STRASBOURG_FLOW_BASE)
+            first = _fetch_strasbourg_flow_page(0)
+            count = int(first['total_count'])
+            if not 1 <= count <= 1000:
+                raise ValueError('Strasbourg traffic record count is invalid')
+            offsets = list(range(100, count, 100))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                pages = list(executor.map(_fetch_strasbourg_flow_page, offsets))
+            records = list(first['results'])
+            for page in pages:
+                if int(page['total_count']) != count:
+                    raise ValueError('Strasbourg traffic pages changed during fetch')
+                records.extend(page['results'])
+            if len(records) != count:
+                raise ValueError('Strasbourg traffic feed is incomplete')
+            data = _parse_strasbourg_flow(metadata, records, now)
+            _STRASBOURG_FLOW_CACHE.update(until=now + 180, data=data)
+            return data
+        except (OSError, ValueError, KeyError, TypeError):
+            if _STRASBOURG_FLOW_CACHE['data'] and now < _STRASBOURG_FLOW_CACHE['until'] + 600:
+                return _current_bordeaux_flow(_STRASBOURG_FLOW_CACHE['data'], now, 15 * 60)
+            raise
+
+
+def international_traffic_snapshot():
+    sources = (('fr_bordeaux', bordeaux_flow_snapshot),
+               ('fr_strasbourg', strasbourg_flow_snapshot))
+    features, errors, active = [], [], []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(loader): name for name, loader in sources}
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                data = future.result()
+                features.extend(data['features'])
+                active.append(name)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                errors.append(f'{name}: {error}')
+    if not active:
+        raise ValueError('No current European traffic flow is available')
+    return {'type': 'FeatureCollection', 'features': features,
+            'sources': active, 'sourceErrors': errors}
 
 
 def _parse_bordeaux_signs(metadata, publication, now=None):
