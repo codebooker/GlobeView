@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import international_infrastructure as feeds
+from PIL import Image
 
 
 NOW = 1790445600  # 2026-09-26 UTC
@@ -1351,36 +1352,41 @@ class InfrastructureTests(unittest.TestCase):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)
 
     def test_dgt_visible_cameras_omit_placeholders_stale_and_invalid_images(self):
-        class Response:
+        visible = io.BytesIO()
+        Image.new('RGB', (853, 480), (100, 120, 90)).save(visible, 'JPEG')
+        black = io.BytesIO()
+        Image.new('RGB', (853, 480), (0, 0, 0)).save(black, 'JPEG')
+
+        class Response(io.BytesIO):
             def __init__(self, url):
                 self.url = url
                 camera_id = url.rsplit('/', 1)[-1]
+                super().__init__(b'bad' if camera_id == '1105.jpg' else
+                                 black.getvalue() if camera_id == '930.jpg' else visible.getvalue())
                 self.headers = {'Content-Type': 'image/jpeg',
                                 'Content-Length': {'923.jpg': '32634', '1103.jpg': '9422',
                                                    '962.jpg': '11224'}.get(
                                     camera_id, '125668'),
                                 'Last-Modified': email.utils.formatdate(
                                     NOW - (3600 if camera_id == '1104.jpg' else 300), usegmt=True)}
-            def read(self, size):
-                return b'bad' if self.url.endswith('/1105.jpg') else b'\xff\xd8\xff'
             def __enter__(self): return self
             def __exit__(self, *_): return False
         items = [feeds._feature([-4.13, 40.7], {
             'key': f'es:dgt:camera:{number + 10000}', 'layer': 'cameras',
             'snapshot_url': f'/dgt-camera/{number}',
-        }) for number in (923, 1103, 1104, 1105, 962, 929)]
+        }) for number in (923, 1103, 1104, 1105, 962, 930, 929)]
         previous = dict(feeds._DGT_CAMERA_HEALTH)
         try:
             feeds._DGT_CAMERA_HEALTH.clear()
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
                 self.assertEqual(feeds._dgt_unavailable_cameras(items),
-                                 {item['properties']['key'] for item in items[:5]})
+                                 {item['properties']['key'] for item in items[:6]})
             # A second map request uses the health cache without another upstream request.
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=AssertionError):
                 self.assertEqual(feeds._dgt_unavailable_cameras(items),
-                                 {item['properties']['key'] for item in items[:5]})
+                                 {item['properties']['key'] for item in items[:6]})
             with patch.object(feeds, '_snapshot', return_value={
                     'sources': {'es_dgt_cameras': items}, 'errors': []}), \
                     patch.object(feeds.time, 'time', return_value=NOW):
@@ -1392,6 +1398,10 @@ class InfrastructureTests(unittest.TestCase):
             feeds._DGT_CAMERA_HEALTH.update(previous)
 
     def test_dgt_camera_proxy_validates_image_and_freshness(self):
+        visible = io.BytesIO()
+        Image.new('RGB', (853, 480), (100, 120, 90)).save(visible, 'JPEG')
+        black = io.BytesIO()
+        Image.new('RGB', (853, 480), (0, 0, 0)).save(black, 'JPEG')
         class Response(io.BytesIO):
             url = 'https://etraffic.dgt.es/camarasEtraffic/597.jpg'
             headers = {'Content-Type': 'image/jpeg', 'Content-Length': '125380',
@@ -1399,14 +1409,19 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             feeds.dgt_camera_snapshot('../bad')
         with patch.object(feeds.time, 'time', return_value=NOW), \
-                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(b'\xff\xd8\xffimage')):
-            self.assertEqual(feeds.dgt_camera_snapshot('597'), (b'\xff\xd8\xffimage', 'image/jpeg'))
+                patch.object(feeds.urllib.request, 'urlopen', return_value=Response(visible.getvalue())):
+            self.assertEqual(feeds.dgt_camera_snapshot('597'), (visible.getvalue(), 'image/jpeg'))
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen',
-                             side_effect=[TimeoutError(), Response(b'\xff\xd8\xffimage')]) as open_image:
+                             side_effect=[TimeoutError(), Response(visible.getvalue())]) as open_image:
             self.assertEqual(feeds.dgt_camera_snapshot('597')[1], 'image/jpeg')
             self.assertEqual(open_image.call_count, 2)
-        placeholder = Response(b'\xff\xd8\xffimage')
+        no_scene = Response(black.getvalue())
+        with patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=no_scene):
+            with self.assertRaises(FileNotFoundError):
+                feeds.dgt_camera_snapshot('597')
+        placeholder = Response(visible.getvalue())
         placeholder.headers = dict(Response.headers, **{'Content-Length': '32634'})
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen', return_value=placeholder):

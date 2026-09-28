@@ -23,6 +23,7 @@ import zipfile
 from zoneinfo import ZoneInfo
 
 from pyproj import Transformer
+from PIL import Image, UnidentifiedImageError
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
@@ -4150,6 +4151,22 @@ def _dgt_camera_headers_available(response, now):
     return -300 <= age <= 30 * 60
 
 
+def _camera_has_visible_scene(image):
+    """Reject fresh JPEGs that contain only a black no-signal frame."""
+    try:
+        with Image.open(io.BytesIO(image)) as still:
+            if still.format != 'JPEG' or not (320 <= still.width <= 4096 and 180 <= still.height <= 4096):
+                return False
+            still.draft('L', (96, 96))
+            gray = still.convert('L')
+            width, height = gray.size
+            center = gray.crop((width // 8, height // 8, width * 7 // 8, height * 7 // 8))
+            histogram = center.histogram()
+            return sum(histogram[30:]) >= center.width * center.height * .02
+    except (OSError, ValueError, UnidentifiedImageError):
+        return False
+
+
 def _dgt_unavailable_cameras(features):
     """Check only visible DGT stills; a fresh JPEG header can hide a bad body."""
     cameras = {item['properties']['snapshot_url'].rsplit('/', 1)[-1]
@@ -4164,7 +4181,7 @@ def _dgt_unavailable_cameras(features):
         try:
             with urllib.request.urlopen(request, timeout=6) as response:
                 return (_dgt_camera_headers_available(response, now)
-                        and response.read(3) == b'\xff\xd8\xff')
+                        and _camera_has_visible_scene(response.read(2_000_001)))
         except (OSError, ValueError):
             return False
 
@@ -4198,8 +4215,8 @@ def dgt_camera_snapshot(camera_id):
             except (TimeoutError, urllib.error.URLError):
                 if attempt:
                     raise
-        if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
-            raise ValueError('DGT camera returned no JPEG still')
+        if len(image) > 2_000_000 or not _camera_has_visible_scene(image):
+            raise FileNotFoundError('DGT camera still has no visible scene')
         return image, 'image/jpeg'
     except (OSError, ValueError):
         with _DGT_CAMERA_HEALTH_LOCK:
