@@ -4342,7 +4342,19 @@ def _parse_dgt_cameras(root, now=None):
 
 _DGT_CAMERA_HEALTH = {}
 _DGT_CAMERA_HEALTH_LOCK = threading.Lock()
+_DGT_CAMERA_AUDIT_LOCK = threading.Lock()
 _DGT_CAMERA_PLACEHOLDER_BYTES = {'32634', '9422'}
+_DGT_CAMERA_STILLS = {}
+
+
+def _prune_dgt_stills_locked(now):
+    for camera_id, (expires, _) in list(_DGT_CAMERA_STILLS.items()):
+        if expires <= now:
+            _DGT_CAMERA_STILLS.pop(camera_id, None)
+    total = sum(len(image) for _, image in _DGT_CAMERA_STILLS.values())
+    while total > 64 * 1024 * 1024:
+        oldest = next(iter(_DGT_CAMERA_STILLS))
+        total -= len(_DGT_CAMERA_STILLS.pop(oldest)[1])
 
 
 def _dgt_camera_url(camera_id):
@@ -4401,26 +4413,43 @@ def _dgt_unavailable_cameras(features):
             'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
         try:
             with urllib.request.urlopen(request, timeout=6) as response:
-                return (_dgt_camera_headers_available(response, now)
-                        and _camera_has_visible_scene(response.read(2_000_001)))
+                if not _dgt_camera_headers_available(response, now):
+                    return camera_id, None
+                image = response.read(2_000_001)
+                if len(image) > 2_000_000 or not _camera_has_visible_scene(image):
+                    return camera_id, None
+                return camera_id, image
         except (OSError, ValueError):
-            return False
+            return camera_id, None
 
-    with _DGT_CAMERA_HEALTH_LOCK:
-        pending = [camera_id for camera_id in cameras
-                   if _DGT_CAMERA_HEALTH.get(camera_id, (0, False))[0] <= now]
+    with _DGT_CAMERA_AUDIT_LOCK:
+        with _DGT_CAMERA_HEALTH_LOCK:
+            pending = [camera_id for camera_id in cameras
+                       if _DGT_CAMERA_HEALTH.get(camera_id, (0, False))[0] <= now]
         if pending:
             with concurrent.futures.ThreadPoolExecutor(max_workers=24) as executor:
-                for camera_id, good in zip(pending, executor.map(available, pending)):
-                    _DGT_CAMERA_HEALTH[camera_id] = (now + 600, good)
-        return {item['properties']['key'] for item in features
-                if item['properties']['key'].startswith('es:dgt:camera:')
-                and not _DGT_CAMERA_HEALTH[item['properties']['snapshot_url'].rsplit('/', 1)[-1]][1]}
+                results = list(executor.map(available, pending))
+            with _DGT_CAMERA_HEALTH_LOCK:
+                for camera_id, image in results:
+                    _DGT_CAMERA_HEALTH[camera_id] = (now + 300, image is not None)
+                    if image is not None:
+                        _DGT_CAMERA_STILLS[camera_id] = (now + 300, image)
+                    else:
+                        _DGT_CAMERA_STILLS.pop(camera_id, None)
+                _prune_dgt_stills_locked(now)
+        with _DGT_CAMERA_HEALTH_LOCK:
+            return {item['properties']['key'] for item in features
+                    if item['properties']['key'].startswith('es:dgt:camera:')
+                    and not _DGT_CAMERA_HEALTH[item['properties']['snapshot_url'].rsplit('/', 1)[-1]][1]}
 
 
 def dgt_camera_snapshot(camera_id):
     if not re.fullmatch(r'\d{1,7}', str(camera_id)):
         raise ValueError('Invalid DGT camera ID')
+    with _DGT_CAMERA_HEALTH_LOCK:
+        cached = _DGT_CAMERA_STILLS.get(camera_id)
+        if cached and cached[0] > time.time():
+            return cached[1], 'image/jpeg'
     request = urllib.request.Request(_dgt_camera_url(camera_id), headers={
         'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
     try:
@@ -4438,10 +4467,16 @@ def dgt_camera_snapshot(camera_id):
                     raise
         if len(image) > 2_000_000 or not _camera_has_visible_scene(image):
             raise FileNotFoundError('DGT camera still has no visible scene')
+        with _DGT_CAMERA_HEALTH_LOCK:
+            now = time.time()
+            _DGT_CAMERA_HEALTH[camera_id] = (now + 300, True)
+            _DGT_CAMERA_STILLS[camera_id] = (now + 300, image)
+            _prune_dgt_stills_locked(now)
         return image, 'image/jpeg'
     except (OSError, ValueError):
         with _DGT_CAMERA_HEALTH_LOCK:
             _DGT_CAMERA_HEALTH[camera_id] = (time.time() + 180, False)
+            _DGT_CAMERA_STILLS.pop(camera_id, None)
         raise
 
 

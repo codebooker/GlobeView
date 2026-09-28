@@ -1526,8 +1526,10 @@ class InfrastructureTests(unittest.TestCase):
             'snapshot_url': f'/dgt-camera/{number}',
         }) for number in (923, 1103, 1104, 1105, 962, 930, 929)]
         previous = dict(feeds._DGT_CAMERA_HEALTH)
+        previous_stills = dict(feeds._DGT_CAMERA_STILLS)
         try:
             feeds._DGT_CAMERA_HEALTH.clear()
+            feeds._DGT_CAMERA_STILLS.clear()
             with patch.object(feeds.time, 'time', return_value=NOW), \
                     patch.object(feeds.urllib.request, 'urlopen', side_effect=lambda req, timeout: Response(req.full_url)):
                 self.assertEqual(feeds._dgt_unavailable_cameras(items),
@@ -1543,11 +1545,21 @@ class InfrastructureTests(unittest.TestCase):
                 result = feeds.road_snapshot('cameras', (-4.2, 40.6, -4.0, 40.8))
                 self.assertEqual([item['properties']['key'] for item in result['features']],
                                  [items[-1]['properties']['key']])
+            # The verified catalog still remains available when DGT briefly fails.
+            with patch.object(feeds.time, 'time', return_value=NOW + 60), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=OSError('offline')):
+                self.assertEqual(feeds.dgt_camera_snapshot('929'), (visible.getvalue(), 'image/jpeg'))
         finally:
             feeds._DGT_CAMERA_HEALTH.clear()
             feeds._DGT_CAMERA_HEALTH.update(previous)
+            feeds._DGT_CAMERA_STILLS.clear()
+            feeds._DGT_CAMERA_STILLS.update(previous_stills)
 
     def test_dgt_camera_proxy_validates_image_and_freshness(self):
+        previous_stills = dict(feeds._DGT_CAMERA_STILLS)
+        self.addCleanup(lambda: (feeds._DGT_CAMERA_STILLS.clear(),
+                                 feeds._DGT_CAMERA_STILLS.update(previous_stills)))
+        feeds._DGT_CAMERA_STILLS.clear()
         visible = io.BytesIO()
         Image.new('RGB', (853, 480), (100, 120, 90)).save(visible, 'JPEG')
         black = io.BytesIO()
@@ -1561,11 +1573,13 @@ class InfrastructureTests(unittest.TestCase):
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen', return_value=Response(visible.getvalue())):
             self.assertEqual(feeds.dgt_camera_snapshot('597'), (visible.getvalue(), 'image/jpeg'))
+        feeds._DGT_CAMERA_STILLS.clear()
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen',
                              side_effect=[TimeoutError(), Response(visible.getvalue())]) as open_image:
             self.assertEqual(feeds.dgt_camera_snapshot('597')[1], 'image/jpeg')
             self.assertEqual(open_image.call_count, 2)
+        feeds._DGT_CAMERA_STILLS.clear()
         no_scene = Response(black.getvalue())
         with patch.object(feeds.time, 'time', return_value=NOW), \
                 patch.object(feeds.urllib.request, 'urlopen', return_value=no_scene):
@@ -1577,6 +1591,31 @@ class InfrastructureTests(unittest.TestCase):
                 patch.object(feeds.urllib.request, 'urlopen', return_value=placeholder):
             with self.assertRaises(FileNotFoundError):
                 feeds.dgt_camera_snapshot('597')
+
+    def test_dgt_catalog_audit_does_not_block_camera_clicks(self):
+        entered = threading.Event()
+        release = threading.Event()
+        camera = {'properties': {'key': 'es:dgt:camera:597', 'snapshot_url': '/dgt-camera/597'}}
+        previous = dict(feeds._DGT_CAMERA_HEALTH)
+        try:
+            feeds._DGT_CAMERA_HEALTH.clear()
+            def slow_response(request, timeout):
+                entered.set()
+                release.wait(2)
+                raise OSError('camera offline')
+            with patch.object(feeds.urllib.request, 'urlopen', side_effect=slow_response):
+                worker = threading.Thread(target=feeds._dgt_unavailable_cameras, args=([camera],))
+                worker.start()
+                self.assertTrue(entered.wait(1))
+                self.assertTrue(feeds._DGT_CAMERA_HEALTH_LOCK.acquire(timeout=.1))
+                feeds._DGT_CAMERA_HEALTH_LOCK.release()
+                release.set()
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+        finally:
+            release.set()
+            feeds._DGT_CAMERA_HEALTH.clear()
+            feeds._DGT_CAMERA_HEALTH.update(previous)
 
     def test_dgt_incidents_separate_active_works_from_road_events(self):
         now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()
