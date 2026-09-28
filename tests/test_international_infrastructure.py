@@ -881,6 +881,7 @@ class InfrastructureTests(unittest.TestCase):
                 patch.object(feeds, '_estonia_camera_index', return_value=entries), \
                 patch.object(feeds, '_get_xml', side_effect=TimeoutError()), \
                 patch.object(feeds, '_get_json', return_value=arcgis), \
+                patch.dict('os.environ', {'TARKTEE_API_KEY': 'test-key'}), \
                 patch.object(feeds.time, 'time', return_value=NOW):
             rows = feeds._estonia_cameras()
             self.assertEqual(len(rows), 1)
@@ -893,15 +894,25 @@ class InfrastructureTests(unittest.TestCase):
                  'lock': threading.Lock()}
         with patch.object(feeds, '_ESTONIA_CAMERA_INDEX', cache), \
                 patch.object(feeds, '_get_xml', side_effect=TimeoutError()), \
+                patch.dict('os.environ', {'TARKTEE_API_KEY': 'test-key'}), \
                 patch.object(feeds.time, 'time', return_value=NOW):
             self.assertIn('987', feeds._estonia_camera_index())
             self.assertEqual(cache['until'], NOW + 60)
 
     def test_estonia_upstream_retries_one_transient_timeout(self):
         root = ET.Element('d2LogicalModel')
-        with patch.object(feeds, '_get_xml', side_effect=[TimeoutError(), root]) as fetch:
+        with patch.object(feeds, '_get_xml', side_effect=[TimeoutError(), root]) as fetch, \
+                patch.dict('os.environ', {'TARKTEE_API_KEY': 'test-key'}):
             self.assertIs(feeds._estonia_xml('vms'), root)
             self.assertEqual(fetch.call_count, 2)
+            self.assertEqual(fetch.call_args.kwargs['extra_headers'], {'X-DATEX-API-KEY': 'test-key'})
+
+    def test_estonia_datex_skips_upstream_without_api_key(self):
+        with patch.dict('os.environ', {}, clear=True), \
+                patch.object(feeds, '_get_xml') as fetch:
+            with self.assertRaisesRegex(RuntimeError, 'TARKTEE_API_KEY'):
+                feeds._estonia_xml('vms')
+            fetch.assert_not_called()
 
     def test_estonia_signs_show_only_working_readable_messages(self):
         published = dt.datetime.fromtimestamp(NOW, dt.timezone.utc).isoformat()
