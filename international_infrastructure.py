@@ -223,9 +223,9 @@ def _get_json(url, fintraffic=False):
     return json.loads(body)
 
 
-def _get_xml(url, max_bytes=2 * 1024 * 1024):
+def _get_xml(url, max_bytes=2 * 1024 * 1024, timeout=15):
     request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/rss+xml, application/xml'})
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
         raise ValueError('Road feed exceeded size limit')
@@ -4636,7 +4636,9 @@ _ESTONIA_WEATHER_SITES = {'until': 0, 'root': None, 'read_at': 0, 'lock': thread
 def _estonia_xml(path):
     for attempt in range(2):
         try:
-            return _get_xml(ESTONIA_CAMERAS_BASE + path)
+            # Tark Tee sometimes stalls partway through a publication even
+            # after responding; give these relatively small XML files longer.
+            return _get_xml(ESTONIA_CAMERAS_BASE + path, timeout=25)
         except (TimeoutError, urllib.error.URLError):
             if attempt:
                 raise
