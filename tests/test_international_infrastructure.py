@@ -416,6 +416,29 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_paris_roadworks(metadata, [work('CP123456')], now + 15 * 86400)
 
+    def test_toulouse_roadworks_require_current_road_impact_and_complete_export(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'data_processed': '2026-09-28T03:00:00+00:00',
+                                         'records_count': 5}}}
+        def work(identity, impact='Rue barrée', start='2026-09-01', end='2026-10-01', lon=1.44):
+            return {'properties': {'numero': identity, 'circulation': impact,
+                                   'datedebut': start, 'datefin': end,
+                                   'voie': 'RUE A | RUE A', 'commune': 'Toulouse',
+                                   'geo_point_2d': {'lon': lon, 'lat': 43.6}}}
+        publication = {'features': [work('T26TLS08001'),
+                                    work('T26TLS08002', impact='Occupation du trottoir'),
+                                    work('T26TLS08003', start='2026-10-01'),
+                                    work('T26TLS08004', lon=10),
+                                    work('../bad')]}
+        features = feeds._parse_toulouse_roadworks(metadata, publication, now)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(features[0]['properties']['title'], 'Roadworks · RUE A')
+        self.assertIn('Scheduled through', features[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_toulouse_roadworks(metadata, {'features': publication['features'][:-1]}, now)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_toulouse_roadworks(metadata, publication, now + 3 * 86400)
+
     def test_paris_traffic_events_exclude_standing_restrictions_and_future_closures(self):
         now = dt.datetime(2026, 9, 28, 14, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'metas': {'default': {'data_processed': '2026-09-28T13:58:00+00:00'}}}

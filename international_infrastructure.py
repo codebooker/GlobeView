@@ -151,6 +151,9 @@ BORDEAUX_SIGNS_SOURCE = 'https://datahub.bordeaux-metropole.fr/explore/dataset/p
 PARIS_WORKS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
                     'datasets/chantiers-perturbants')
 PARIS_WORKS_SOURCE = 'https://opendata.paris.fr/explore/dataset/chantiers-perturbants/'
+TOULOUSE_WORKS_BASE = ('https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/'
+                       'datasets/chantiers-en-cours')
+TOULOUSE_WORKS_SOURCE = 'https://data.toulouse-metropole.fr/explore/dataset/chantiers-en-cours/'
 PARIS_EVENTS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
                      'datasets/circulation_evenement')
 PARIS_EVENTS_SOURCE = 'https://opendata.paris.fr/explore/dataset/circulation_evenement/'
@@ -234,6 +237,7 @@ _BISON_FLOW_LOCK = threading.Lock()
 _BISON_FLOW_CACHE = {'until': 0, 'data': None}
 _BISON_FLOW_TRANSFORMER = Transformer.from_crs('EPSG:2154', 'EPSG:4326', always_xy=True)
 _PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
+_TOULOUSE_WORKS_CACHE = {'until': 0, 'data': None, 'lock': threading.Lock()}
 _PRAGUE_ROADS_CACHE = {'until': 0, 'payload': None, 'lock': threading.Lock()}
 _SRWR_CACHE = {'until': 0, 'archive': '', 'activities': []}
 _NH_ROADWORKS_CACHE = {'until': 0, 'url': '', 'published': '', 'activities': []}
@@ -1581,6 +1585,64 @@ def _paris_roadworks():
             _parse_paris_roadworks(metadata, rows, now)
             cache.update(until=now + 3600, rows=rows, metadata=metadata)
         return _parse_paris_roadworks(cache['metadata'], cache['rows'], now)
+
+
+def _parse_toulouse_roadworks(metadata, publication, now=None):
+    now = time.time() if now is None else now
+    meta = (metadata.get('metas') or {}).get('default') or {}
+    published = meta.get('data_processed')
+    processed = _timestamp(published)
+    if processed is None or not -300 <= now - processed <= 2 * 86400:
+        raise ValueError('Toulouse roadworks publication is stale')
+    rows = publication.get('features')
+    count = meta.get('records_count')
+    if (not isinstance(rows, list) or not isinstance(count, int) or
+            not 0 < count <= 5000 or len(rows) != count):
+        raise ValueError('Toulouse roadworks export is incomplete')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/Paris')).date()
+    road_effects = ('rue barrée', 'occupation de 1 file', 'occupation de 2 files',
+                    'alternat', 'rue sens unique', 'rue traversée',
+                    'occupation de la contre allée', 'occupation de couloir de bus')
+    features = []
+    for row in rows:
+        try:
+            props = row['properties']
+            work_id = str(props['numero'])
+            if not re.fullmatch(r'T\d{2}[A-Z]{3}\d{5}', work_id):
+                continue
+            start = dt.date.fromisoformat(props['datedebut'][:10])
+            end = dt.date.fromisoformat(props['datefin'][:10])
+            impact = _clean(props.get('circulation'), 170)
+            point = props['geo_point_2d']
+            lon, lat = float(point['lon']), float(point['lat'])
+            if not (start <= today <= end and any(word in impact.lower() for word in road_effects)
+                    and 1.1 <= lon <= 1.8 and 43.3 <= lat <= 43.9):
+                continue
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        street = _clean(str(props.get('voie') or '').split('|', 1)[0], 90) or 'Toulouse Métropole road'
+        commune = _clean(props.get('commune'), 60)
+        features.append(_feature([lon, lat], {
+            'key': f'fr:toulouse:works:{work_id}', 'layer': 'construction',
+            'title': f'Roadworks · {street}',
+            'detail': ' · '.join(filter(None, (impact, commune,
+                                               f'Scheduled through {end:%d %b %Y}'))),
+            'source': 'Toulouse Métropole · Licence Ouverte',
+            'source_url': TOULOUSE_WORKS_SOURCE, 'updated_at': published,
+        }))
+    return features
+
+
+def _toulouse_roadworks():
+    cache = _TOULOUSE_WORKS_CACHE
+    with cache['lock']:
+        now = time.time()
+        if now >= cache['until'] or cache['data'] is None:
+            metadata = _get_json(TOULOUSE_WORKS_BASE)
+            publication = _get_json(f'{TOULOUSE_WORKS_BASE}/exports/geojson')
+            _parse_toulouse_roadworks(metadata, publication, now)
+            cache.update(until=now + 3600, data=(metadata, publication))
+        return _parse_toulouse_roadworks(*cache['data'], now)
 
 
 def _parse_paris_traffic_events(metadata, rows, now=None):
@@ -6539,6 +6601,7 @@ _FETCHERS = {
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
         'fr_paris_roadworks': _paris_roadworks,
+        'fr_toulouse_roadworks': _toulouse_roadworks,
         'fr_paris_traffic_events': _paris_traffic_events,
         'fr_bordeaux_signs': _bordeaux_signs,
         'es_madrid_signs': _madrid_signs,
