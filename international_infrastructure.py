@@ -135,6 +135,9 @@ BORDEAUX_SIGNS_SOURCE = 'https://datahub.bordeaux-metropole.fr/explore/dataset/p
 PARIS_WORKS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
                     'datasets/chantiers-perturbants')
 PARIS_WORKS_SOURCE = 'https://opendata.paris.fr/explore/dataset/chantiers-perturbants/'
+PARIS_EVENTS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
+                     'datasets/circulation_evenement')
+PARIS_EVENTS_SOURCE = 'https://opendata.paris.fr/explore/dataset/circulation_evenement/'
 BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_geom/'
 BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                           'service=WFS&version=1.1.0&request=GetFeature&'
@@ -1190,6 +1193,86 @@ def _paris_roadworks():
             _parse_paris_roadworks(metadata, rows, now)
             cache.update(until=now + 3600, rows=rows, metadata=metadata)
         return _parse_paris_roadworks(cache['metadata'], cache['rows'], now)
+
+
+def _parse_paris_traffic_events(metadata, rows, now=None):
+    now = time.time() if now is None else now
+    published = (metadata.get('metas') or {}).get('default', {}).get('data_processed')
+    processed = _timestamp(published)
+    if processed is None or not -300 <= now - processed <= 20 * 60:
+        raise ValueError('Paris traffic events publication is stale')
+    if not isinstance(rows, list) or len(rows) > 1000:
+        raise ValueError('Paris traffic events publication is invalid')
+    features = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        event_id = str(row.get('id') or '')
+        kind = row.get('type')
+        subtype = row.get('subtype')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{5,80}', event_id):
+            continue
+        if kind == 'CONSTRUCTION':
+            layer, label, max_days = 'construction', 'Roadworks', 365
+        elif kind == 'ROAD_CLOSED' and subtype == 'ROAD_CLOSED_CONSTRUCTION':
+            layer, label, max_days = 'construction', 'Road closed for work', 365
+        elif kind == 'ROAD_CLOSED' and subtype == 'ROAD_CLOSED_EVENT':
+            layer, label, max_days = 'incidents', 'Road closure', 30
+        else:
+            continue
+        start, end = _timestamp(row.get('starttime')), _timestamp(row.get('endtime'))
+        if start is None or end is None or not start <= now < end or end - start > max_days * 86400:
+            continue
+        coordinates = str(row.get('polyline') or '').split()
+        if len(coordinates) < 4 or len(coordinates) > 200 or len(coordinates) % 2:
+            continue
+        try:
+            values = [float(value) for value in coordinates]
+        except ValueError:
+            continue
+        points = list(zip(values[::2], values[1::2]))  # Paris publishes latitude, longitude.
+        if not all(math.isfinite(lat) and math.isfinite(lon)
+                   and 48.75 <= lat <= 49.0 and 2.1 <= lon <= 2.55 for lat, lon in points):
+            continue
+        mid = (len(points) - 1) // 2
+        lat = (points[mid][0] + points[mid + 1][0]) / 2
+        lon = (points[mid][1] + points[mid + 1][1]) / 2
+        street = _clean(str(row.get('street') or '').replace('_', ' '), 90) or 'Paris street'
+        description = _clean(row.get('description'), 180)
+        until = dt.datetime.fromtimestamp(end, ZoneInfo('Europe/Paris')).strftime('%d %b %Y, %H:%M')
+        features.append(_feature([lon, lat], {
+            'key': f'fr:paris:event:{event_id}', 'layer': layer,
+            'title': f'{label} · {street}',
+            'detail': ' · '.join(filter(None, (description, f'Until {until} Paris time'))),
+            'source': 'Ville de Paris · Licence Ouverte', 'source_url': PARIS_EVENTS_SOURCE,
+            'updated_at': published,
+        }))
+    return features
+
+
+def _paris_traffic_events():
+    metadata = _get_json(PARIS_EVENTS_BASE)
+    processed = _timestamp((metadata.get('metas') or {}).get('default', {}).get('data_processed'))
+    if processed is None or not -300 <= time.time() - processed <= 20 * 60:
+        raise ValueError('Paris traffic events publication is stale')
+    fields = 'id,starttime,endtime,description,type,subtype,street,polyline'
+    rows = []
+    total = None
+    for offset in range(0, 1000, 100):
+        query = urllib.parse.urlencode({'limit': 100, 'offset': offset, 'select': fields})
+        page = _get_json(f'{PARIS_EVENTS_BASE}/records?{query}')
+        if total is None:
+            total = page.get('total_count')
+            if not isinstance(total, int) or not 0 <= total <= 1000:
+                raise ValueError('Paris traffic events count is invalid')
+        if page.get('total_count') != total or not isinstance(page.get('results'), list):
+            raise ValueError('Paris traffic events changed during pagination')
+        rows.extend(page['results'])
+        if len(rows) >= total:
+            break
+    if len(rows) != total:
+        raise ValueError('Paris traffic events publication is incomplete')
+    return _parse_paris_traffic_events(metadata, rows)
 
 
 def _parse_madrid_signs(locations, root, published):
@@ -6020,6 +6103,7 @@ _FETCHERS = {
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
         'fr_paris_roadworks': _paris_roadworks,
+        'fr_paris_traffic_events': _paris_traffic_events,
         'fr_bordeaux_signs': _bordeaux_signs,
         'es_madrid_signs': _madrid_signs,
         'es_vitoria_cameras': _vitoria_cameras,
@@ -6087,7 +6171,7 @@ def _refresh_snapshot(kind):
                     source_times[name] = now
                 except Exception as error:
                     errors.append(f'{name}: {error}')
-                    if now - source_times.get(name, 0) > _STALE_SECONDS:
+                    if name == 'fr_paris_traffic_events' or now - source_times.get(name, 0) > _STALE_SECONDS:
                         sources.pop(name, None)
                 # A slow feed elsewhere in Europe must not hold every road layer
                 # hostage after a deploy. Publish each completed source at once.

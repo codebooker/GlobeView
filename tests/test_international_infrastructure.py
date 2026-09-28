@@ -308,6 +308,35 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_paris_roadworks(metadata, [work('CP123456')], now + 15 * 86400)
 
+    def test_paris_traffic_events_exclude_standing_restrictions_and_future_closures(self):
+        now = dt.datetime(2026, 9, 28, 14, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'data_processed': '2026-09-28T13:58:00+00:00'}}}
+        def event(identity, kind='ROAD_CLOSED', subtype='ROAD_CLOSED_EVENT',
+                  start='2026-09-28T13:00:00+00:00', end='2026-09-28T16:00:00+00:00',
+                  polyline='48.85 2.34 48.86 2.35'):
+            return {'id': identity, 'type': kind, 'subtype': subtype,
+                    'starttime': start, 'endtime': end, 'polyline': polyline,
+                    'description': 'Temporary closure', 'street': 'Rue_de_Rivoli'}
+        rows = feeds._parse_paris_traffic_events(metadata, [
+            event('recent_event'),
+            event('roadwork_closure', subtype='ROAD_CLOSED_CONSTRUCTION'),
+            event('construction', kind='CONSTRUCTION', subtype=None),
+            event('standing', start='2025-01-01T00:00:00+00:00',
+                  end='2030-01-01T00:00:00+00:00'),
+            event('future', start='2026-09-29T00:00:00+00:00'),
+            event('expired', end='2026-09-28T12:00:00+00:00'),
+            event('outside', polyline='50.00 2.34 50.01 2.35'),
+        ], now)
+        self.assertEqual([item['properties']['key'] for item in rows], [
+            'fr:paris:event:recent_event', 'fr:paris:event:roadwork_closure',
+            'fr:paris:event:construction'])
+        self.assertEqual([item['properties']['layer'] for item in rows],
+                         ['incidents', 'construction', 'construction'])
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], 2.345)
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][1], 48.855)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_paris_traffic_events(metadata, [], now + 21 * 60)
+
     def test_brussels_counters_only_map_recent_active_measurements(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def counter(name, measured='2026-09-27T18:58:00Z', active=1, count=8, speed=42):
