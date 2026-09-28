@@ -1582,6 +1582,12 @@ class InfrastructureTests(unittest.TestCase):
                          ['construction', 'incidents'])
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_hamburg_roads(payload, now + 3600)
+        payload['numberMatched'] = 7
+        self.assertEqual(len(feeds._parse_hamburg_roads(payload, now)), 2)
+        payload['links'] = [{'rel': 'next', 'href': 'https://api.hamburg.de/next'}]
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_hamburg_roads(payload, now)
+        payload.pop('links')
         payload['numberMatched'] = 501
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_hamburg_roads(payload, now)

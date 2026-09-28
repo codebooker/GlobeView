@@ -3435,7 +3435,14 @@ def _parse_hamburg_roads(payload, now=None):
     if not isinstance(features, list) or len(features) > 500:
         raise ValueError('Hamburg road publication has an invalid size')
     matched = payload.get('numberMatched')
-    if not isinstance(matched, int) or matched > len(features):
+    # Hamburg's live collection is not an atomic snapshot: its reported counts
+    # can differ slightly from the actual feature array while incidents change.
+    # A next link or a larger gap still means we have only part of the feed.
+    has_next = any(isinstance(link, dict) and link.get('rel') == 'next'
+                   for link in payload.get('links', []))
+    tolerance = max(10, len(features) // 20)
+    if (not isinstance(matched, int) or matched > 500 or has_next
+            or matched - len(features) > tolerance):
         raise ValueError('Hamburg road publication is incomplete')
     published = _timestamp(payload.get('timeStamp'))
     if published is None or not -300 <= now - published <= 20 * 60:
