@@ -14,6 +14,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 FEEDS = {
@@ -555,12 +556,78 @@ def _ireland_alerts():
     return items
 
 
+_AZORES_ALERT_URL = 'https://www.prociv.azores.gov.pt/alertas/api/?lang=en&limit_last_alerts=30'
+_AZORES_GROUPS = {
+    'g_ocidental': ('Western Azores', -31.2, 39.46),
+    'g_central': ('Central Azores', -27.2, 38.72),
+    'g_oriental': ('Eastern Azores', -25.5, 37.75),
+}
+_AZORES_SEVERITY = {'1': 'Minor', '2': 'Severe', '3': 'Extreme'}
+
+
+def _parse_azores_alerts(alerts, now=None):
+    if not isinstance(alerts, list) or len(alerts) > 30:
+        raise ValueError('Unexpected Azores alert feed')
+    now = now or dt.datetime.now(_UTC)
+    local_now = now.astimezone(ZoneInfo('Atlantic/Azores'))
+    items = {}
+    for alert in alerts:
+        if not isinstance(alert, dict) or str(alert.get('codigo_tipo')) != '1':
+            continue
+        identifier = str(alert.get('idalerta') or '')
+        if not re.fullmatch(r'\d{1,8}', identifier):
+            continue
+        for group_key, (area, lon, lat) in _AZORES_GROUPS.items():
+            group = alert.get(group_key)
+            if not isinstance(group, dict):
+                continue
+            active = []
+            for hazard in ('precipitacao', 'vento', 'trovoada', 'agitacao'):
+                windows = group.get(hazard)
+                if not isinstance(windows, list):
+                    continue
+                for window in windows:
+                    if not isinstance(window, dict):
+                        continue
+                    try:
+                        start = dt.datetime.fromisoformat(f"{window['dia_inicio']}T{window['hora_inicio']}").replace(tzinfo=local_now.tzinfo)
+                        end = dt.datetime.fromisoformat(f"{window['dia_fim']}T{window['hora_fim']}").replace(tzinfo=local_now.tzinfo)
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if start <= local_now < end and end - start <= dt.timedelta(days=7):
+                        active.append((hazard, window, end))
+            if not active:
+                continue
+            previous = items.get(group_key)
+            if previous and int(previous['id'].split(':')[2]) > int(identifier):
+                continue
+            severity = max(active, key=lambda entry:
+                           {'1': 1, '2': 2, '3': 3}.get(str(entry[1].get('codigo_cor')), 0))[1]
+            descriptions = [f"{window.get('categoria') or hazard}: {window.get('texto') or window.get('cor') or 'warning'}"
+                            for hazard, window, _ in active]
+            items[group_key] = {
+                'id': f'pt:azores:{identifier}:{group_key[2:]}',
+                'title': f'{alert.get("titulo_aviso") or "Weather warning"} · {area}',
+                'lon': lon, 'lat': lat, 'locationKind': 'island-group representative point',
+                'country': 'Portugal', 'source': 'Azores Civil Protection',
+                'severity': _AZORES_SEVERITY.get(str(severity.get('codigo_cor')), 'Unknown'),
+                'area': area, 'advice': '; '.join(descriptions)[:480],
+                'ends': max(entry[2] for entry in active).astimezone(_UTC).isoformat().replace('+00:00', 'Z'),
+                'sourceUrl': f'https://www.prociv.azores.gov.pt/alertas/ver.php?id={identifier}',
+            }
+    return list(items.values())
+
+
+def _azores_alerts():
+    return _parse_azores_alerts(_get_json(_AZORES_ALERT_URL, max_bytes=250_000))
+
+
 def _world_alerts():
     items = []
     unavailable = []
     loaders = [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
                ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
-               ('Germany', _germany_alerts)]
+               ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts)]
     for country, loader in loaders:
         try:
             items.extend(loader())

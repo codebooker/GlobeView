@@ -142,10 +142,37 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_norway_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_ireland_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_germany_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_azores_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_azores_alerts_show_only_current_island_group_windows(self):
+        now = dt.datetime(2026, 9, 28, 4, tzinfo=dt.timezone.utc)
+        def window(start, end, color='2'):
+            return {'dia_inicio': start[:10], 'hora_inicio': start[11:],
+                    'dia_fim': end[:10], 'hora_fim': end[11:],
+                    'codigo_cor': color, 'categoria': 'Rain', 'texto': 'Heavy rain'}
+        alerts = [{'idalerta': 3587, 'codigo_tipo': 1, 'titulo_aviso': 'Weather warning',
+                   'g_ocidental': {'precipitacao': [window('2026-09-27T18:00', '2026-09-28T06:00')]},
+                   'g_central': {'precipitacao': [window('2026-09-27T21:00', '2026-09-28T12:00')]},
+                   'g_oriental': {'precipitacao': [window('2026-09-28T05:00', '2026-09-28T15:00')]}},
+                  {'idalerta': 3586, 'codigo_tipo': 2, 'g_central': {
+                      'precipitacao': [window('2026-09-27T21:00', '2026-09-28T12:00')]}},
+                  {'idalerta': 3570, 'codigo_tipo': 1, 'g_central': {
+                      'precipitacao': [window('2026-09-27T21:00', '2026-09-28T12:00', '1')]}}]
+        items = hazard_feeds._parse_azores_alerts(alerts, now)
+        self.assertEqual([item['id'] for item in items],
+                         ['pt:azores:3587:ocidental', 'pt:azores:3587:central'])
+        self.assertEqual(items[1]['severity'], 'Severe')
+        self.assertEqual(items[1]['locationKind'], 'island-group representative point')
+        self.assertEqual(items[1]['ends'], '2026-09-28T12:00:00Z')
+        self.assertEqual(hazard_feeds._parse_azores_alerts(alerts, now + dt.timedelta(days=2)), [])
+        winter = [{'idalerta': 100, 'codigo_tipo': 1, 'g_central': {'vento': [
+            window('2026-01-27T11:30', '2026-01-27T13:00')]}}]
+        self.assertEqual(hazard_feeds._parse_azores_alerts(
+            winter, dt.datetime(2026, 1, 27, 12, tzinfo=dt.timezone.utc)), [])
 
     def test_dwd_status_archive_maps_current_polygons_and_accepts_empty_zip(self):
         now = dt.datetime.now(dt.timezone.utc)
