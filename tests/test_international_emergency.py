@@ -218,6 +218,28 @@ class InternationalEmergencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds.parse_portugal(payload, now)
 
+    def test_catalonia_fire_map_keeps_only_recent_non_extinguished_reports(self):
+        now = dt.datetime(2026, 9, 28, 2, 45, tzinfo=dt.timezone.utc)
+        props = {'GlobalID': '04b07e5c-923c-4a57-9eae-b078fb0fd9f3',
+                 'DATA_ACT': int((now - dt.timedelta(hours=2)).timestamp() * 1000),
+                 'ACT_DAT_FI': None, 'ACT_URGENT': 'S', 'COM_FASE': 'Controlat',
+                 'MUNICIPI_DPX': 'Sant Bartomeu del Grau',
+                 'TAL_DESC_ALARMA2': 'Incendi vegetació agrícola'}
+        row = {'geometry': {'type': 'Point', 'coordinates': [2.1366, 41.9858]},
+               'properties': props}
+        payload = {'features': [row,
+            {**row, 'properties': {**props, 'COM_FASE': 'Extingit'}},
+            {**row, 'properties': {**props, 'DATA_ACT': int((now - dt.timedelta(days=2)).timestamp() * 1000)}},
+            {**row, 'geometry': {'type': 'Point', 'coordinates': [25, 41.9858]}}]}
+        items = feeds.parse_catalonia_fires(payload, now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['id'], 'es:catalonia:fire:04b07e5c-923c-4a57-9eae-b078fb0fd9f3')
+        self.assertEqual(items[0]['category'], 'fire')
+        self.assertIn('Controlat', items[0]['detail'])
+        self.assertEqual(items[0]['sourceUrl'], feeds.CATALONIA_FIRE_SOURCE)
+        with self.assertRaisesRegex(ValueError, 'truncated'):
+            feeds.parse_catalonia_fires({**payload, 'properties': {'exceededTransferLimit': True}}, now)
+
 
     def test_sweden_police_maps_recent_reports_at_area_centers(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc)

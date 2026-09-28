@@ -28,6 +28,12 @@ UPPER_AUSTRIA_URL = 'https://cf-einsaetze.ooelfv.at/webext2/rss/json_laufend.txt
 UPPER_AUSTRIA_SOURCE = 'https://einsaetze.ooelfv.at/einsatz/aktuell'
 ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
 PORTUGAL_SOURCE = 'https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto'
+CATALONIA_FIRE_SOURCE = 'https://interior.gencat.cat/ca/arees_dactuacio/bombers/actuacions-de-bombers/'
+CATALONIA_FIRE_URL = ('https://services7.arcgis.com/ZCqVt1fRXwwK6GF4/arcgis/rest/services/'
+                      'ACTUACIONS_URGENTS_online_PRO_AMB_FASE_VIEW/FeatureServer/0/query?'
+                      'where=1%3D1&outFields=GlobalID%2CESRI_OID%2CTAL_DESC_ALARMA2%2C'
+                      'ACT_DAT_FI%2CACT_URGENT%2CMUNICIPI_DPX%2CDATA_ACT%2CCOM_FASE&'
+                      'returnGeometry=true&outSR=4326&resultRecordCount=1000&f=geojson')
 SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
 SWEDEN_POLICE_URL = 'https://polisen.se/api/events'
 USTI_EMERGENCY_URL = 'https://pkr.kr-ustecky.cz/pkr/zasahy-jednotek-pozarni-ochrany/'
@@ -554,6 +560,49 @@ def parse_portugal(payload, now=None):
     return output
 
 
+def parse_catalonia_fires(payload, now=None):
+    """Show recent, non-extinguished vegetation fires from Catalonia's live map."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(payload, dict) or not isinstance(payload.get('features'), list):
+        raise ValueError('Catalonia fire response is invalid')
+    if (payload.get('exceededTransferLimit') or
+            (payload.get('properties') or {}).get('exceededTransferLimit')):
+        raise ValueError('Catalonia fire response was truncated')
+    output = []
+    for row in payload['features'][:1000]:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        point = (row.get('geometry') or {}).get('coordinates') or []
+        try:
+            lon, lat = float(point[0]), float(point[1])
+            updated = dt.datetime.fromtimestamp(float(props['DATA_ACT']) / 1000, dt.timezone.utc)
+        except (IndexError, KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if not (0 <= lon <= 3.5 and 40.3 <= lat <= 42.9):
+            continue
+        if not now - dt.timedelta(hours=24) <= updated <= now + dt.timedelta(minutes=5):
+            continue
+        phase = str(props.get('COM_FASE') or '').strip()
+        if phase not in {'Actiu', 'Estabilitzat', 'Controlat'}:
+            continue
+        if props.get('ACT_DAT_FI') or props.get('ACT_URGENT') != 'S':
+            continue
+        incident_id = str(props.get('GlobalID') or props.get('ESRI_OID') or '')
+        if not re.fullmatch(r'[0-9a-fA-F-]{8,36}|\d{1,12}', incident_id):
+            continue
+        municipality = _clean(props.get('MUNICIPI_DPX') or '', 80)
+        if not municipality:
+            continue
+        title = f'Vegetation fire · {municipality}'
+        fire_type = _clean(props.get('TAL_DESC_ALARMA2') or '', 100)
+        detail = ' · '.join(filter(None, [phase, fire_type]))
+        output.append(_item(f'es:catalonia:fire:{incident_id}', lon, lat, title, detail,
+                            'Bombers de la Generalitat de Catalunya', CATALONIA_FIRE_SOURCE,
+                            updated.isoformat().replace('+00:00', 'Z'), 'fire'))
+    return output
+
+
 @lru_cache(maxsize=1)
 def _sweden_areas():
     path = Path(__file__).with_name('sweden-administrative-points.json')
@@ -799,6 +848,7 @@ _LOADERS = {
     'upper_austria_fire': lambda: parse_upper_austria(_json(UPPER_AUSTRIA_URL)),
     'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
     'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
+    'es_catalonia_fire': lambda: parse_catalonia_fires(_json(CATALONIA_FIRE_URL)),
     'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),
     'sweden_police': _sweden_police,
     'cz_usti_fire': _usti_emergencies,
