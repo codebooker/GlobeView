@@ -1212,7 +1212,7 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_bratislava_roadworks({**payload, 'exceededTransferLimit': True}, now)
 
-    def test_madrid_cameras_use_same_origin_image_proxy(self):
+    def test_madrid_cameras_use_proxy_with_official_image_fallback(self):
         root = ET.fromstring('''<kml xmlns="http://earth.google.com/kml/2.2"><Document>
           <Placemark><ExtendedData><Data name="Numero"><Value>06303</Value></Data>
             <Data name="Nombre"><Value>Plaza de Castilla</Value></Data></ExtendedData>
@@ -1221,7 +1221,8 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_madrid_cameras(root, NOW)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
-        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
+        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
+                         'https://informo.madrid.es/cameras/Camara06303.jpg')
 
     def test_tfl_cameras_require_available_official_image_and_location(self):
         def camera(camera_id, image=None, available='true', lat=51.5):
