@@ -1468,6 +1468,28 @@ class InfrastructureTests(unittest.TestCase):
             feeds._MADRID_CAMERA_STILLS.clear()
             feeds._MADRID_CAMERA_STILLS.update(previous_stills)
 
+    def test_madrid_camera_audit_keeps_recent_still_after_timeout(self):
+        previous_health = dict(feeds._MADRID_CAMERA_HEALTH)
+        previous_stills = dict(feeds._MADRID_CAMERA_STILLS)
+        camera = {'properties': {'key': 'es:madrid:camera:06303'}}
+        try:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_STILLS.clear()
+            feeds._MADRID_CAMERA_STILLS['06303'] = (NOW - 30, madrid_jpeg_header())
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
+                self.assertEqual(feeds._madrid_unavailable_cameras([camera]), set())
+                self.assertEqual(feeds.madrid_camera_snapshot('06303')[0], madrid_jpeg_header())
+            with patch.object(feeds.time, 'time', return_value=NOW + 91), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
+                self.assertEqual(feeds._madrid_unavailable_cameras([camera]),
+                                 {'es:madrid:camera:06303'})
+        finally:
+            feeds._MADRID_CAMERA_HEALTH.clear()
+            feeds._MADRID_CAMERA_HEALTH.update(previous_health)
+            feeds._MADRID_CAMERA_STILLS.clear()
+            feeds._MADRID_CAMERA_STILLS.update(previous_stills)
+
     def test_madrid_camera_catalog_hides_offline_and_stale_stills(self):
         class Response:
             def __init__(self, url):
@@ -1662,6 +1684,31 @@ class InfrastructureTests(unittest.TestCase):
         finally:
             feeds._DGT_CAMERA_HEALTH.clear()
             feeds._DGT_CAMERA_HEALTH.update(previous)
+            feeds._DGT_CAMERA_STILLS.clear()
+            feeds._DGT_CAMERA_STILLS.update(previous_stills)
+
+    def test_dgt_camera_audit_keeps_recent_still_after_timeout(self):
+        previous_health = dict(feeds._DGT_CAMERA_HEALTH)
+        previous_stills = dict(feeds._DGT_CAMERA_STILLS)
+        still = io.BytesIO()
+        Image.new('RGB', (853, 480), (100, 120, 90)).save(still, 'JPEG')
+        camera = {'properties': {'key': 'es:dgt:camera:597',
+                                 'snapshot_url': '/dgt-camera/597'}}
+        try:
+            feeds._DGT_CAMERA_HEALTH.clear()
+            feeds._DGT_CAMERA_STILLS.clear()
+            feeds._DGT_CAMERA_STILLS['597'] = (NOW - 30, still.getvalue())
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
+                self.assertEqual(feeds._dgt_unavailable_cameras([camera]), set())
+                self.assertEqual(feeds.dgt_camera_snapshot('597')[0], still.getvalue())
+            with patch.object(feeds.time, 'time', return_value=NOW + 91), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=TimeoutError):
+                self.assertEqual(feeds._dgt_unavailable_cameras([camera]),
+                                 {'es:dgt:camera:597'})
+        finally:
+            feeds._DGT_CAMERA_HEALTH.clear()
+            feeds._DGT_CAMERA_HEALTH.update(previous_health)
             feeds._DGT_CAMERA_STILLS.clear()
             feeds._DGT_CAMERA_STILLS.update(previous_stills)
 

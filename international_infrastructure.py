@@ -833,6 +833,11 @@ def _madrid_camera_image_available(image):
     return dimensions is not None and dimensions[0] >= 600 and dimensions[1] >= 350
 
 
+def _camera_transport_error(error):
+    return isinstance(error, (TimeoutError, urllib.error.URLError)) and (
+        not isinstance(error, urllib.error.HTTPError) or error.code in (502, 503, 504))
+
+
 def _mark_madrid_camera_unavailable(camera_id):
     with _MADRID_CAMERA_HEALTH_LOCK:
         _MADRID_CAMERA_HEALTH[camera_id] = (time.time() + 60, False)
@@ -883,6 +888,10 @@ def _madrid_unavailable_cameras(cameras):
                     if len(image) > 2_000_000 or not _madrid_camera_image_available(image):
                         return camera_id, None
                     return camera_id, image
+            except (TimeoutError, urllib.error.URLError) as error:
+                if _camera_transport_error(error):
+                    return camera_id, 'transport-error'
+                return camera_id, None
             except (OSError, ValueError):
                 return camera_id, None
 
@@ -896,6 +905,11 @@ def _madrid_unavailable_cameras(cameras):
         with _MADRID_CAMERA_HEALTH_LOCK:
             expires = time.time() + 300
             for camera_id, image in results:
+                if image == 'transport-error':
+                    cached = _MADRID_CAMERA_STILLS.get(camera_id)
+                    usable = bool(cached and cached[0] + 120 > time.time())
+                    _MADRID_CAMERA_HEALTH[camera_id] = (time.time() + 60, usable)
+                    continue
                 _MADRID_CAMERA_HEALTH[camera_id] = (expires, image is not None)
                 if image is not None:
                     _MADRID_CAMERA_STILLS[camera_id] = (expires, image)
@@ -936,9 +950,10 @@ def madrid_camera_snapshot(camera_id):
         # A brief transport failure should not blank a camera that was just
         # verified by the map audit. Never reuse it for a genuine 404, stale
         # origin timestamp, or the authority's unavailable JPEG.
-        transient = isinstance(error, (TimeoutError, urllib.error.URLError)) and (
-            not isinstance(error, urllib.error.HTTPError) or error.code in (502, 503, 504))
-        if transient and cached and cached[0] + 300 > time.time():
+        transient = _camera_transport_error(error)
+        if transient and cached and cached[0] + 120 > time.time():
+            with _MADRID_CAMERA_HEALTH_LOCK:
+                _MADRID_CAMERA_HEALTH[camera_id] = (time.time() + 60, True)
             return cached[1], 'image/jpeg'
         _mark_madrid_camera_unavailable(camera_id)
         raise
@@ -4659,7 +4674,7 @@ _DGT_CAMERA_STILLS = {}
 
 def _prune_dgt_stills_locked(now):
     for camera_id, (expires, _) in list(_DGT_CAMERA_STILLS.items()):
-        if expires <= now:
+        if expires + 120 <= now:
             _DGT_CAMERA_STILLS.pop(camera_id, None)
     total = sum(len(image) for _, image in _DGT_CAMERA_STILLS.values())
     while total > 64 * 1024 * 1024:
@@ -4729,6 +4744,10 @@ def _dgt_unavailable_cameras(features):
                 if len(image) > 2_000_000 or not _camera_has_visible_scene(image):
                     return camera_id, None
                 return camera_id, image
+        except (TimeoutError, urllib.error.URLError) as error:
+            if _camera_transport_error(error):
+                return camera_id, 'transport-error'
+            return camera_id, None
         except (OSError, ValueError):
             return camera_id, None
 
@@ -4741,6 +4760,11 @@ def _dgt_unavailable_cameras(features):
                 results = list(executor.map(available, pending))
             with _DGT_CAMERA_HEALTH_LOCK:
                 for camera_id, image in results:
+                    if image == 'transport-error':
+                        cached = _DGT_CAMERA_STILLS.get(camera_id)
+                        usable = bool(cached and cached[0] + 120 > time.time())
+                        _DGT_CAMERA_HEALTH[camera_id] = (time.time() + 60, usable)
+                        continue
                     _DGT_CAMERA_HEALTH[camera_id] = (now + 300, image is not None)
                     if image is not None:
                         _DGT_CAMERA_STILLS[camera_id] = (now + 300, image)
@@ -4783,9 +4807,13 @@ def dgt_camera_snapshot(camera_id):
             _DGT_CAMERA_STILLS[camera_id] = (now + 300, image)
             _prune_dgt_stills_locked(now)
         return image, 'image/jpeg'
-    except (OSError, ValueError):
+    except (OSError, ValueError) as error:
+        if _camera_transport_error(error) and cached and cached[0] + 120 > time.time():
+            with _DGT_CAMERA_HEALTH_LOCK:
+                _DGT_CAMERA_HEALTH[camera_id] = (time.time() + 60, True)
+            return cached[1], 'image/jpeg'
         with _DGT_CAMERA_HEALTH_LOCK:
-            _DGT_CAMERA_HEALTH[camera_id] = (time.time() + 180, False)
+            _DGT_CAMERA_HEALTH[camera_id] = (time.time() + (60 if _camera_transport_error(error) else 180), False)
             _DGT_CAMERA_STILLS.pop(camera_id, None)
         raise
 
