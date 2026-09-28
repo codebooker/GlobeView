@@ -169,9 +169,10 @@ LITHUANIA_RESTRICTIONS_URL = ('https://eismoinfo.lt/eismoinfo-backend/'
 UKPN_DATASET = 'ukpn-live-faults'
 NPG_DATASET = 'live-power-cuts-data'
 _LOCKS = {'roads': threading.Lock(), 'power': threading.Lock()}
+_REFRESH_DONE = {'roads': threading.Event(), 'power': threading.Event()}
 _CACHE = {
-    'roads': {'until': 0, 'sources': {}, 'source_times': {}, 'errors': []},
-    'power': {'until': 0, 'sources': {}, 'source_times': {}, 'errors': []},
+    'roads': {'until': 0, 'sources': {}, 'source_times': {}, 'errors': [], 'refreshing': False},
+    'power': {'until': 0, 'sources': {}, 'source_times': {}, 'errors': [], 'refreshing': False},
 }
 _STALE_SECONDS = 900
 _BORDEAUX_FLOW_LOCK = threading.Lock()
@@ -4990,15 +4991,14 @@ _FETCHERS = {
 }
 
 
-def _snapshot(kind):
+def _refresh_snapshot(kind):
     now = time.time()
     with _LOCKS[kind]:
         cache = _CACHE[kind]
-        if now < cache['until']:
-            return cache
         sources = dict(cache['sources'])
         source_times = dict(cache['source_times'])
-        errors = []
+    errors = []
+    try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(_FETCHERS[kind])) as executor:
             futures = {executor.submit(loader): name for name, loader in _FETCHERS[kind].items()}
             for future in concurrent.futures.as_completed(futures):
@@ -5010,9 +5010,37 @@ def _snapshot(kind):
                     errors.append(f'{name}: {error}')
                     if now - source_times.get(name, 0) > _STALE_SECONDS:
                         sources.pop(name, None)
-        cache.update({'until': now + (180 if kind == 'roads' else 300), 'sources': sources,
-                      'source_times': source_times, 'errors': errors})
-        return cache
+        with _LOCKS[kind]:
+            cache.update({'until': time.time() + (180 if kind == 'roads' else 300),
+                          'sources': sources, 'source_times': source_times, 'errors': errors})
+    finally:
+        with _LOCKS[kind]:
+            _CACHE[kind]['refreshing'] = False
+            _REFRESH_DONE[kind].set()
+
+
+def _snapshot(kind):
+    wait_for_cold_refresh = False
+    with _LOCKS[kind]:
+        cache = _CACHE[kind]
+        if time.time() < cache['until'] or (cache['refreshing'] and cache['sources']):
+            return {'sources': cache['sources'], 'errors': cache['errors']}
+        if cache['refreshing']:
+            wait_for_cold_refresh = True
+        else:
+            cache['refreshing'] = True
+            _REFRESH_DONE[kind].clear()
+        if not wait_for_cold_refresh and cache['sources']:
+            # Do not make every visitor wait for all European feeds on each refresh.
+            threading.Thread(target=_refresh_snapshot, args=(kind,), daemon=True).start()
+            return {'sources': cache['sources'], 'errors': cache['errors']}
+    if wait_for_cold_refresh:
+        _REFRESH_DONE[kind].wait()
+    else:
+        _refresh_snapshot(kind)
+    with _LOCKS[kind]:
+        cache = _CACHE[kind]
+        return {'sources': cache['sources'], 'errors': cache['errors']}
 
 
 def road_snapshot(layer, bbox=None):

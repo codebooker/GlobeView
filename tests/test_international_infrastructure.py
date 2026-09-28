@@ -5,6 +5,7 @@ import datetime as dt
 import email.utils
 import io
 import threading
+import time
 import urllib.error
 import xml.etree.ElementTree as ET
 import zipfile
@@ -18,6 +19,36 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_road_snapshot_refresh_keeps_cached_cameras_responsive(self):
+        previous = dict(feeds._CACHE['roads'])
+        started = threading.Event()
+        release = threading.Event()
+        camera = {'properties': {'key': 'es:madrid:camera:06303', 'layer': 'cameras'}}
+        replacement = {'properties': {'key': 'es:madrid:camera:06304', 'layer': 'cameras'}}
+
+        def slow_feed():
+            started.set()
+            self.assertTrue(release.wait(3))
+            return [replacement]
+
+        try:
+            feeds._CACHE['roads'] = {'until': 0, 'sources': {'madrid': [camera]},
+                                     'source_times': {'madrid': time.time()},
+                                     'errors': [], 'refreshing': False}
+            with patch.dict(feeds._FETCHERS['roads'], {'madrid': slow_feed}, clear=True):
+                self.assertEqual(feeds._snapshot('roads')['sources']['madrid'], [camera])
+                self.assertTrue(started.wait(2))
+                self.assertEqual(feeds._snapshot('roads')['sources']['madrid'], [camera])
+                release.set()
+                deadline = time.monotonic() + 3
+                while feeds._CACHE['roads']['refreshing'] and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertFalse(feeds._CACHE['roads']['refreshing'])
+                self.assertEqual(feeds._snapshot('roads')['sources']['madrid'], [replacement])
+        finally:
+            release.set()
+            feeds._CACHE['roads'] = previous
+
     def test_cyprus_road_events_require_fresh_feed_and_active_local_schedule(self):
         now = dt.datetime(2026, 9, 28, 9, tzinfo=dt.timezone.utc).timestamp()
         def record(identity, kind, start, end='', description='Road works'):

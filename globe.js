@@ -1014,7 +1014,10 @@
             if (!retryButton.isConnected) root.append(retryButton);
           }
         };
-        nextImage.src = `${url}${separator}v=${Date.now()}`;
+        // Share an image URL for each refresh window so browsers and the CDN can
+        // reuse one still across visitors instead of hitting the provider per click.
+        const refreshWindow = Math.max(60000, Number(meta.item.expando?.snapshotRefreshMs) || 60000);
+        nextImage.src = `${url}${separator}v=${Math.floor(Date.now() / refreshWindow)}`;
       };
       retryButton.addEventListener('click', () => {
         window.clearTimeout(retryTimer);
