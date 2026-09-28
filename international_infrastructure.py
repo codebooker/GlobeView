@@ -28,6 +28,8 @@ from pyproj import Transformer
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 TII_TRAFFIC_BASE = 'https://iretg.carsprogram.org'
 TII_TRAFFIC_SOURCE = 'https://traffic.tii.ie/'
+DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
+                       'read-latest-traffic-news/current-road-closures')
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
@@ -323,6 +325,64 @@ def _point(geometry):
 
 def _feature(lonlat, properties):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': lonlat}, 'properties': properties}
+
+
+def _parse_dublin_closures(page, now=None):
+    now = time.time() if now is None else now
+    windows = {}
+    for row in re.findall(r'<tr\b[^>]*>(.*?)</tr>', page, re.S | re.I):
+        link = re.search(r'<a\b[^>]*href="([^"]+)"[^>]*current-roadworks__view-more', row, re.I)
+        times = re.findall(r'<time\b[^>]*datetime="([^"]+)"', row, re.I)
+        if link and len(times) == 2:
+            start, end = (_timestamp(value) for value in times)
+            if start is not None and end is not None and start <= now <= end:
+                windows[html.unescape(link.group(1))] = end
+
+    markers = list(re.finditer(r'<div\b[^>]*class="[^"]*\bgeolocation-location\b[^"]*"[^>]*>',
+                               page, re.I))
+    features = []
+    for index, marker in enumerate(markers):
+        opening = marker.group(0)
+        body = page[marker.end():markers[index + 1].start() if index + 1 < len(markers)
+                    else marker.end() + 3000][:3000]
+        lat = re.search(r'\bdata-lat="([^"]+)"', opening)
+        lon = re.search(r'\bdata-lng="([^"]+)"', opening)
+        link = re.search(r'<a\b[^>]*href="([^"]+)"[^>]*current-roadworks__view-more', body, re.I)
+        title = re.search(r'<h2\b[^>]*class="location-title"[^>]*>(.*?)</h2>', body, re.S | re.I)
+        if not (lat and lon and link and title):
+            continue
+        path = html.unescape(link.group(1))
+        if not re.fullmatch(r'/travel-and-transport/read-latest-traffic-news/'
+                            r'current-road-closures/[a-z0-9-]+', path):
+            continue
+        end = windows.get(path)
+        if end is None:
+            continue
+        try:
+            point = [float(lon.group(1)), float(lat.group(1))]
+        except ValueError:
+            continue
+        if not (-6.5 <= point[0] <= -6.05 and 53.2 <= point[1] <= 53.5):
+            continue
+        features.append(_feature(point, {
+            'key': f'ie:dublin:closure:{path.rsplit("/", 1)[-1]}',
+            'layer': 'construction', 'title': _clean(title.group(1), 100),
+            'detail': ('Scheduled road closure · published end '
+                       f'{dt.datetime.fromtimestamp(end, ZoneInfo("Europe/Dublin")):%-d %b, %-I:%M %p}'),
+            'source': 'Dublin City Council · PSI Licence',
+            'source_url': 'https://www.dublincity.ie' + path,
+        }))
+    return features
+
+
+def _dublin_closures():
+    request = urllib.request.Request(DUBLIN_CLOSURES_URL,
+                                     headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        page = response.read(500_001)
+    if len(page) > 500_000:
+        raise ValueError('Dublin closure publication exceeded size limit')
+    return _parse_dublin_closures(page.decode('utf-8'))
 
 
 def _parse_vitoria_cameras(payload):
@@ -4920,6 +4980,7 @@ def lithuania_event_detail(event_id, now=None):
 
 _FETCHERS = {
     'roads': {
+        'ie_dublin_closures': _dublin_closures,
         'ie_tii_cameras': _tii_cameras,
         'ie_tii_events': _tii_events,
         'ie_tii_signs': _tii_signs,

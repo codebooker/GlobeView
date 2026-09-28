@@ -19,6 +19,31 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_dublin_closures_require_current_window_and_coordinates(self):
+        page = '''<table>
+          <tr><td><a href="/travel-and-transport/read-latest-traffic-news/current-road-closures/active-road"
+            class="current-roadworks__view-more">View more</a></td>
+            <td><time datetime="2026-09-27T08:00:00Z"></time>
+                <time datetime="2026-09-29T16:00:00Z"></time></td></tr>
+          <tr><td><a href="/travel-and-transport/read-latest-traffic-news/current-road-closures/future-road"
+            class="current-roadworks__view-more">View more</a></td>
+            <td><time datetime="2026-10-01T08:00:00Z"></time>
+                <time datetime="2026-10-02T16:00:00Z"></time></td></tr></table>
+          <div class="geolocation-location" data-lat="53.34" data-lng="-6.27">
+            <h2 class="location-title">Active Road</h2><a
+            href="/travel-and-transport/read-latest-traffic-news/current-road-closures/active-road"
+            class="current-roadworks__view-more">View more</a></div>
+          <div class="geolocation-location" data-lat="53.35" data-lng="-6.28">
+            <h2 class="location-title">Future Road</h2><a
+            href="/travel-and-transport/read-latest-traffic-news/current-road-closures/future-road"
+            class="current-roadworks__view-more">View more</a></div>'''
+        now = dt.datetime(2026, 9, 28, 10, tzinfo=dt.timezone.utc).timestamp()
+        rows = feeds._parse_dublin_closures(page, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [-6.27, 53.34])
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertEqual(rows[0]['properties']['key'], 'ie:dublin:closure:active-road')
+
     def test_road_snapshot_refresh_keeps_cached_cameras_responsive(self):
         previous = dict(feeds._CACHE['roads'])
         started = threading.Event()
