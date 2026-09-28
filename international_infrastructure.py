@@ -754,6 +754,7 @@ def _parse_madrid_cameras(root, published):
             'title': _clean(data.get('Nombre'), 110) or f'Madrid road camera {camera_id}',
             'detail': 'Latest available still · normally updated every 5 min',
             'snapshot_url': f'/madrid-camera/{camera_id}',
+            'snapshot_fallback_url': _madrid_camera_url(camera_id),
             'snapshot_refresh_ms': 300000,
             'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_CAMERAS_SOURCE,
             'updated_at': published,

@@ -990,6 +990,13 @@
         nextImage.setAttribute('aria-hidden', 'true');
         root.append(nextImage);
         nextImage.onload = () => {
+          // Madrid's origin sometimes returns a small "unavailable" JPEG with
+          // HTTP 200. Never present that as a working fallback camera view.
+          if (usingFallback && /^https:\/\/informo\.madrid\.es\/cameras\/Camara\d+\.jpg$/.test(url)
+              && (nextImage.naturalWidth < 600 || nextImage.naturalHeight < 350)) {
+            nextImage.onerror();
+            return;
+          }
           loading = false;
           if (!popup.isOpen() || !img.isConnected) { nextImage.remove(); return; }
           nextImage.style.cssText = '';

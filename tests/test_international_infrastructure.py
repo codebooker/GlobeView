@@ -1087,7 +1087,8 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_madrid_cameras(root, NOW)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
-        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
+        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
+                         'https://informo.madrid.es/cameras/Camara06303.jpg')
 
     def test_vienna_roadworks_require_current_dates_and_complete_publications(self):
         now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
