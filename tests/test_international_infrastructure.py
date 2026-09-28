@@ -27,6 +27,29 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_zagreb_closures_require_fresh_publication_and_current_window(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+
+        def row(street, subtype='ROAD_CLOSED_CONSTRUCTION',
+                start='2026-09-28T00:00:00+00:00', end='2026-09-29T00:00:00+00:00',
+                polyline='45.8 15.9 45.801 15.901'):
+            return {'type': 'ROAD_CLOSED', 'street': street, 'subtype': subtype,
+                    'polyline': polyline, 'direction': 'BOTH_DIRECTIONS',
+                    'expectedStartTime': start, 'expectedEndTime': end}
+
+        rows = [row('Test street'), row('Second street', subtype='OTHER'),
+                row('Future', start='2026-09-29T00:00:00+00:00'),
+                row('Expired', end='2026-09-28T00:00:00+00:00'),
+                row('Outside city', polyline='47 16 47.001 16.001')]
+        features = feeds._parse_zagreb_closures(rows, now - 60, now)
+        self.assertEqual(len(features), 2)
+        self.assertEqual(features[0]['geometry']['coordinates'], [15.901, 45.801])
+        self.assertEqual(features[0]['properties']['layer'], 'construction')
+        self.assertEqual(features[1]['properties']['layer'], 'incidents')
+        self.assertNotEqual(features[0]['properties']['key'], features[1]['properties']['key'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_zagreb_closures(rows, now - 1200, now)
+
     def test_vejle_roadworks_only_current_traffic_notified_permits(self):
         now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
 

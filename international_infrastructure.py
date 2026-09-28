@@ -35,6 +35,9 @@ COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
 COPENHAGEN_WORKS_SOURCE = 'https://www.opendata.dk/city-of-copenhagen/raden-over-vej-med-historik'
 VEJLE_WORKS_URL = 'https://kortservice.vejle.dk/gis/rest/services/OPENDATA/Vejle/MapServer/25/query'
 VEJLE_WORKS_SOURCE = 'https://www.opendata.dk/city-of-vejle/gravetilladelser1'
+ZAGREB_CLOSURES_URL = ('https://data.zagreb.hr/dataset/7ff5514d-0a1f-4f6c-86bd-8ed9a3c55eee/'
+                       'resource/e48b6992-add0-45a1-ae95-c5d97d8db259/download/data.json')
+ZAGREB_CLOSURES_SOURCE = 'https://data.zagreb.hr/dataset/prometnice'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
@@ -504,6 +507,59 @@ def _vejle_roadworks():
         'returnGeometry': 'true', 'outSR': 4326, 'f': 'json',
     })
     return _parse_vejle_roadworks(_get_json(f'{VEJLE_WORKS_URL}?{query}'))
+
+
+def _parse_zagreb_closures(rows, published, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(rows, list) or len(rows) > 1000 or published is None
+            or not -300 <= now - published <= 15 * 60):
+        raise ValueError('Zagreb road-closure publication is stale or incomplete')
+    features = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get('type') != 'ROAD_CLOSED':
+            continue
+        start = _timestamp(row.get('expectedStartTime'))
+        end = _timestamp(row.get('expectedEndTime'))
+        if start is None or end is None or not start <= now <= end:
+            continue
+        polyline = str(row.get('polyline') or '').split()
+        if not 4 <= len(polyline) <= 1000 or len(polyline) % 2:
+            continue
+        try:
+            latitude = float(polyline[(len(polyline) // 4) * 2])
+            longitude = float(polyline[(len(polyline) // 4) * 2 + 1])
+        except ValueError:
+            continue
+        if not (15.6 <= longitude <= 16.3 and 45.5 <= latitude <= 46.0):
+            continue
+        street = _clean(row.get('street'), 90) or 'Road'
+        is_work = row.get('subtype') == 'ROAD_CLOSED_CONSTRUCTION'
+        direction = ('both directions' if row.get('direction') == 'BOTH_DIRECTIONS'
+                     else 'one direction' if row.get('direction') == 'ONE_DIRECTION'
+                     else 'direction unspecified')
+        end_label = dt.datetime.fromtimestamp(end, ZoneInfo('Europe/Zagreb')).strftime('%-d %b %H:%M')
+        identity = hashlib.sha256((str(row.get('street')) + '|' + str(row.get('polyline')) + '|' +
+                                   str(row.get('expectedStartTime'))).encode()).hexdigest()[:16]
+        features.append(_feature([longitude, latitude], {
+            'key': f'hr:zagreb:closure:{identity}',
+            'layer': 'construction' if is_work else 'incidents',
+            'title': f'{street} · road closure',
+            'detail': f'{direction} · expected until {end_label}; check local conditions',
+            'source': 'Grad Zagreb · Open Licence', 'source_url': ZAGREB_CLOSURES_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(published, dt.timezone.utc).isoformat(),
+        }))
+    return features
+
+
+def _zagreb_closures():
+    request = urllib.request.Request(ZAGREB_CLOSURES_URL, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/json'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        published = email.utils.parsedate_to_datetime(response.headers['Last-Modified']).timestamp()
+        body = response.read(1024 * 1024 + 1)
+    if len(body) > 1024 * 1024:
+        raise ValueError('Zagreb road-closure publication exceeded size limit')
+    return _parse_zagreb_closures(json.loads(body), published)
 
 
 def _parse_dublin_closures(page, now=None):
@@ -6914,6 +6970,7 @@ _FETCHERS = {
         'ie_tii_signs': _tii_signs,
         'dk_copenhagen_roadworks': _copenhagen_roadworks,
         'dk_vejle_roadworks': _vejle_roadworks,
+        'hr_zagreb_closures': _zagreb_closures,
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
         'lt_eismoinfo_cameras': _lithuania_cameras,

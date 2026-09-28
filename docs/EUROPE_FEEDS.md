@@ -219,6 +219,8 @@ The [Slovak Road Administration's DATEX II traffic service](https://www.cdb.sk/e
 
 ## Croatia
 
+[Grad Zagreb's road-closure dataset](https://data.zagreb.hr/dataset/prometnice) is published under Croatia's Open Licence and refreshed every three minutes. GlobeView maps closures whose stated start/end window includes now, placing a marker on the published road polyline and classifying construction closures separately. It rejects a file older than 15 minutes. On 28 September 2026, 39 current closures passed these checks. The end time is the authority's estimate; users should check local conditions.
+
 [Hrvatske ceste's national traffic events](https://data.gov.hr/ckan/en/dataset/https-www-promet-info-hr-hr-datasets_details-id-b7e8ab80-8660-57ba-df83-43d13d42b961) and [roadworks](https://data.gov.hr/ckan/hr/dataset/https-www-promet-info-hr-hr-dataproviders-search-hc-20radovi) are listed as open-licence geolocated datasets, but the distribution requires prior free registration at Promet Info. No anonymous feed has been verified. Public camera viewers alone are not a reusable image catalog; official emergency dispatch, power-outage, readable-sign, and plate-reader feeds also need verification.
 
 ## Hungary
