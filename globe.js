@@ -960,6 +960,7 @@
       // Popups are positioned inside MapLibre's transformed map container. Safari can
       // defer lazy images there even while the popup is visible, so load on selection.
       img.loading = 'eager';
+      img.referrerPolicy = 'no-referrer';
       img.hidden = true;
       const status = textElement('span', 'popup-detail', 'Loading camera image…');
       let retries = 0;
@@ -973,19 +974,18 @@
         loading = true;
         const url = usingFallback ? fallback : snapshot;
         const separator = url.includes('?') ? '&' : '?';
-        const next = new Image();
-        next.onload = () => {
+        img.onload = () => {
           loading = false;
           if (!popup.isOpen() || !img.isConnected) return;
-          img.src = next.src;
           img.hidden = false;
           retries = 0;
           status.remove();
           retryButton.remove();
         };
-        next.onerror = () => {
+        img.onerror = () => {
           loading = false;
           if (!popup.isOpen() || !img.isConnected) return;
+          img.hidden = true;
           if (fallback && !usingFallback) {
             usingFallback = true;
             loadImage();
@@ -1002,7 +1002,7 @@
             if (!retryButton.isConnected) root.append(retryButton);
           }
         };
-        next.src = `${url}${separator}v=${Date.now()}`;
+        img.src = `${url}${separator}v=${Date.now()}`;
       };
       retryButton.addEventListener('click', () => {
         window.clearTimeout(retryTimer);
