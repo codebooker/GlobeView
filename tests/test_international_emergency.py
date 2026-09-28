@@ -186,6 +186,22 @@ class InternationalEmergencyTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in fetch.call_args_list],
                          [base + '.json', base + '?_view=full'])
 
+    def test_norway_police_uses_approximate_municipality_points_and_fresh_reports(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc)
+        def report(identifier, municipality, hours_ago=1, active=False):
+            return {'id': identifier, 'category': 'Brann', 'municipality': municipality,
+                    'lastMessageOn': (now - dt.timedelta(hours=hours_ago)).isoformat(),
+                    'isActive': active, 'messages': [{'type': 'Published', 'text': 'Fire response'}]}
+        payload = {'messageThreads': [report('26abcd', 'Lillestrøm'),
+                                      report('26old1', 'Lillestrøm', 7),
+                                      report('26live', 'Lillestrøm', 7, True),
+                                      report('26lost', 'Unknown')]}
+        with patch.object(feeds, '_norway_municipality_centers', return_value={'lillestrøm': [11.2, 59.9]}):
+            rows = feeds.parse_norway_police(payload, now=now)
+        self.assertEqual([row['id'] for row in rows], ['no:police:26abcd', 'no:police:26live'])
+        self.assertEqual((rows[0]['lon'], rows[0]['lat']), (11.2, 59.9))
+        self.assertIn('Approximate municipality point', rows[0]['detail'])
+
     def test_queensland_edxl_keeps_only_unexpired_public_alerts(self):
         xml = '''<EDXLDistribution xmlns="urn:oasis:names:tc:emergency:EDXL:DE:1.0"
                  xmlns:cap="urn:oasis:names:tc:emergency:cap:1.2"><contentObject><xmlContent>

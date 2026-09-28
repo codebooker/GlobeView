@@ -37,6 +37,8 @@ CATALONIA_FIRE_URL = ('https://services7.arcgis.com/ZCqVt1fRXwwK6GF4/arcgis/rest
                       'returnGeometry=true&outSR=4326&resultRecordCount=1000&f=geojson')
 SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
 SWEDEN_POLICE_URL = 'https://polisen.se/api/events'
+NORWAY_POLICE_URL = ('https://api.politiloggen.politiet.no/messagethreads?'
+                     'TimeSpanType=LastDay&SortByEnum=LastMessageOn&Take=500')
 POLAND_RSO_URL = 'https://komunikaty.tvp.pl/komunikatyxml/wszystkie/ogolne/0?_format=json'
 POLAND_RSO_SOURCE = 'https://komunikaty.tvp.pl/komunikaty/wszystkie/ogolne'
 NETHERLANDS_P2000_URL = 'https://zwaailicht.nl/api/v1/alerts?limit=100'
@@ -811,6 +813,59 @@ def _sweden_police():
         return items
 
 
+@lru_cache(maxsize=1)
+def _norway_municipality_centers():
+    path = Path(__file__).with_name('norway-municipalities.json')
+    return json.loads(path.read_text(encoding='utf-8'))['centers']
+
+
+def parse_norway_police(payload, now=None):
+    """Recent public police reports at approximate municipality points."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    rows = payload.get('messageThreads') if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or len(rows) > 500:
+        raise ValueError('Norwegian police feed is invalid')
+    centers = _norway_municipality_centers()
+    output, seen = [], set()
+    categories = {'Brann', 'Ulykke', 'Redning', 'Savnet', 'Sjø', 'Vær',
+                  'Voldshendelse', 'Innbrudd', 'Trafikk'}
+    for row in rows:
+        if not isinstance(row, dict) or row.get('category') not in categories:
+            continue
+        event_id = str(row.get('id') or '')
+        if not re.fullmatch(r'[a-z0-9]{4,20}', event_id) or event_id in seen:
+            continue
+        municipality = _clean(row.get('municipality'), 80)
+        point = centers.get(municipality.casefold())
+        if not point or not (4 <= point[0] <= 32 and 57 <= point[1] <= 72):
+            continue
+        observed = _iso(row.get('lastMessageOn') or row.get('createdOn'))
+        if not observed:
+            continue
+        age = now - dt.datetime.fromisoformat(observed.replace('Z', '+00:00'))
+        if age < -dt.timedelta(minutes=5) or age > (dt.timedelta(hours=24) if row.get('isActive') else dt.timedelta(hours=6)):
+            continue
+        messages = row.get('messages') or []
+        if not isinstance(messages, list):
+            continue
+        latest = next((_clean(message.get('text'), 220) for message in reversed(messages)
+                       if isinstance(message, dict) and message.get('type') == 'Published'
+                       and _clean(message.get('text'))), '')
+        area = _clean(row.get('area'), 80)
+        detail = ' · '.join(part for part in (
+            f'{municipality}{" · " + area if area else ""}',
+            'Ongoing' if row.get('isActive') else 'Recent report',
+            'Approximate municipality point', latest) if part)
+        category = ('fire' if row['category'] == 'Brann' else
+                    'traffic' if row['category'] in {'Trafikk', 'Ulykke'} else 'police')
+        seen.add(event_id)
+        output.append(_item(f'no:police:{event_id}', *point,
+                            f'Police report · {row["category"]}', detail,
+                            'Norwegian Police · Politiloggen', 'https://www.politiet.no/politiloggen',
+                            observed, category))
+    return output
+
+
 def parse_usti_emergencies(map_payload, rss_root, now=None):
     """Join the region's map coordinates with its status and update RSS feed."""
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -982,6 +1037,7 @@ _LOADERS = {
     'es_catalonia_fire': lambda: parse_catalonia_fires(_json(CATALONIA_FIRE_URL)),
     'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),
     'sweden_police': _sweden_police,
+    'norway_police': lambda: parse_norway_police(_json(NORWAY_POLICE_URL)),
     'poland_rso': lambda: parse_poland_rso(_json(POLAND_RSO_URL)),
     'cz_usti_fire': _usti_emergencies,
     'nl_p2000': _netherlands_p2000,
