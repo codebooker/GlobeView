@@ -1563,8 +1563,11 @@ def _fintraffic_signs():
         sign_type = props.get('type') or ''
         rows = sorted(props.get('textRows') or [], key=lambda row: (row.get('screen') or 0, row.get('rowNumber') or 0))
         message = _clean(' / '.join(str(row.get('text') or '') for row in rows))
+        speed = str(props.get('displayValue') or '').strip()
+        if not message and not (sign_type == 'SPEEDLIMIT' and speed.isdigit()):
+            continue
         if sign_type == 'SPEEDLIMIT':
-            title = f'Variable speed limit · {props.get("displayValue")} km/h' if str(props.get('displayValue') or '').isdigit() else 'Variable speed limit'
+            title = f'Variable speed limit · {speed} km/h' if speed.isdigit() else 'Variable speed limit'
         elif sign_type == 'WARNING':
             title = 'Variable warning sign'
         else:

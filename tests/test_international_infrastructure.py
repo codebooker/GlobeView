@@ -1848,7 +1848,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual([x['properties']['key'] for x in result], ['fi:construction:active'])
         self.assertEqual(result[0]['geometry']['coordinates'], [25.0, 61.0])
 
-    def test_signs_exclude_old_and_broken_devices(self):
+    def test_signs_require_a_current_readable_display(self):
         def sign(name, updated, reliability='NORMAL'):
             return {'geometry': {'type': 'Point', 'coordinates': [24, 60]},
                     'properties': {'id': name, 'type': 'SPEEDLIMIT', 'displayValue': '80',
@@ -1856,10 +1856,21 @@ class InfrastructureTests(unittest.TestCase):
         payload = {'features': [sign('fresh', '2026-09-26T12:00:00Z'),
                                 sign('old', '2026-09-10T00:00:00Z'),
                                 sign('broken', '2026-09-26T12:00:00Z', 'MALFUNCTION')]}
+        blank_speed = sign('blank-speed', '2026-09-26T12:00:00Z')
+        blank_speed['properties']['displayValue'] = None
+        blank_warning = sign('blank-warning', '2026-09-26T12:00:00Z')
+        blank_warning['properties'].update(type='WARNING', displayValue=None)
+        readable_warning = sign('readable-warning', '2026-09-26T12:00:00Z')
+        readable_warning['properties'].update(type='WARNING', displayValue=None,
+                                              textRows=[{'screen': 1, 'rowNumber': 1,
+                                                         'text': 'SLIPPERY ROAD'}])
+        payload['features'].extend([blank_speed, blank_warning, readable_warning])
         with patch.object(feeds, '_get_json', return_value=payload), patch.object(feeds.time, 'time', return_value=NOW):
             result = feeds._fintraffic_signs()
-        self.assertEqual([x['properties']['key'] for x in result], ['fi:sign:fresh'])
+        self.assertEqual([x['properties']['key'] for x in result],
+                         ['fi:sign:fresh', 'fi:sign:readable-warning'])
         self.assertIn('80 km/h', result[0]['properties']['title'])
+        self.assertEqual(result[1]['properties']['detail'], 'SLIPPERY ROAD')
 
     def test_london_works_and_incidents_are_separate(self):
         payload = [
