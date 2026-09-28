@@ -160,6 +160,11 @@ BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_
 VALENCIA_FLOW_SOURCE = 'https://opendata.vlci.valencia.es/en/dataset/estat-transit-temps-real-estado-trafico-tiempo-real'
 VALENCIA_FLOW_URL = ('https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/'
                      'MapServer/192/query?where=1%3D1&outFields=gid%2Cdenominacion%2Cestado&f=geojson')
+VALENCIA_COUNTERS_SOURCE = ('https://opendata.vlci.valencia.es/dataset/'
+                            'intensidad-de-los-puntos-de-medida-de-trafico-espiras-electromagneticas')
+VALENCIA_COUNTERS_URL = ('https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/'
+                         'MapServer/208/query?where=1%3D1&outFields=gid%2Cidpm%2Cih%2C'
+                         'fecha_actualizacion%2Clast_edited_date&outSR=4326&f=json')
 VALENCIA_OCCUPANCY_SOURCE = 'https://opendata.vlci.valencia.es/dataset/ocupacio-via-publica-ocupacion-via-publica'
 VALENCIA_OCCUPANCY_URL = ('https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/'
                           'MapServer/209/query?where=1%3D1&outFields=id_incidencia%2Ctipo_incidencia%2C'
@@ -825,6 +830,66 @@ def _parse_valencia_road_occupancy(payload, now=None):
 
 def _valencia_road_occupancy():
     return _parse_valencia_road_occupancy(_get_json(VALENCIA_OCCUPANCY_URL))
+
+
+def _parse_valencia_counters(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') if isinstance(payload, dict) else None
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(rows, list) or not 100 <= len(rows) <= 2000):
+        raise ValueError('Valencia traffic-counter publication is incomplete')
+    features = []
+    seen = set()
+    for row in rows:
+        try:
+            properties = row['properties']
+            station = int(properties['idpm'])
+            intensity = int(properties['ih'])
+            edited = float(properties['last_edited_date']) / 1000
+            point = _point(row['geometry'])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if (station <= 0 or station in seen or not point
+                or not (-0.65 <= point[0] <= -0.1 and 39.2 <= point[1] <= 39.65)
+                or not 0 <= intensity <= 10000
+                or not -300 <= now - edited <= 20 * 60):
+            continue
+        seen.add(station)
+        features.append(_feature(point, {
+            'key': f'es:valencia:counter:{station}', 'layer': 'sensors',
+            'title': 'Valencia traffic counter',
+            'detail': f'{intensity:,} vehicles/hour · latest published reading',
+            'source': 'Ajuntament de València · CC BY 4.0',
+            'source_url': VALENCIA_COUNTERS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(edited, dt.timezone.utc).isoformat(),
+        }))
+    if not features:
+        raise ValueError('Valencia traffic-counter readings are stale or empty')
+    return features
+
+
+def _valencia_counters():
+    # ArcGIS intermittently serves a two-hour-old replica; accept only fresh
+    # records and retry before considering the source unavailable.
+    for _ in range(3):
+        payload = _get_json(f'{VALENCIA_COUNTERS_URL}&_gv={time.time_ns()}')
+        if payload.get('spatialReference', {}).get('wkid') != 4326:
+            raise ValueError('Valencia traffic-counter coordinates are not WGS84')
+        rows = payload.get('features')
+        if not isinstance(rows, list):
+            raise ValueError('Valencia traffic-counter publication is invalid')
+        geojson = {'type': 'FeatureCollection', 'features': [
+            {'properties': row.get('attributes'),
+             'geometry': {'type': 'Point', 'coordinates': [
+                 (row.get('geometry') or {}).get('x'),
+                 (row.get('geometry') or {}).get('y')]}}
+            for row in rows if isinstance(row, dict)]}
+        try:
+            return _parse_valencia_counters(geojson)
+        except ValueError as error:
+            if 'stale or empty' not in str(error):
+                raise
+    raise ValueError('Valencia traffic-counter readings are stale or empty')
 
 
 def _parse_madrid_cameras(root, published):
@@ -6764,6 +6829,7 @@ _FETCHERS = {
         'es_sct_cameras': _sct_cameras,
         'es_madrid_incidents': _madrid_incidents,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
+        'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
         'fr_paris_roadworks': _paris_roadworks,

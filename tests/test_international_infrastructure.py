@@ -27,6 +27,42 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_valencia_counters_show_only_recent_valid_vehicle_readings(self):
+        now = 1790611200
+
+        def row(station, intensity, age=60, lon=-0.38):
+            return {'geometry': {'type': 'Point', 'coordinates': [lon, 39.47]},
+                    'properties': {'idpm': station, 'ih': intensity,
+                                   'last_edited_date': (now - age) * 1000}}
+
+        payload = {'type': 'FeatureCollection', 'features':
+                   [row(index, 50) for index in range(1, 101)] +
+                   [row(101, 730), row(102, -1), row(103, 800, age=3600),
+                    row(104, 20, lon=1), row(101, 400)]}
+        records = feeds._parse_valencia_counters(payload, now)
+        self.assertEqual(len(records), 101)
+        self.assertEqual(records[-1]['properties']['key'], 'es:valencia:counter:101')
+        self.assertIn('730 vehicles/hour', records[-1]['properties']['detail'])
+        self.assertEqual(records[-1]['properties']['layer'], 'sensors')
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_valencia_counters({'type': 'FeatureCollection', 'features':
+                                           payload['features'][:99]}, now)
+
+    def test_valencia_counters_retry_stale_arcgis_replica(self):
+        now = time.time()
+
+        def publication(age):
+            return {'spatialReference': {'wkid': 4326}, 'features': [
+                {'attributes': {'idpm': index, 'ih': 120,
+                                'last_edited_date': (now - age) * 1000},
+                 'geometry': {'x': -0.38, 'y': 39.47}}
+                for index in range(1, 101)]}
+
+        with patch.object(feeds, '_get_json', side_effect=[publication(7200), publication(60)]) as get:
+            rows = feeds._valencia_counters()
+        self.assertEqual(len(rows), 100)
+        self.assertEqual(get.call_count, 2)
+
     def test_valencia_road_occupancy_maps_only_current_lanes_and_deduplicates(self):
         now = 1790611200  # 28 September 2026 UTC
 
