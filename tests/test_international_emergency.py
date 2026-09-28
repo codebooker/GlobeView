@@ -7,6 +7,29 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_luxembourg_alerts_apply_cancellations_and_skip_food_recalls(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc)
+        namespace = 'urn:oasis:names:tc:emergency:cap:1.2:profile:cap-lu:1.0'
+
+        def alert(event_id, sequence, kind, sent, category='Fire'):
+            return ET.fromstring(f'''<alert xmlns="{namespace}">
+              <identifier>LU-Alert.1790438708.{event_id}.{sequence}</identifier>
+              <sent>{sent}</sent><status>Actual</status><msgType>{kind}</msgType><scope>Public</scope>
+              <info><language>fr-FR</language><category>{category}</category>
+                <headline>Incendie à Mertert</headline><description>Évitez le secteur</description>
+                <expires>2026-09-29T18:00:00+02:00</expires>
+                <area><areaDesc>Mertert</areaDesc><polygon>49.7,6.4 49.8,6.4 49.8,6.5 49.7,6.4</polygon></area>
+              </info></alert>''')
+
+        roots = [alert('4821', 0, 'Alert', '2026-09-27T14:00:00+02:00'),
+                 alert('4821', 1, 'Cancel', '2026-09-27T15:00:00+02:00'),
+                 alert('4822', 0, 'Alert', '2026-09-28T10:00:00+02:00'),
+                 alert('4823', 0, 'Alert', '2026-09-28T10:00:00+02:00', 'Health')]
+        rows = feeds.parse_luxembourg_alerts(roots, now)
+        self.assertEqual([row['id'] for row in rows], ['lu:alert:4822:0'])
+        self.assertEqual(rows[0]['category'], 'fire')
+        self.assertIn('Representative area point', rows[0]['detail'])
+
     def test_dutch_pager_alerts_are_recent_attributed_and_approximately_mapped(self):
         now = dt.datetime(2026, 9, 28, 9, 35, tzinfo=dt.timezone.utc).timestamp()
         alert = {'id': 'fc9d5e80e214ead6', 'observed_at': '2026-09-28T09:34:33Z',

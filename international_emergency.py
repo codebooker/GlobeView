@@ -43,6 +43,8 @@ POLAND_RSO_URL = 'https://komunikaty.tvp.pl/komunikatyxml/wszystkie/ogolne/0?_fo
 POLAND_RSO_SOURCE = 'https://komunikaty.tvp.pl/komunikaty/wszystkie/ogolne'
 NETHERLANDS_P2000_URL = 'https://zwaailicht.nl/api/v1/alerts?limit=100'
 NETHERLANDS_P2000_SOURCE = 'https://zwaailicht.nl/'
+LUXEMBOURG_ALERT_CATALOG = 'https://data.public.lu/api/1/datasets/67aca67bcaea3ae62308114f/'
+LUXEMBOURG_ALERT_SOURCE = 'https://data.public.lu/en/datasets/alertes-du-systeme-lu-alert/'
 USTI_EMERGENCY_URL = 'https://pkr.kr-ustecky.cz/pkr/zasahy-jednotek-pozarni-ochrany/'
 PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/services/'
                 'OcorrenciasSite/FeatureServer/0/query?where=1%3D1&outFields='
@@ -1024,6 +1026,108 @@ def _netherlands_p2000():
             return parse_netherlands_p2000(_P2000_HTTP_CACHE['payload'])
 
 
+_LU_CAP = '{urn:oasis:names:tc:emergency:cap:1.2:profile:cap-lu:1.0}'
+
+
+def parse_luxembourg_alerts(roots, now=None):
+    """Show current public safety alerts, applying cancellations and updates first."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    latest = {}
+    for root in roots:
+        if root.tag != _LU_CAP + 'alert':
+            continue
+        identifier = root.findtext(_LU_CAP + 'identifier') or ''
+        match = re.fullmatch(r'LU-Alert\.\d+\.(\d{1,9})\.\d+', identifier)
+        if not match or root.findtext(_LU_CAP + 'status') != 'Actual' or root.findtext(_LU_CAP + 'scope') != 'Public':
+            continue
+        sent_text = _iso(root.findtext(_LU_CAP + 'sent'))
+        if not sent_text:
+            continue
+        sent = dt.datetime.fromisoformat(sent_text.replace('Z', '+00:00'))
+        if sent > now + dt.timedelta(minutes=5) or sent < now - dt.timedelta(days=7):
+            continue
+        event_id = match.group(1)
+        if event_id not in latest or sent > latest[event_id][0]:
+            latest[event_id] = (sent, root, identifier)
+
+    output = []
+    categories = {'Fire': 'fire', 'Rescue': 'rescue', 'Safety': 'warning',
+                  'Transport': 'traffic', 'Met': 'weather', 'Env': 'warning'}
+    for event_id, (sent, root, identifier) in latest.items():
+        if root.findtext(_LU_CAP + 'msgType') not in {'Alert', 'Update'}:
+            continue
+        for info in root.findall(_LU_CAP + 'info'):
+            language = info.findtext(_LU_CAP + 'language') or ''
+            if language and not language.startswith('fr'):
+                continue
+            category = categories.get(info.findtext(_LU_CAP + 'category'))
+            if not category:
+                continue  # Food/product recalls belong outside emergency reports.
+            expires_text = _iso(info.findtext(_LU_CAP + 'expires'))
+            if not expires_text or dt.datetime.fromisoformat(expires_text.replace('Z', '+00:00')) <= now:
+                continue
+            for index, area in enumerate(info.findall(_LU_CAP + 'area')):
+                polygon = (area.findtext(_LU_CAP + 'polygon') or '').split()
+                points = []
+                for token in polygon[:2000]:
+                    pair = token.split(',')
+                    if len(pair) != 2 or not _valid(pair[1], pair[0]):
+                        continue
+                    lat, lon = float(pair[0]), float(pair[1])
+                    if 49.4 <= lat <= 50.3 and 5.6 <= lon <= 6.6:
+                        points.append((lon, lat))
+                if len(points) < 3:
+                    continue
+                lon = (min(point[0] for point in points) + max(point[0] for point in points)) / 2
+                lat = (min(point[1] for point in points) + max(point[1] for point in points)) / 2
+                area_name = _clean(area.findtext(_LU_CAP + 'areaDesc'), 90)
+                detail = f'{area_name} · Representative area point · {_clean(info.findtext(_LU_CAP + "description"), 180)}'
+                output.append(_item(f'lu:alert:{event_id}:{index}', lon, lat,
+                                    info.findtext(_LU_CAP + 'headline') or info.findtext(_LU_CAP + 'event') or 'Public alert',
+                                    detail, 'Luxembourg LU-ALERT · CC BY', LUXEMBOURG_ALERT_SOURCE,
+                                    sent.isoformat().replace('+00:00', 'Z'), category))
+            break
+    return output
+
+
+@lru_cache(maxsize=128)
+def _luxembourg_cap_resource(url):
+    return _xml(url)
+
+
+def _luxembourg_alerts():
+    catalog = _json(LUXEMBOURG_ALERT_CATALOG)
+    if not isinstance(catalog, dict) or catalog.get('license') != 'cc-by' or not isinstance(catalog.get('resources'), list):
+        raise ValueError('Luxembourg alert catalog is invalid')
+    now = dt.datetime.now(dt.timezone.utc)
+    urls = []
+    for resource in catalog['resources']:
+        if not isinstance(resource, dict):
+            continue
+        updated_text = _iso(resource.get('last_modified'))
+        if not updated_text:
+            continue
+        updated = dt.datetime.fromisoformat(updated_text.replace('Z', '+00:00'))
+        if updated < now - dt.timedelta(days=7):
+            continue
+        url = resource.get('url') or ''
+        if re.fullmatch(r'https://download\.data\.public\.lu/resources/alertes-du-systeme-lu-alert/[0-9-]+/dump-alert\.[0-9]+\.xml', url):
+            urls.append(url)
+        if len(urls) >= 60:
+            break
+    roots = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_luxembourg_cap_resource, url) for url in urls]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                roots.append(future.result())
+            except Exception:
+                continue
+    if urls and not roots:
+        raise ValueError('Luxembourg alert resources are unavailable')
+    return parse_luxembourg_alerts(roots, now)
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
@@ -1041,6 +1145,7 @@ _LOADERS = {
     'poland_rso': lambda: parse_poland_rso(_json(POLAND_RSO_URL)),
     'cz_usti_fire': _usti_emergencies,
     'nl_p2000': _netherlands_p2000,
+    'lu_alert': _luxembourg_alerts,
 }
 
 
