@@ -2312,6 +2312,11 @@ MILAN_AREA_B_GATES_URL = (
     'https://dati.comune.milano.it/dataset/cebfe28e-a50e-4b81-9d14-7b0d37170f0d/'
     'resource/c3439df3-673d-45e7-b151-c6d8d70ba0e4/download/areab_varchi.geojson'
 )
+MILAN_AREA_C_GATES_SOURCE = 'https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_'
+MILAN_AREA_C_GATES_URL = (
+    'https://dati.comune.milano.it/dataset/4cad1605-8225-4ecd-9b82-868b3af453e5/'
+    'resource/fa8fcc31-1722-4a50-a0ae-ce7b9c0d0361/download/ingressi_areac_varchi.geojson'
+)
 LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
     'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13'
 )
@@ -18634,6 +18639,44 @@ def milan_area_b_plate_readers(payload, bbox):
     return elements
 
 
+def milan_area_c_plate_readers(payload, bbox):
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(payload.get('features'), list):
+        raise ValueError('Milan Area C gate catalog is invalid')
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        geom = row.get('geometry') or {}
+        if not isinstance(props, dict) or not isinstance(geom, dict):
+            continue
+        gate_id = props.get('id_amat')
+        coords = geom.get('coordinates')
+        if (not isinstance(gate_id, int) or gate_id < 1 or gate_id in seen
+                or geom.get('type') != 'Point' or not isinstance(coords, (list, tuple))
+                or len(coords) < 2):
+            continue
+        try:
+            lon, lat = float(coords[0]), float(coords[1])
+        except (TypeError, ValueError):
+            continue
+        if (not math.isfinite(lon) or not math.isfinite(lat)
+                or not (9.0 <= lon <= 9.35 and 45.35 <= lat <= 45.6)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(gate_id)
+        name = str(props.get('label') or '').strip()[:80]
+        elements.append({
+            'type': 'node', 'id': f'it:milano:areac:{gate_id}', 'lat': lat, 'lon': lon,
+            'title': f'Area C plate reader · {name}' if name else 'Area C plate reader',
+            'detail': 'City entry-gate inventory · current operation unverified',
+            'source': 'Comune di Milano · CC BY', 'source_url': MILAN_AREA_C_GATES_SOURCE,
+        })
+    return elements
+
+
 def cached_dutch_anpr_catalog():
     def load():
         search = fetch_text_url(DUTCH_ANPR_SEARCH_URL, timeout=20)
@@ -18723,6 +18766,12 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Milan Area B gates: {error}')
+        try:
+            catalog = cached_deflock_json(MILAN_AREA_C_GATES_URL, 'it-milan-area-c-gates:v1', ttl=86400)
+            for item in milan_area_c_plate_readers(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Milan Area C gates: {error}')
     if source_errors:
         print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 

@@ -111,14 +111,33 @@ class GlobalPlateReaderTests(unittest.TestCase):
             {'geometry': {'type': 'Point', 'coordinates': [9.2, 45.47]},
              'properties': {'id_amat': 1, 'nome': 'CORELLI',
                             'stato': 'ATTIVI E SANZIONANTI'}}]}
+        area_c = {'type': 'FeatureCollection', 'features': [
+            {'geometry': {'type': 'Point', 'coordinates': [9.19, 45.46]},
+             'properties': {'id_amat': 57, 'label': 'PORTA TENAGLIA'}}]}
         def cached(url, key, ttl=900):
             if key == 'deflock-index:v1': raise OSError('index unavailable')
             if key == 'it-milan-area-b-gates:v1': return catalog
+            if key == 'it-milan-area-c-gates:v1': return area_c
             raise AssertionError(key)
         with patch.object(proxy, 'cached_deflock_json', side_effect=cached):
             payload = json.loads(proxy.fetch_deflock_lpr_content((9.1, 45.4, 9.3, 45.5)))
-        self.assertEqual([row['id'] for row in payload['elements']], ['it:milano:areab:1'])
+        self.assertEqual({row['id'] for row in payload['elements']},
+                         {'it:milano:areab:1', 'it:milano:areac:57'})
         self.assertTrue(payload['sourceErrors'])
+
+    def test_milan_area_c_gate_inventory_is_bounded_and_labeled(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'geometry': {'type': 'Point', 'coordinates': [9.19, 45.46]},
+             'properties': {'id_amat': 57, 'label': 'PORTA TENAGLIA'}},
+            {'geometry': {'type': 'Point', 'coordinates': [9.19, 45.46]},
+             'properties': {'id_amat': 57, 'label': 'duplicate'}},
+            {'geometry': {'type': 'Point', 'coordinates': [10, 45.46]},
+             'properties': {'id_amat': 58, 'label': 'out of Milan'}}]}
+        rows = proxy.milan_area_c_plate_readers(catalog, (9.1, 45.4, 9.3, 45.5))
+        self.assertEqual([row['id'] for row in rows], ['it:milano:areac:57'])
+        self.assertIn('PORTA TENAGLIA', rows[0]['title'])
+        self.assertIn('operation unverified', rows[0]['detail'])
+        self.assertEqual(rows[0]['source_url'], proxy.MILAN_AREA_C_GATES_SOURCE)
 
 
 if __name__ == '__main__':
