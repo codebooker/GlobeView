@@ -2159,6 +2159,7 @@
     try {
       const internationalSensorsVisible = type === 'sensors' && [
         { bounds: { minLon: -6, maxLon: 10, minLat: 41, maxLat: 52 } },
+        { bounds: { minLon: 3, maxLon: 7.4, minLat: 50.6, maxLat: 53.8 } },
         { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } },
         { bounds: { minLon: -25, maxLon: -13, minLat: 63, maxLat: 67.5 } },
         { bounds: { minLon: 14, maxLon: 24.3, minLat: 48.8, maxLat: 55.2 } }
