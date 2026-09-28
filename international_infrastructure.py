@@ -150,6 +150,8 @@ PARIS_WORKS_SOURCE = 'https://opendata.paris.fr/explore/dataset/chantiers-pertur
 TOULOUSE_WORKS_BASE = ('https://data.toulouse-metropole.fr/api/explore/v2.1/catalog/'
                        'datasets/chantiers-en-cours')
 TOULOUSE_WORKS_SOURCE = 'https://data.toulouse-metropole.fr/explore/dataset/chantiers-en-cours/'
+FLORENCE_TRAM_WORKS_URL = 'https://datigis.comune.fi.it/json/tram_cantieri_321_now.json'
+FLORENCE_TRAM_WORKS_SOURCE = 'https://opendata.comune.fi.it/page_dataset_show?id=tramvia-cantieri-321-odierna'
 PARIS_EVENTS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
                      'datasets/circulation_evenement')
 PARIS_EVENTS_SOURCE = 'https://opendata.paris.fr/explore/dataset/circulation_evenement/'
@@ -230,6 +232,7 @@ _RENNES_FLOW_CACHE = {'until': 0, 'data': None}
 _BISON_FLOW_LOCK = threading.Lock()
 _BISON_FLOW_CACHE = {'until': 0, 'data': None}
 _BISON_FLOW_TRANSFORMER = Transformer.from_crs('EPSG:2154', 'EPSG:4326', always_xy=True)
+_FLORENCE_TRANSFORMER = Transformer.from_crs('EPSG:3003', 'EPSG:4326', always_xy=True)
 _PARIS_WORKS_CACHE = {'until': 0, 'rows': [], 'metadata': None, 'lock': threading.Lock()}
 _TOULOUSE_WORKS_CACHE = {'until': 0, 'data': None, 'lock': threading.Lock()}
 _PRAGUE_ROADS_CACHE = {'until': 0, 'payload': None, 'lock': threading.Lock()}
@@ -1581,6 +1584,74 @@ def _toulouse_roadworks():
             _parse_toulouse_roadworks(metadata, publication, now)
             cache.update(until=now + 3600, data=(metadata, publication))
         return _parse_toulouse_roadworks(*cache['data'], now)
+
+
+def _parse_florence_tram_works(publication, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(publication, dict) or publication.get('type') != 'FeatureCollection'
+            or publication.get('crs', {}).get('properties', {}).get('name')
+            != 'urn:ogc:def:crs:EPSG::3003'):
+        raise ValueError('Florence tram works publication is invalid')
+    published = _timestamp(publication.get('timeStamp'))
+    if published is None or not -300 <= now - published <= 36 * 3600:
+        raise ValueError('Florence tram works publication is stale')
+    rows = publication.get('features')
+    if (not isinstance(rows, list) or not 0 < len(rows) <= 1000
+            or publication.get('numberReturned') != len(rows)
+            or publication.get('totalFeatures') != len(rows)):
+        raise ValueError('Florence tram works publication is incomplete')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/Rome')).date()
+    groups = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        try:
+            start = dt.date.fromisoformat(props['data_ini'])
+            end = dt.date.fromisoformat(props['data_fine'])
+            if not start <= today <= end:
+                continue
+            geometry = row['geometry']
+            if geometry['type'] != 'MultiPolygon':
+                continue
+            vertices = [point for polygon in geometry['coordinates'] for ring in polygon
+                        for point in ring if isinstance(point, list) and len(point) >= 2]
+            if not vertices or len(vertices) > 10000:
+                continue
+            xs, ys = [point[0] for point in vertices], [point[1] for point in vertices]
+            lon, lat = _FLORENCE_TRANSFORMER.transform((min(xs) + max(xs)) / 2,
+                                                        (min(ys) + max(ys)) / 2)
+            if not (11.1 <= lon <= 11.4 and 43.65 <= lat <= 43.85):
+                continue
+            street = _clean(props.get('descrizione'), 90)
+            stage = _clean(props.get('subcantiere'), 20)
+            phase = _clean(props.get('fase'), 20)
+            if not street:
+                continue
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        identity = (street, stage, phase, start, end)
+        groups.setdefault(identity, []).append((lon, lat))
+    features = []
+    for (street, stage, phase, start, end), points in groups.items():
+        identity = '|'.join((street, stage, phase, start.isoformat(), end.isoformat()))
+        key = hashlib.sha1(identity.encode('utf-8')).hexdigest()[:16]
+        detail = [f'Scheduled through {end:%d %b %Y}']
+        if stage:
+            detail.append(f'Stage {stage}' + (f' · phase {phase}' if phase else ''))
+        features.append(_feature([sum(point[0] for point in points) / len(points),
+                                  sum(point[1] for point in points) / len(points)], {
+            'key': f'it:florence:tram-works:{key}', 'layer': 'construction',
+            'title': f'Tram construction · {street}', 'detail': ' · '.join(detail),
+            'source': 'Comune di Firenze · CC BY 4.0',
+            'source_url': FLORENCE_TRAM_WORKS_SOURCE,
+            'updated_at': publication['timeStamp'],
+        }))
+    return features
+
+
+def _florence_tram_works():
+    return _parse_florence_tram_works(_get_json(FLORENCE_TRAM_WORKS_URL))
 
 
 def _parse_paris_traffic_events(metadata, rows, now=None):
@@ -6547,6 +6618,7 @@ _FETCHERS = {
         'es_vigo_cameras': _vigo_cameras,
         'it_south_tyrol_roads': _south_tyrol_roads,
         'it_a22_announcements': _a22_announcements,
+        'it_florence_tram_works': _florence_tram_works,
         'pl_gddkia_roads': _poland_roads,
         'cy_nap_events': _cyprus_roads,
         'cy_waze_alerts': _cyprus_waze_alerts,

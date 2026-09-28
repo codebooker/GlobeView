@@ -413,6 +413,28 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_toulouse_roadworks(metadata, publication, now + 3 * 86400)
 
+    def test_florence_tram_works_group_active_polygons_and_reject_stale_export(self):
+        now = dt.datetime(2026, 9, 28, 18, tzinfo=dt.timezone.utc).timestamp()
+        def work(identity, start='2026-09-01', end='2026-10-01'):
+            return {'id': identity, 'geometry': {'type': 'MultiPolygon', 'coordinates': [
+                [[[1684000, 4847700], [1684020, 4847700],
+                  [1684020, 4847720], [1684000, 4847700]]]]},
+                'properties': {'descrizione': 'V.le Giannotti', 'subcantiere': 'F3',
+                               'fase': '4', 'data_ini': start, 'data_fine': end}}
+        publication = {'type': 'FeatureCollection', 'timeStamp': '2026-09-28T16:06:00Z',
+                       'crs': {'properties': {'name': 'urn:ogc:def:crs:EPSG::3003'}},
+                       'features': [work('one'), work('two'),
+                                    work('future', start='2026-10-01')],
+                       'totalFeatures': 3, 'numberReturned': 3}
+        rows = feeds._parse_florence_tram_works(publication, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['layer'], 'construction')
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], 11.28, places=1)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_florence_tram_works(publication, now + 2 * 86400)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_florence_tram_works({**publication, 'totalFeatures': 4}, now)
+
     def test_paris_traffic_events_exclude_standing_restrictions_and_future_closures(self):
         now = dt.datetime(2026, 9, 28, 14, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'metas': {'default': {'data_processed': '2026-09-28T13:58:00+00:00'}}}
