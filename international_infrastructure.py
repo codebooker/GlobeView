@@ -135,14 +135,6 @@ STRASBOURG_FLOW_BASE = ('https://opendata.strasbourg.eu/api/explore/v2.1/catalog
 RENNES_FLOW_SOURCE = 'https://data.rennesmetropole.fr/explore/dataset/etat-du-trafic-en-temps-reel/'
 RENNES_FLOW_BASE = ('https://data.rennesmetropole.fr/api/explore/v2.1/catalog/'
                     'datasets/etat-du-trafic-en-temps-reel')
-LYON_FLOW_SOURCE = ('https://www.data.gouv.fr/datasets/'
-                    'etat-du-trafic-de-la-metropole-de-lyon-disponibilites-temps-reel')
-LYON_FLOW_API = ('https://data.grandlyon.com/geoserver/ogc/features/v1/collections/'
-                 'metropole-de-lyon%3Apvo_patrimoine_voirie.pvotrafic/items?f=json&limit=5000')
-LYON_EVENTS_SOURCE = ('https://www.data.gouv.fr/datasets/'
-                      'evenements-routiers-de-la-metropole-de-lyon-disponibilites-temps-reel')
-LYON_EVENTS_API = ('https://data.grandlyon.com/geoserver/ogc/features/v1/collections/'
-                   'metropole-de-lyon%3Apvo_patrimoine_voirie.pvoevenement/items?f=json&limit=5000')
 BISON_FLOW_SOURCE = ('https://transport.data.gouv.fr/datasets/'
                      'etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede')
 BISON_FLOW_BASE = 'https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/'
@@ -235,8 +227,6 @@ _STRASBOURG_FLOW_LOCK = threading.Lock()
 _STRASBOURG_FLOW_CACHE = {'until': 0, 'data': None}
 _RENNES_FLOW_LOCK = threading.Lock()
 _RENNES_FLOW_CACHE = {'until': 0, 'data': None}
-_LYON_FLOW_LOCK = threading.Lock()
-_LYON_FLOW_CACHE = {'until': 0, 'data': None}
 _BISON_FLOW_LOCK = threading.Lock()
 _BISON_FLOW_CACHE = {'until': 0, 'data': None}
 _BISON_FLOW_TRANSFORMER = Transformer.from_crs('EPSG:2154', 'EPSG:4326', always_xy=True)
@@ -1268,120 +1258,6 @@ def rennes_flow_snapshot():
             raise
 
 
-def _parse_lyon_flow(publication, now=None):
-    now = time.time() if now is None else now
-    rows = publication.get('features')
-    count = publication.get('numberMatched')
-    if (not isinstance(rows, list) or not isinstance(count, int) or
-            not 1 <= count <= 5000 or len(rows) != count or
-            publication.get('numberReturned') != count):
-        raise ValueError('Lyon traffic publication is incomplete')
-    states = {'V': 'FLUIDE', 'O': 'DENSE', 'R': 'EMBOUTEILLE', 'N': 'IMPOSSIBLE'}
-    features = []
-    for row in rows:
-        try:
-            properties = row['properties']
-            state = states.get(properties['etat'])
-            if not state or properties['est_a_jour'] is not True:
-                continue
-            updated = _timestamp(properties['last_update'])
-            published = _timestamp(properties['last_update_fme'])
-            if (updated is None or published is None or
-                    not -300 <= now - updated <= 15 * 60 or
-                    not -300 <= now - published <= 15 * 60):
-                continue
-            geometry = row['geometry']
-            if geometry['type'] != 'LineString':
-                continue
-            coordinates = [[float(lon), float(lat)] for lon, lat in geometry['coordinates']]
-            segment_id = int(properties['gid'])
-            if not (2 <= len(coordinates) <= 100 and all(
-                    4.5 <= lon <= 5.3 and 45.4 <= lat <= 46.1 for lon, lat in coordinates)):
-                continue
-        except (TypeError, ValueError, KeyError, IndexError):
-            continue
-        features.append({'type': 'Feature', 'id': f'lyon:{segment_id}',
-                         'geometry': {'type': 'LineString', 'coordinates': coordinates},
-                         'properties': {'state': state, 'updated_at': updated}})
-    if not features:
-        raise ValueError('Lyon traffic feed contains no current road states')
-    return {'type': 'FeatureCollection', 'features': features,
-            'source': 'Métropole de Lyon · public domain', 'source_url': LYON_FLOW_SOURCE}
-
-
-def lyon_flow_snapshot():
-    with _LYON_FLOW_LOCK:
-        now = time.time()
-        if now < _LYON_FLOW_CACHE['until'] and _LYON_FLOW_CACHE['data']:
-            return _current_bordeaux_flow(_LYON_FLOW_CACHE['data'], now, 15 * 60)
-        try:
-            data = _parse_lyon_flow(_get_json(LYON_FLOW_API), now)
-            _LYON_FLOW_CACHE.update(until=now + 180, data=data)
-            return data
-        except (OSError, ValueError, KeyError, TypeError):
-            if _LYON_FLOW_CACHE['data'] and now < _LYON_FLOW_CACHE['until'] + 600:
-                return _current_bordeaux_flow(_LYON_FLOW_CACHE['data'], now, 15 * 60)
-            raise
-
-
-def _parse_lyon_events(publication, now=None):
-    now = time.time() if now is None else now
-    rows = publication.get('features')
-    count = publication.get('numberMatched')
-    if (not isinstance(rows, list) or not isinstance(count, int) or
-            not 0 <= count <= 5000 or len(rows) != count or
-            publication.get('numberReturned') != count):
-        raise ValueError('Lyon road-event publication is incomplete')
-    features = []
-    fresh = False
-    for row in rows:
-        try:
-            props = row['properties']
-            updated = _timestamp(props['last_update_fme'])
-            if updated is None or not -300 <= now - updated <= 15 * 60:
-                continue
-            fresh = True
-            if props['status'] != 'active':
-                continue
-            start, end = _timestamp(props['starttime']), _timestamp(props['endtime'])
-            if start is None or end is None or not start <= now <= end:
-                continue
-            category = props.get('type')
-            if category == 'AbnormalTraffic' and props.get('abnormaltraffictype') == 'queueingTraffic':
-                layer, title = 'incidents', 'Traffic queue'
-            elif category == 'NetworkManagement' and props.get('networkmanagementtype') == 'roadClosed':
-                work_related = any(term in str(props.get('publiccomment') or '').lower()
-                                   for term in ('travaux', 'chantier', 'entretien', 'maintenance'))
-                layer, title = ('construction' if work_related else 'incidents'), 'Road closure'
-            else:
-                continue
-            geometry = row['geometry']
-            if geometry['type'] != 'MultiPoint' or not geometry['coordinates']:
-                continue
-            point = _point({'type': 'Point', 'coordinates': geometry['coordinates'][0]})
-            event_id = str(props['id'])
-            if not point or not re.fullmatch(r'Criter\d{6,10}', event_id):
-                continue
-        except (KeyError, TypeError, ValueError, IndexError):
-            continue
-        if not (4.5 <= point[0] <= 5.3 and 45.4 <= point[1] <= 46.1):
-            continue
-        comment = _clean(str(props.get('publiccomment') or '').replace('|', ' · '), 190)
-        features.append(_feature(point, {
-            'key': f'fr:lyon:event:{event_id}', 'layer': layer,
-            'title': title, 'detail': comment,
-            'source': 'Métropole de Lyon', 'source_url': LYON_EVENTS_SOURCE,
-            'updated_at': props['last_update_fme'],
-        }))
-    if rows and not fresh:
-        raise ValueError('Lyon road-event publication is stale')
-    return features
-
-
-def _lyon_events():
-    return _parse_lyon_events(_get_json(LYON_EVENTS_API))
-
-
 def _bison_local_timestamp(value):
     try:
         parsed = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
@@ -1515,7 +1391,6 @@ def international_traffic_snapshot():
     sources = (('fr_bordeaux', bordeaux_flow_snapshot),
                ('fr_strasbourg', strasbourg_flow_snapshot),
                ('fr_rennes', rennes_flow_snapshot),
-               ('fr_lyon', lyon_flow_snapshot),
                ('fr_bison', bison_flow_snapshot))
     features, errors, active = [], [], []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
@@ -6662,7 +6537,6 @@ _FETCHERS = {
         'es_madrid_incidents': _madrid_incidents,
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
-        'fr_lyon_events': _lyon_events,
         'fr_paris_roadworks': _paris_roadworks,
         'fr_toulouse_roadworks': _toulouse_roadworks,
         'fr_paris_traffic_events': _paris_traffic_events,

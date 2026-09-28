@@ -318,62 +318,12 @@ class InfrastructureTests(unittest.TestCase):
         with patch.object(feeds, 'bordeaux_flow_snapshot', side_effect=OSError('offline')), \
                 patch.object(feeds, 'strasbourg_flow_snapshot', return_value={'features': [segment]}), \
                 patch.object(feeds, 'rennes_flow_snapshot', side_effect=OSError('offline')), \
-                patch.object(feeds, 'lyon_flow_snapshot', side_effect=OSError('offline')), \
                 patch.object(feeds, 'bison_flow_snapshot', side_effect=OSError('offline')):
             result = feeds.international_traffic_snapshot()
         self.assertEqual(result['features'], [segment])
         self.assertEqual(result['sources'], ['fr_strasbourg'])
         self.assertEqual({error.split(':', 1)[0] for error in result['sourceErrors']},
-                         {'fr_bordeaux', 'fr_rennes', 'fr_lyon', 'fr_bison'})
-
-    def test_lyon_flow_requires_complete_fresh_valid_segments(self):
-        now = dt.datetime(2026, 9, 28, 16, 20, tzinfo=dt.timezone.utc).timestamp()
-        def road(gid, state='R', observed='2026-09-28T18:19:30+02:00', fresh=True,
-                 lon=4.85):
-            return {'geometry': {'type': 'LineString', 'coordinates': [
-                [lon, 45.75], [lon + .01, 45.76]]}, 'properties': {
-                    'gid': gid, 'etat': state, 'est_a_jour': fresh,
-                    'last_update': observed,
-                    'last_update_fme': '2026-09-28T18:20:00+02:00'}}
-        rows = [road(1), road(2, 'V'), road(3, 'O'), road(4, 'N'),
-                road(5, '*'), road(6, 'G'), road(7, fresh=False),
-                road(8, observed='2026-09-28T17:00:00+02:00'),
-                road(9, lon=20)]
-        payload = {'numberMatched': len(rows), 'numberReturned': len(rows),
-                   'features': rows}
-        result = feeds._parse_lyon_flow(payload, now)
-        self.assertEqual([row['properties']['state'] for row in result['features']],
-                         ['EMBOUTEILLE', 'FLUIDE', 'DENSE', 'IMPOSSIBLE'])
-        self.assertEqual(result['features'][0]['geometry']['coordinates'][0], [4.85, 45.75])
-        self.assertAlmostEqual(result['features'][0]['geometry']['coordinates'][1][0], 4.86)
-        with self.assertRaisesRegex(ValueError, 'incomplete'):
-            feeds._parse_lyon_flow({**payload, 'numberMatched': len(rows) + 1}, now)
-        with self.assertRaisesRegex(ValueError, 'no current'):
-            feeds._parse_lyon_flow(payload, now + 20 * 60)
-
-    def test_lyon_events_exclude_future_active_and_stale_reports(self):
-        now = dt.datetime(2026, 9, 28, 17, tzinfo=dt.timezone.utc).timestamp()
-        def event(identity, kind='AbnormalTraffic', subtype='queueingTraffic',
-                  start='2026-09-28T17:00:00+00:00', comment='A46 queue',
-                  updated='2026-09-28T17:00:00+00:00'):
-            return {'geometry': {'type': 'MultiPoint', 'coordinates': [[4.8, 45.7]]},
-                    'properties': {'id': identity, 'type': kind, 'status': 'active',
-                                   'abnormaltraffictype': subtype,
-                                   'networkmanagementtype': subtype,
-                                   'starttime': start, 'endtime': '2026-09-28T20:00:00+00:00',
-                                   'publiccomment': comment, 'last_update_fme': updated}}
-        rows = [event('Criter123456'),
-                event('Criter123457', 'NetworkManagement', 'roadClosed', comment='Travaux'),
-                event('Criter123458', start='2026-09-29T17:00:00+00:00'),
-                event('Criter123459', 'Activities'),
-                event('Criter123460', updated='2026-09-28T16:00:00+00:00')]
-        payload = {'numberMatched': len(rows), 'numberReturned': len(rows), 'features': rows}
-        result = feeds._parse_lyon_events(payload, now)
-        self.assertEqual([f['properties']['layer'] for f in result], ['incidents', 'construction'])
-        with self.assertRaisesRegex(ValueError, 'incomplete'):
-            feeds._parse_lyon_events({**payload, 'numberMatched': len(rows) + 1}, now)
-        with self.assertRaisesRegex(ValueError, 'stale'):
-            feeds._parse_lyon_events(payload, now + 30 * 60)
+                         {'fr_bordeaux', 'fr_rennes', 'fr_bison'})
 
     def test_bison_flow_joins_located_stations_and_rejects_stale_states(self):
         header = ('code_pme;source;source_2;code_insee_commune;axe;pr_debut;'
