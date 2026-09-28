@@ -986,15 +986,16 @@
         next.onerror = () => {
           loading = false;
           if (!popup.isOpen() || !img.isConnected) return;
+          if (fallback && !usingFallback) {
+            usingFallback = true;
+            loadImage();
+            return;
+          }
+          usingFallback = false;
           if (retries < 4) {
             status.textContent = 'Camera image delayed · retrying…';
             if (!status.isConnected && img.hidden) root.append(status);
             retryTimer = window.setTimeout(loadImage, [1500, 5000, 15000, 30000][retries++]);
-          }
-          else if (fallback && !usingFallback) {
-            usingFallback = true;
-            retries = 0;
-            loadImage();
           } else {
             status.textContent = 'Camera image unavailable right now.';
             if (!status.isConnected && img.hidden) root.append(status);
