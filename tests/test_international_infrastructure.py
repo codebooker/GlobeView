@@ -1639,6 +1639,32 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_lyon_roadworks(metadata, publication, now + 3 * 86400)
 
+    def test_bordeaux_roadworks_select_only_current_road_impacts(self):
+        now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {
+            'data_processed': '2026-09-28T03:00:00+00:00',
+            'license': 'Licence Ouverte', 'records_count': 3}}}
+        base = {'geo_point_2d': {'lon': -0.58, 'lat': 44.83},
+                'alias_nature_n1': 'Road repair', 'localisation': 'Rue Centrale (Bordeaux)'}
+        rows = [
+            {**base, 'gid': 1, 'date_debut': '2026-09-01#2026-10-01',
+             'date_fin': '2026-09-30#2026-10-31',
+             'libelle': 'Circulation alternée#Circulation interdite'},
+            {**base, 'gid': 2, 'date_debut': '2026-09-01',
+             'date_fin': '2026-09-30', 'libelle': 'Interdiction de stationnement'},
+            {**base, 'gid': 3, 'date_debut': '2026-10-01',
+             'date_fin': '2026-10-31', 'libelle': 'Neutralisation de voie'},
+        ]
+        features = feeds._parse_bordeaux_roadworks(metadata, rows, now)
+        self.assertEqual([item['properties']['key'] for item in features],
+                         ['fr:bordeaux:works:1'])
+        self.assertIn('Circulation alternée', features[0]['properties']['detail'])
+        self.assertNotIn('Circulation interdite', features[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_bordeaux_roadworks(metadata, rows[:-1], now)
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_bordeaux_roadworks(metadata, rows, now + 3 * 86400)
+
     def test_lyon_cameras_require_fresh_official_stills(self):
         observed = dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat()
         def camera(camera_id, url=None, updated=observed):

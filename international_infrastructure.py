@@ -142,6 +142,9 @@ FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
 BORDEAUX_FLOW_SOURCE = 'https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3'
 BORDEAUX_FLOW_API = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/catalog/'
                      'datasets/ci_trafi_l/records')
+BORDEAUX_WORKS_BASE = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/catalog/'
+                       'datasets/ci_chantier')
+BORDEAUX_WORKS_SOURCE = 'https://datahub.bordeaux-metropole.fr/explore/dataset/ci_chantier/'
 STRASBOURG_FLOW_SOURCE = 'https://opendata.strasbourg.eu/explore/dataset/sirac_flux_trafic/'
 STRASBOURG_FLOW_BASE = ('https://opendata.strasbourg.eu/api/explore/v2.1/catalog/'
                         'datasets/sirac_flux_trafic')
@@ -250,6 +253,7 @@ _STALE_SECONDS = 900
 _COLD_WAIT_SECONDS = 12
 _BORDEAUX_FLOW_LOCK = threading.Lock()
 _BORDEAUX_FLOW_CACHE = {'until': 0, 'data': None}
+_BORDEAUX_WORKS_CACHE = {'until': 0, 'metadata': None, 'rows': None, 'lock': threading.Lock()}
 _STRASBOURG_FLOW_LOCK = threading.Lock()
 _STRASBOURG_FLOW_CACHE = {'until': 0, 'data': None}
 _RENNES_FLOW_LOCK = threading.Lock()
@@ -1399,6 +1403,104 @@ def lyon_camera_snapshot(camera_id):
     if len(image) > 2_000_000 or not image.startswith(b'\xff\xd8\xff'):
         raise ValueError('Lyon camera returned no JPEG still')
     return image, 'image/jpeg'
+
+
+_BORDEAUX_ROAD_EFFECTS = (
+    'circulation interdite', 'mise en impasse', 'interruption de circulation',
+    'neutralisation de voie', 'rétrécissement', 'déviation',
+    'limitation de vitesse', 'circulation alternée', 'circulation inversée',
+    'sens interdit', 'interdiction de tourner', 'stop et cédez-le-passage',
+)
+
+
+def _parse_bordeaux_roadworks(metadata, rows, now=None):
+    now = time.time() if now is None else now
+    info = (metadata.get('metas') or {}).get('default') or {}
+    published = info.get('data_processed')
+    processed = _timestamp(published)
+    if processed is None or not -300 <= now - processed <= 48 * 3600:
+        raise ValueError('Bordeaux roadworks publication is stale')
+    if info.get('license') != 'Licence Ouverte':
+        raise ValueError('Bordeaux roadworks licence changed')
+    total = info.get('records_count')
+    if not isinstance(rows, list) or not isinstance(total, int) or not 0 < total <= 1000 or len(rows) != total:
+        raise ValueError('Bordeaux roadworks publication is incomplete')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/Paris')).date()
+    features = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        work_id = row.get('gid')
+        point = row.get('geo_point_2d') or {}
+        try:
+            lon, lat = float(point['lon']), float(point['lat'])
+        except (TypeError, KeyError, ValueError):
+            continue
+        if (not isinstance(work_id, int) or work_id <= 0 or work_id in seen
+                or not -0.95 <= lon <= -0.35 or not 44.65 <= lat <= 45):
+            continue
+        starts = str(row.get('date_debut') or '').split('#')
+        ends = str(row.get('date_fin') or '').split('#')
+        effects = str(row.get('libelle') or '').split('#')
+        if not len(starts) == len(ends) == len(effects):
+            continue
+        current = []
+        for start_value, end_value, effect_value in zip(starts, ends, effects):
+            try:
+                start = dt.date.fromisoformat(start_value[:10])
+                end = dt.date.fromisoformat(end_value[:10])
+            except ValueError:
+                continue
+            if not start <= today <= end:
+                continue
+            impacts = [effect.strip() for effect in re.split(r'[;/]', effect_value)
+                       if any(phrase in effect.casefold() for phrase in _BORDEAUX_ROAD_EFFECTS)]
+            if impacts:
+                current.append((end, impacts))
+        if not current:
+            continue
+        seen.add(work_id)
+        location = _clean(row.get('localisation'), 115)
+        city = 'Mérignac' if '(Mérignac)' in location else 'Bordeaux'
+        impact = ', '.join(dict.fromkeys(effect for _, impacts in current for effect in impacts))[:125]
+        work = _clean(row.get('alias_nature_n1'), 65)
+        latest_end = max(end for end, _ in current)
+        features.append(_feature([lon, lat], {
+            'key': f'fr:bordeaux:works:{work_id}', 'layer': 'construction',
+            'title': f'Roadworks · {city}',
+            'detail': ' · '.join(filter(None, (impact, work, location,
+                                               f'Scheduled through {latest_end:%d %b %Y}'))),
+            'source': 'Bordeaux Métropole · Licence Ouverte',
+            'source_url': BORDEAUX_WORKS_SOURCE, 'updated_at': published,
+        }))
+    return features
+
+
+def _bordeaux_roadworks():
+    cache = _BORDEAUX_WORKS_CACHE
+    with cache['lock']:
+        now = time.time()
+        if now >= cache['until'] or cache['rows'] is None:
+            metadata = _get_json(BORDEAUX_WORKS_BASE)
+            total = ((metadata.get('metas') or {}).get('default') or {}).get('records_count')
+            if not isinstance(total, int) or not 0 < total <= 1000:
+                raise ValueError('Bordeaux roadworks publication is incomplete')
+            rows = []
+            for offset in range(0, total, 100):
+                query = urllib.parse.urlencode({
+                    'select': 'gid,geo_point_2d,date_debut,date_fin,libelle,alias_nature_n1,localisation',
+                    'order_by': 'gid', 'limit': 100, 'offset': offset,
+                })
+                page = _get_json(f'{BORDEAUX_WORKS_BASE}/records?{query}')
+                page_rows = page.get('results') if isinstance(page, dict) else None
+                if (not isinstance(page, dict) or page.get('total_count') != total or not isinstance(page_rows, list)
+                        or len(page_rows) != min(100, total - offset)):
+                    raise ValueError('Bordeaux roadworks publication is incomplete')
+                rows.extend(page_rows)
+            _parse_bordeaux_roadworks(metadata, rows, now)
+            cache.update(metadata=metadata, rows=rows, until=now + 900)
+        return _parse_bordeaux_roadworks(cache['metadata'], cache['rows'], now)
 
 
 def _parse_bordeaux_flow(rows, now=None):
@@ -7067,6 +7169,7 @@ _FETCHERS = {
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
         'fr_lyon_roadworks': _lyon_roadworks,
+        'fr_bordeaux_roadworks': _bordeaux_roadworks,
         'fr_paris_roadworks': _paris_roadworks,
         'fr_toulouse_roadworks': _toulouse_roadworks,
         'fr_paris_traffic_events': _paris_traffic_events,
