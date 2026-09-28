@@ -3196,7 +3196,7 @@
       });
       map.addLayer({ id: 'gm-traffic-layer', type: 'raster', source: 'gm-traffic', paint: { 'raster-opacity': 0.62, 'raster-fade-duration': 0 }, layout: { visibility: 'none' } });
       map.addSource('gm-international-traffic', { type: 'geojson', data: EMPTY,
-        attribution: '<a href="https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3">Bordeaux Métropole</a> · <a href="https://opendata.strasbourg.eu/explore/dataset/sirac_flux_trafic/">Eurométropole de Strasbourg</a> · <a href="https://transport.data.gouv.fr/datasets/etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede">Bison Futé</a> · Licence Ouverte; <a href="https://data.rennesmetropole.fr/explore/dataset/etat-du-trafic-en-temps-reel/">Rennes Métropole</a> · ODbL' });
+        attribution: '<a href="https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3">Bordeaux Métropole</a> · <a href="https://opendata.strasbourg.eu/explore/dataset/sirac_flux_trafic/">Eurométropole de Strasbourg</a> · <a href="https://transport.data.gouv.fr/datasets/etat-de-circulation-en-temps-reel-sur-le-reseau-national-routier-non-concede">Bison Futé</a> · Licence Ouverte; <a href="https://data.rennesmetropole.fr/explore/dataset/etat-du-trafic-en-temps-reel/">Rennes Métropole</a> · ODbL; <a href="https://www.data.gouv.fr/datasets/etat-du-trafic-de-la-metropole-de-lyon-disponibilites-temps-reel">Métropole de Lyon</a> · public domain' });
       map.addLayer({ id: 'gm-international-traffic-layer', type: 'line', source: 'gm-international-traffic',
         minzoom: 6, layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': ['match', ['get', 'state'], 'FLUIDE', '#54bd87', 'DENSE', '#e6ad54',
