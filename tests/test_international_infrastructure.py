@@ -245,6 +245,35 @@ class InfrastructureTests(unittest.TestCase):
                 'sources': {'be_brussels_counters': rows}, 'errors': []}):
             self.assertEqual(len(feeds.road_snapshot('sensors', (4.3, 50.8, 4.4, 50.9))['features']), 2)
 
+    def test_brussels_events_map_current_roadworks_and_closures(self):
+        now = dt.datetime(2026, 9, 28, 5, 30, tzinfo=dt.timezone.utc).timestamp()
+        self.assertEqual(feeds._brussels_event_time('2026-09-28T07:25:00Z'), now - 300)
+
+        def event(identifier, code='RWK', active=True, start='2026-09-28T07:00:00Z',
+                  point=None):
+            return {'type': 'Feature', 'id': identifier,
+                    'geometry': {'type': 'Point', 'coordinates': point or [4.34, 50.84]},
+                    'properties': {'fid': identifier, 'datex_codes': code,
+                                   'is_active': active, 'start_time': start,
+                                   'end_time': '2026-09-29T18:00:00Z',
+                                   'last_layer_update': '2026-09-28T07:25:00Z',
+                                   'type_fr': 'Travaux' if code == 'RWK' else 'Chaussée fermée',
+                                   'location_fr': 'Boulevard Poincaré',
+                                   'consequences_fr': 'Une bande fermée'}}
+
+        rows = feeds._parse_brussels_events({'type': 'FeatureCollection', 'features': [
+            event(1), event(2, code='RCA'), event(3, active=False),
+            event(4, start='2026-09-29T07:00:00Z'), event(5, point=[10, 50.84])]}, now)
+        self.assertEqual([row['properties']['key'] for row in rows],
+                         ['be:brussels:event:1', 'be:brussels:event:2'])
+        self.assertEqual([row['properties']['layer'] for row in rows],
+                         ['construction', 'incidents'])
+        self.assertIn('Une bande fermée', rows[0]['properties']['detail'])
+        old = event(1)
+        old['properties']['last_layer_update'] = '2026-09-28T04:00:00Z'
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_brussels_events({'type': 'FeatureCollection', 'features': [old]}, now)
+
     def test_vigo_cameras_reject_unavailable_stills_and_untrusted_urls(self):
         row = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-8.72, 42.23]},
                'properties': {'id': '05', 'nombre': 'Junction',

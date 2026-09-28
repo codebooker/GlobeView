@@ -132,6 +132,10 @@ BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_
 BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                           'service=WFS&version=1.1.0&request=GetFeature&'
                           'typeName=bm_traffic:traffic_live_geom&outputFormat=json&srsName=EPSG:4326')
+BRUSSELS_EVENTS_SOURCE = 'https://data.mobility.brussels/fr/info/events/'
+BRUSSELS_EVENTS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
+                       'service=WFS&version=1.1.0&request=GetFeature&'
+                       'typeName=bm_traffic:events&outputFormat=json&srsName=EPSG:4326')
 ZURICH_ROADWORKS_URL = ('https://maps.zh.ch/wfs/TbaBaustellenZHWFS?SERVICE=WFS&REQUEST=GetFeature'
                         '&VERSION=2.0.0&TYPENAMES=ms:baustellen-uebersicht'
                         '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
@@ -2914,6 +2918,68 @@ def _brussels_counters():
     return _parse_brussels_counters(_get_json(BRUSSELS_COUNTERS_URL))
 
 
+def _brussels_event_time(value):
+    """The public WFS appends Z to timestamps that are Brussels wall time."""
+    try:
+        parsed = dt.datetime.fromisoformat(str(value or '').removesuffix('Z'))
+        return parsed.replace(tzinfo=ZoneInfo('Europe/Brussels')).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_brussels_events(payload, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list)
+            or (isinstance(payload.get('numberReturned'), int)
+                and payload['numberReturned'] != len(payload['features']))):
+        raise ValueError('Brussels road-event feed is incomplete or invalid')
+    features = []
+    recent_publication = False
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        properties = row.get('properties') or {}
+        published = _brussels_event_time(properties.get('last_layer_update'))
+        if published is None or not -300 <= now - published <= 2 * 3600:
+            continue
+        recent_publication = True
+        if properties.get('is_active') is not True:
+            continue
+        identifier = str(properties.get('fid') or row.get('id') or '')
+        if not re.fullmatch(r'\d{1,10}', identifier):
+            continue
+        point = _point(row.get('geometry'))
+        if not point or not (4.2 <= point[0] <= 4.5 and 50.7 <= point[1] <= 51.0):
+            continue
+        start = _brussels_event_time(properties.get('start_time'))
+        end = _brussels_event_time(properties.get('end_time'))
+        if start is None or start > now or (end is not None and end < now):
+            continue
+        code = str(properties.get('datex_codes') or '').strip().upper()
+        is_work = code == 'RWK' or 'travaux' in str(properties.get('type_fr') or '').lower()
+        layer = 'construction' if is_work else 'incidents'
+        location = _clean(properties.get('location_fr') or properties.get('location_nl'), 100)
+        event_type = _clean(properties.get('type_fr') or properties.get('type_nl'), 70)
+        title = 'Road work' if is_work else 'Road closed' if code == 'RCA' else event_type or 'Road disruption'
+        details = [_clean(properties.get('consequences_fr') or properties.get('consequences_nl'), 140),
+                   _clean(properties.get('direction_fr') or properties.get('direction_nl'), 65)]
+        features.append(_feature(point, {
+            'key': f'be:brussels:event:{identifier}', 'layer': layer,
+            'title': f'{title} · {location}' if location else f'{title} · Brussels',
+            'detail': ' · '.join(part for part in details if part) or event_type or title,
+            'source': 'Brussels Mobility · CC0', 'source_url': BRUSSELS_EVENTS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(published, dt.timezone.utc).isoformat(),
+        }))
+    if payload['features'] and not recent_publication:
+        raise ValueError('Brussels road-event publication is stale')
+    return features
+
+
+def _brussels_events():
+    return _parse_brussels_events(_get_json(BRUSSELS_EVENTS_URL))
+
+
 def _france_sensors():
     now = time.time()
     if now >= _FRANCE_SENSOR_REFERENCES['until']:
@@ -5035,6 +5101,7 @@ _FETCHERS = {
         'lu_cita_traffic': _luxembourg_traffic,
         'fr_traffic_sensors': _france_sensors,
         'be_brussels_counters': _brussels_counters,
+        'be_brussels_events': _brussels_events,
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_bridge_openings': _ndw_bridge_openings,
