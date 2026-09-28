@@ -981,9 +981,16 @@
         nextImage.alt = img.alt;
         nextImage.loading = 'eager';
         nextImage.referrerPolicy = 'no-referrer';
+        // Keep the pending image connected: mobile Safari can defer images
+        // created inside a transformed map popup until they enter the DOM.
+        nextImage.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+        nextImage.setAttribute('aria-hidden', 'true');
+        root.append(nextImage);
         nextImage.onload = () => {
           loading = false;
-          if (!popup.isOpen() || !img.isConnected) return;
+          if (!popup.isOpen() || !img.isConnected) { nextImage.remove(); return; }
+          nextImage.style.cssText = '';
+          nextImage.removeAttribute('aria-hidden');
           nextImage.hidden = false;
           img.replaceWith(nextImage);
           img = nextImage;
@@ -996,6 +1003,7 @@
         };
         nextImage.onerror = () => {
           loading = false;
+          nextImage.remove();
           if (!popup.isOpen() || !img.isConnected) return;
           if (lastLoadedAt && Date.now() - lastLoadedAt > 10 * 60 * 1000) img.hidden = true;
           if (fallback && !usingFallback) {
