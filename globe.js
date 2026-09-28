@@ -958,6 +958,7 @@
     if (snapshot) {
       let img = document.createElement('img');
       img.className = 'popup-media';
+      if (/^\/tfl-camera\//.test(snapshot)) img.classList.add('tfl-camera-image');
       img.alt = 'Latest road camera snapshot';
       // Popups are positioned inside MapLibre's transformed map container. Safari can
       // defer lazy images there even while the popup is visible, so load on selection.
@@ -1015,7 +1016,7 @@
           loading = false;
           nextImage.remove();
           if (!popup.isOpen() || !img.isConnected) return;
-          if (!checkedFailedCamera && /^\/(?:madrid|dgt)-camera\//.test(snapshot)) {
+          if (!checkedFailedCamera && /^\/(?:madrid|dgt|tfl)-camera\//.test(snapshot)) {
             checkedFailedCamera = true;
             // The server marks a failed official still unavailable. Refresh the
             // markers now so a dead camera does not stay clickable until the

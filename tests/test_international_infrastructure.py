@@ -1090,6 +1090,62 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
                          'https://informo.madrid.es/cameras/Camara06303.jpg')
 
+    def test_tfl_cameras_require_available_official_image_and_location(self):
+        def camera(camera_id, image=None, available='true', lat=51.5):
+            return {'id': f'JamCams_{camera_id}', 'placeType': 'JamCam',
+                    'commonName': 'A40 Test', 'lat': lat, 'lon': -0.2,
+                    'additionalProperties': [
+                        {'key': 'available', 'value': available},
+                        {'key': 'imageUrl', 'value': image or feeds._tfl_camera_url(camera_id)}]}
+        rows = feeds._parse_tfl_cameras([
+            camera('00001.00001'), camera('00001.00002', available='false'),
+            camera('00001.00003', image='https://example.com/other.jpg'),
+            camera('00001.00004', lat=52.4)])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/tfl-camera/00001.00001')
+        with self.assertRaisesRegex(ValueError, 'Invalid TfL camera ID'):
+            feeds._tfl_camera_url('../bad')
+
+    def test_tfl_camera_checks_freshness_and_rejects_offline_stills(self):
+        jpeg = io.BytesIO()
+        Image.effect_noise((352, 288), 20).convert('RGB').save(jpeg, 'JPEG')
+        class Response(io.BytesIO):
+            def __init__(self, camera_id, modified, body):
+                super().__init__(body)
+                self.url = feeds._tfl_camera_url(camera_id)
+                self.headers = {'Content-Type': 'image/jpeg', 'Content-Length': str(len(body)),
+                                'Last-Modified': email.utils.formatdate(modified, usegmt=True)}
+        features = [{'properties': {'key': f'uk:tfl:camera:{camera_id}',
+                                    'snapshot_url': f'/tfl-camera/{camera_id}'}}
+                    for camera_id in ('00001.00001', '00001.00002')]
+        previous = dict(feeds._TFL_CAMERA_HEALTH)
+        try:
+            feeds._TFL_CAMERA_HEALTH.clear()
+            def response(request, timeout):
+                camera_id = request.full_url.rsplit('/', 1)[-1].removesuffix('.jpg')
+                modified = NOW - (60 if camera_id == '00001.00001' else 20 * 60)
+                return Response(camera_id, modified, jpeg.getvalue())
+            with patch.object(feeds.time, 'time', return_value=NOW), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=response):
+                self.assertEqual(feeds._tfl_unavailable_cameras(features), {'uk:tfl:camera:00001.00002'})
+                self.assertEqual(feeds.tfl_camera_snapshot('00001.00001')[1], 'image/jpeg')
+                with self.assertRaises(FileNotFoundError):
+                    feeds.tfl_camera_snapshot('00001.00002')
+        finally:
+            feeds._TFL_CAMERA_HEALTH.clear()
+            feeds._TFL_CAMERA_HEALTH.update(previous)
+
+    def test_tfl_offline_camera_is_not_returned_to_map(self):
+        item = feeds._feature([-0.15, 51.5], {
+            'key': 'uk:tfl:camera:00001.00001', 'layer': 'cameras',
+            'snapshot_url': '/tfl-camera/00001.00001'})
+        snapshot = {'sources': {'uk_london_cameras': [item]}, 'errors': [], 'loading': False}
+        with patch.object(feeds, '_snapshot', return_value=snapshot), \
+                patch.object(feeds, '_dgt_unavailable_cameras', return_value=set()), \
+                patch.object(feeds, '_tfl_unavailable_cameras',
+                             return_value={'uk:tfl:camera:00001.00001'}):
+            self.assertEqual(feeds.road_snapshot('cameras', (-0.2, 51.4, -0.1, 51.6))['features'], [])
+
     def test_vienna_roadworks_require_current_dates_and_complete_publications(self):
         now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
         def work(identity, geometry, start='2026-09-25Z', end='2026-10-02Z'):

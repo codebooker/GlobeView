@@ -68,6 +68,9 @@ ICELAND_CAMERAS_SOURCE = 'https://www.vegagerdin.is/vegagerdin/gagnasafn/vefthjo
 ICELAND_ROADS_URL = 'https://datex.vegagerdin.is/situationpublication3_1/SituationService/pullsnapshotdata'
 ICELAND_ROADS_SOURCE = 'https://www.vegagerdin.is/vegagerdin/gagnasafn/vefthjonustur/datexii-2'
 TFL_URL = 'https://api.tfl.gov.uk/Road/all/Disruption'
+TFL_CAMERAS_URL = 'https://api.tfl.gov.uk/Place/Type/JamCam'
+TFL_CAMERA_SOURCE = 'https://tfl.gov.uk/info-for/open-data-users/our-open-data'
+TFL_CAMERA_BASE = 'https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/'
 TRAFFICWATCH_BASE = 'https://www.trafficwatchni.com/twni/'
 TRAFFICWATCH_SOURCE = 'https://www.trafficwatchni.com/twni/cameras'
 UKPN_BASE = 'https://ukpowernetworks.opendatasoft.com'
@@ -2233,6 +2236,117 @@ def _fintraffic_sensors(kind):
     metadata = _get_json(f'{FINTRAFFIC_BASE}/api/{kind}/v1/stations', fintraffic=True)
     observations = _get_json(f'{FINTRAFFIC_BASE}/api/{kind}/v1/stations/data', fintraffic=True)
     return _parse_fintraffic_sensors(kind, metadata, observations)
+
+
+_TFL_CAMERA_HEALTH = {}
+_TFL_CAMERA_HEALTH_LOCK = threading.Lock()
+
+
+def _tfl_camera_url(camera_id):
+    if not re.fullmatch(r'\d{5}\.\d{5}', str(camera_id)):
+        raise ValueError('Invalid TfL camera ID')
+    return f'{TFL_CAMERA_BASE}{camera_id}.jpg'
+
+
+def _parse_tfl_cameras(payload):
+    if not isinstance(payload, list):
+        raise ValueError('TfL camera catalog is invalid')
+    features = []
+    seen = set()
+    for row in payload:
+        if not isinstance(row, dict) or row.get('placeType') != 'JamCam':
+            continue
+        match = re.fullmatch(r'JamCams_(\d{5}\.\d{5})', str(row.get('id') or ''))
+        if not match or match.group(1) in seen:
+            continue
+        camera_id = match.group(1)
+        try:
+            point = [float(row['lon']), float(row['lat'])]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (-0.55 <= point[0] <= 0.4 and 51.25 <= point[1] <= 51.75):
+            continue
+        props = {item.get('key'): item.get('value') for item in (row.get('additionalProperties') or [])
+                 if isinstance(item, dict)}
+        if props.get('available') != 'true' or props.get('imageUrl') != _tfl_camera_url(camera_id):
+            continue
+        seen.add(camera_id)
+        features.append(_feature(point, {
+            'key': f'uk:tfl:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(row.get('commonName'), 100) or 'London traffic camera',
+            'detail': 'Recent camera still · normally updated every few minutes',
+            'snapshot_url': f'/tfl-camera/{camera_id}', 'snapshot_refresh_ms': 120000,
+            'source': 'Transport for London', 'source_url': TFL_CAMERA_SOURCE,
+        }))
+    if not features:
+        raise ValueError('TfL camera catalog has no usable locations')
+    return features
+
+
+def _tfl_cameras():
+    return _parse_tfl_cameras(_get_json(TFL_CAMERAS_URL))
+
+
+def _tfl_camera_headers_available(response, camera_id, now):
+    url = urllib.parse.urlsplit(response.url)
+    if (url.scheme != 'https' or url.hostname != 's3-eu-west-1.amazonaws.com'
+            or url.path != f'/jamcams.tfl.gov.uk/{camera_id}.jpg'):
+        return False
+    headers = response.headers
+    if headers.get('Content-Type', '').split(';')[0] != 'image/jpeg':
+        return False
+    try:
+        size = int(headers.get('Content-Length') or 0)
+        modified = email.utils.parsedate_to_datetime(headers['Last-Modified']).timestamp()
+    except (KeyError, TypeError, ValueError):
+        return False
+    return 5000 <= size <= 300000 and -300 <= now - modified <= 14 * 60
+
+
+def _tfl_unavailable_cameras(features):
+    cameras = {item['properties']['snapshot_url'].rsplit('/', 1)[-1]
+               for item in features if item['properties']['key'].startswith('uk:tfl:camera:')}
+    if not cameras:
+        return set()
+    now = time.time()
+    def available(camera_id):
+        request = urllib.request.Request(_tfl_camera_url(camera_id), method='HEAD', headers={
+            'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                return _tfl_camera_headers_available(response, camera_id, now)
+        except (OSError, ValueError):
+            return False
+
+    with _TFL_CAMERA_HEALTH_LOCK:
+        pending = [camera_id for camera_id in cameras
+                   if _TFL_CAMERA_HEALTH.get(camera_id, (0, False))[0] <= now]
+        if pending:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
+                checked = dict(zip(pending, executor.map(available, pending)))
+            for camera_id, good in checked.items():
+                _TFL_CAMERA_HEALTH[camera_id] = (now + (120 if good else 60), good)
+        return {f'uk:tfl:camera:{camera_id}' for camera_id in cameras
+                if not _TFL_CAMERA_HEALTH.get(camera_id, (0, False))[1]}
+
+
+def tfl_camera_snapshot(camera_id):
+    request = urllib.request.Request(_tfl_camera_url(camera_id), headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            if not _tfl_camera_headers_available(response, camera_id, time.time()):
+                raise FileNotFoundError('TfL camera still is unavailable or stale')
+            image = response.read(300001)
+        if len(image) > 300000 or not _camera_has_visible_scene(image):
+            raise FileNotFoundError('TfL camera still has no visible scene')
+        with _TFL_CAMERA_HEALTH_LOCK:
+            _TFL_CAMERA_HEALTH[camera_id] = (time.time() + 120, True)
+        return image, 'image/jpeg'
+    except (OSError, ValueError):
+        with _TFL_CAMERA_HEALTH_LOCK:
+            _TFL_CAMERA_HEALTH[camera_id] = (time.time() + 60, False)
+        raise
 
 
 def _tfl_disruptions():
@@ -5899,6 +6013,7 @@ _FETCHERS = {
         'fi_incidents': lambda: _fintraffic_messages('incidents'),
         'fi_construction': lambda: _fintraffic_messages('construction'),
         'uk_london': _tfl_disruptions,
+        'uk_london_cameras': _tfl_cameras,
         'uk_national_highways_roadworks': _national_highways_roadworks,
         'uk_ni_trafficwatch': _trafficwatch_roads,
         'uk_wales_incidents': lambda: _wales_feed('incidents'),
@@ -6018,6 +6133,7 @@ def road_snapshot(layer, bbox=None):
                     and south <= item['geometry']['coordinates'][1] <= north]
     if layer == 'cameras':
         unavailable = _dgt_unavailable_cameras(features)
+        unavailable.update(_tfl_unavailable_cameras(features))
         with _MADRID_CAMERA_HEALTH_LOCK:
             unavailable.update(_MADRID_CAMERA_HEALTH['unavailable'])
         with _LUXEMBOURG_CAMERA_HEALTH_LOCK:
