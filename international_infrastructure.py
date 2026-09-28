@@ -4066,83 +4066,6 @@ def _belgium_roads():
     return _parse_belgium_roads(feed, names)
 
 
-FLANDERS_LANE_SIGNS_SOURCE = (
-    'https://www.vlaanderen.be/datavindplaats/catalogus/'
-    'rijstrooksignalisatie-vlaanderen-dynamische-snelheidsbeperkingen')
-FLANDERS_LANE_SIGNS_BASE = 'https://rss.opendata.belfla.be/rss/'
-
-
-def _parse_flanders_lane_signs(configuration, data, now=None):
-    now = time.time() if now is None else now
-    published = _timestamp(data.findtext('tijd_publicatie'))
-    if (configuration.tag != 'rssconfiguratie' or data.tag != 'rssverkeersdata'
-            or published is None or not -300 <= now - published <= 10 * 60):
-        raise ValueError('Flemish lane-sign publication is stale or invalid')
-    locations = {}
-    for board in configuration.findall('rss_bord'):
-        board_id = board.get('unieke_id', '')
-        try:
-            lon = float((board.findtext('lengtegraad_EPSG_4326') or '').replace(',', '.'))
-            lat = float((board.findtext('breedtegraad_EPSG_4326') or '').replace(',', '.'))
-        except ValueError:
-            continue
-        if board_id and 2.5 <= lon <= 6 and 50.5 <= lat <= 51.6:
-            locations[board_id] = (lon, lat, board.findtext('abbameldanaam') or '',
-                                   board.findtext('rijstrook') or '')
-    if not locations:
-        raise ValueError('Flemish lane-sign locations are unavailable')
-
-    grouped = {}
-    for board in data.findall('rss_bord'):
-        location = locations.get(board.get('unieke_id'))
-        if not location:
-            continue
-        technical = board.find('technische_toestand')
-        confirmed = board.find('bevestigde_boodschap')
-        if (technical is None or confirmed is None or technical.findtext('inDienst') != '1'
-                or technical.findtext('defect') != '0'):
-            continue
-        status = confirmed.findtext('verkeersteken_status') or ''
-        if match := re.fullmatch(r'SNELH_(\d{2,3})', status):
-            display = f'{match.group(1)} km/h'
-        elif match := re.fullmatch(r'EINDE_(\d{2,3})', status):
-            display = f'End {match.group(1)} km/h'
-        else:
-            display = {'KRUIS': 'Lane closed', 'PIJL_LINKS': 'Move left',
-                       'PIJL_RECHTS': 'Move right', 'C21_3_5T': '3.5 t limit',
-                       'EINDE': 'Restriction ends'}.get(status)
-        if not display:
-            continue
-        lon, lat, name, lane = location
-        road = re.match(r'(?:A|E|R|N)\d{1,3}', name)
-        # One gantry has several closely spaced boards. Show its actual lane
-        # states together so overlapping symbols do not hide the closure sign.
-        gantry = ('/'.join(name.split('/')[:3]), round(lon, 3), round(lat, 3))
-        entry = grouped.setdefault(gantry, {'point': [lon, lat], 'road': road.group(0) if road else '',
-                                            'states': []})
-        entry['states'].append((lane, display))
-
-    features = []
-    for gantry, entry in grouped.items():
-        states = sorted(set(entry['states']))
-        detail = ' · '.join(f'{lane}: {display}' if lane else display for lane, display in states)
-        key = hashlib.sha1(repr(gantry).encode('utf-8')).hexdigest()[:16]
-        features.append(_feature(entry['point'], {
-            'key': f'be:flanders:lane-sign:{key}', 'layer': 'signs',
-            'title': f'Lane signs · {entry["road"]}' if entry['road'] else 'Lane signs · Flanders',
-            'detail': _clean(detail, 280),
-            'source': 'Agentschap Wegen en Verkeer · Modellicentie Gratis Hergebruik',
-            'source_url': FLANDERS_LANE_SIGNS_SOURCE, 'updated_at': published,
-        }))
-    return features
-
-
-def _flanders_lane_signs():
-    configuration = _get_xml(FLANDERS_LANE_SIGNS_BASE + 'configuratie/xml')
-    data = _get_xml(FLANDERS_LANE_SIGNS_BASE + 'verkeersdata', max_bytes=3 * 1024 * 1024)
-    return _parse_flanders_lane_signs(configuration, data)
-
-
 _GIPOD_ROAD_IMPACT = re.compile(
     r'rijstro|rijrichting|rijweg|gemotoriseerd verkeer|wisselend verkeer|'
     r'snelheidsbeperking|tweerichtingsverkeer', re.I)
@@ -6649,7 +6572,6 @@ _FETCHERS = {
         'be_brussels_events': _brussels_events,
         'be_brussels_signs': _brussels_signs,
         'be_flemish_roads': _belgium_roads,
-        'be_flemish_lane_signs': _flanders_lane_signs,
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_bridge_openings': _ndw_bridge_openings,
         'nl_ndw_signs': _ndw_signs,

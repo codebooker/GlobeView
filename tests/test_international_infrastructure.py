@@ -2575,35 +2575,6 @@ class InfrastructureTests(unittest.TestCase):
           </elementlocation></situationElement></situation></situationPublication>''')
         self.assertEqual(feeds._belgium_otap_road_names(root), {'123': 'E411 - A4'})
 
-    def test_flemish_lane_signs_join_confirmed_display_and_filter_faults(self):
-        config = ET.fromstring('''<rssconfiguratie>
-          <rss_bord unieke_id="a"><abbameldanaam>A14X47/A14M47/P06/BORD1</abbameldanaam>
-            <lengtegraad_EPSG_4326>4,34567</lengtegraad_EPSG_4326>
-            <breedtegraad_EPSG_4326>51,21203</breedtegraad_EPSG_4326><rijstrook>R10</rijstrook></rss_bord>
-          <rss_bord unieke_id="b"><abbameldanaam>A14X47/A14M47/P06/BORD2</abbameldanaam>
-            <lengtegraad_EPSG_4326>4,34569</lengtegraad_EPSG_4326>
-            <breedtegraad_EPSG_4326>51,21204</breedtegraad_EPSG_4326><rijstrook>R11</rijstrook></rss_bord>
-          <rss_bord unieke_id="c"><abbameldanaam>A14X48/A14M48/P07/BORD1</abbameldanaam>
-            <lengtegraad_EPSG_4326>4,355</lengtegraad_EPSG_4326>
-            <breedtegraad_EPSG_4326>51,222</breedtegraad_EPSG_4326><rijstrook>R10</rijstrook></rss_bord>
-        </rssconfiguratie>''')
-        published = dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat()
-        data = ET.fromstring(f'''<rssverkeersdata><tijd_publicatie>{published}</tijd_publicatie>
-          <rss_bord unieke_id="a"><technische_toestand><inDienst>1</inDienst><defect>0</defect></technische_toestand>
-            <bevestigde_boodschap><verkeersteken_status>SNELH_90</verkeersteken_status></bevestigde_boodschap></rss_bord>
-          <rss_bord unieke_id="b"><technische_toestand><inDienst>1</inDienst><defect>0</defect></technische_toestand>
-            <bevestigde_boodschap><verkeersteken_status>KRUIS</verkeersteken_status></bevestigde_boodschap></rss_bord>
-          <rss_bord unieke_id="c"><technische_toestand><inDienst>1</inDienst><defect>1</defect></technische_toestand>
-            <bevestigde_boodschap><verkeersteken_status>SNELH_70</verkeersteken_status></bevestigde_boodschap></rss_bord>
-        </rssverkeersdata>''')
-        rows = feeds._parse_flanders_lane_signs(config, data, NOW)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['properties']['layer'], 'signs')
-        self.assertIn('R10: 90 km/h', rows[0]['properties']['detail'])
-        self.assertIn('R11: Lane closed', rows[0]['properties']['detail'])
-        with self.assertRaisesRegex(ValueError, 'stale'):
-            feeds._parse_flanders_lane_signs(config, data, NOW + 11 * 60)
-
     def test_gipod_only_maps_active_road_impacts_caused_by_work(self):
         now = dt.datetime(2026, 9, 27, 12, 0, tzinfo=dt.timezone.utc).timestamp()
 
