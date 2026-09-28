@@ -2746,7 +2746,7 @@ import { createCyberTrails } from './cyber-trails.js';
       map.getSource('gm-radio')?.setData({
         type: 'FeatureCollection',
         features: payload.stations.map(station => ({
-          type: 'Feature', properties: { id: station.id },
+          type: 'Feature', properties: withGlobeVector({ id: station.id }, station.lon, station.lat),
           geometry: { type: 'Point', coordinates: [station.lon, station.lat] },
         })),
       });
