@@ -971,6 +971,7 @@
       let loading = false;
       let lastLoadedAt = 0;
       let failureNonce = 0;
+      let checkedFailedCamera = false;
       const retryButton = textElement('button', 'popup-play', 'Retry camera image');
       retryButton.type = 'button';
       const loadImage = () => {
@@ -1007,6 +1008,13 @@
           loading = false;
           nextImage.remove();
           if (!popup.isOpen() || !img.isConnected) return;
+          if (!checkedFailedCamera && /^\/(?:madrid|dgt)-camera\//.test(snapshot)) {
+            checkedFailedCamera = true;
+            // The server marks a failed official still unavailable. Refresh the
+            // markers now so a dead camera does not stay clickable until the
+            // normal road-layer poll.
+            loadRoad('cameras').catch(error => console.warn('Camera catalog refresh:', error));
+          }
           if (lastLoadedAt && Date.now() - lastLoadedAt > 10 * 60 * 1000) img.hidden = true;
           if (fallback && !usingFallback) {
             usingFallback = true;
