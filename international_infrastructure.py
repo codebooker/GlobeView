@@ -112,6 +112,9 @@ FRANCE_SENSOR_SOURCE = ('https://transport.data.gouv.fr/datasets/'
 BORDEAUX_FLOW_SOURCE = 'https://www.data.gouv.fr/datasets/etat-du-trafic-en-temps-reel-3'
 BORDEAUX_FLOW_API = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/catalog/'
                      'datasets/ci_trafi_l/records')
+BORDEAUX_SIGNS_BASE = ('https://datahub.bordeaux-metropole.fr/api/explore/v2.1/'
+                      'catalog/datasets/pc_pmv_p')
+BORDEAUX_SIGNS_SOURCE = 'https://datahub.bordeaux-metropole.fr/explore/dataset/pc_pmv_p/'
 BRUSSELS_COUNTERS_SOURCE = 'https://data.mobility.brussels/fr/info/traffic_live_geom/'
 BRUSSELS_COUNTERS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                           'service=WFS&version=1.1.0&request=GetFeature&'
@@ -903,6 +906,50 @@ def bordeaux_flow_snapshot():
             if _BORDEAUX_FLOW_CACHE['data'] and now < _BORDEAUX_FLOW_CACHE['until'] + 600:
                 return _current_bordeaux_flow(_BORDEAUX_FLOW_CACHE['data'], now)
             raise
+
+
+def _parse_bordeaux_signs(metadata, publication, now=None):
+    now = time.time() if now is None else now
+    processed = (metadata.get('metas') or {}).get('default', {}).get('data_processed')
+    published = _timestamp(processed)
+    if published is None or not -300 <= now - published <= 20 * 60:
+        raise ValueError('Bordeaux sign publication is stale')
+    rows = publication.get('results')
+    if not isinstance(rows, list) or publication.get('total_count') != len(rows) or len(rows) > 100:
+        raise ValueError('Bordeaux sign publication is incomplete')
+    features = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sign_id = str(row.get('ident') or '')
+        point = row.get('geo_point_2d') or {}
+        if not re.fullmatch(r'[A-Z0-9]{3,20}', sign_id) or not isinstance(point, dict):
+            continue
+        try:
+            lon, lat = float(point['lon']), float(point['lat'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (-0.9 <= lon <= -0.3 and 44.6 <= lat <= 45.1):
+            continue
+        pages = [_clean(row.get(key), 90) for key in ('page1', 'page2')]
+        pages = [page for page in pages if page]
+        if not pages:
+            continue
+        features.append(_feature([lon, lat], {
+            'key': f'fr:bordeaux:sign:{sign_id}', 'layer': 'signs',
+            'title': ' / '.join(pages)[:180], 'detail': f'Bordeaux sign {sign_id}',
+            'source': 'Bordeaux Métropole · Licence Ouverte',
+            'source_url': BORDEAUX_SIGNS_SOURCE, 'updated_at': processed,
+        }))
+    return features
+
+
+def _bordeaux_signs():
+    metadata = _get_json(BORDEAUX_SIGNS_BASE)
+    query = urllib.parse.urlencode({
+        'limit': 100, 'select': 'ident,geo_point_2d,page1,page2,mdate'})
+    publication = _get_json(f'{BORDEAUX_SIGNS_BASE}/records?{query}')
+    return _parse_bordeaux_signs(metadata, publication)
 
 
 def _parse_madrid_signs(locations, root, published):
@@ -4527,6 +4574,7 @@ _FETCHERS = {
         'es_madrid_incidents': _madrid_incidents,
         'es_madrid_cameras': _madrid_cameras,
         'fr_lyon_cameras': _lyon_cameras,
+        'fr_bordeaux_signs': _bordeaux_signs,
         'es_madrid_signs': _madrid_signs,
         'es_vitoria_cameras': _vitoria_cameras,
         'es_vigo_cameras': _vigo_cameras,

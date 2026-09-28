@@ -126,6 +126,24 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no current'):
             feeds._parse_bordeaux_flow([road('18', 'INCONNU')], now)
 
+    def test_bordeaux_signs_show_only_readable_text_from_fresh_publication(self):
+        now = dt.datetime(2026, 9, 28, 0, 40, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'data_processed': '2026-09-28T00:35:00+00:00'}}}
+        def sign(identity, lon=-0.54, first='PONT FERME', second='SUIVRE DEVIATION'):
+            return {'ident': identity, 'geo_point_2d': {'lon': lon, 'lat': 44.85},
+                    'page1': first, 'page2': second, 'mdate': '2026-09-26T16:11:00+00:00'}
+        publication = {'total_count': 4, 'results': [
+            sign('Z40P107'), sign('Z40P108', first='', second=''),
+            sign('../bad'), sign('Z40P109', lon=2.35)]}
+        rows = feeds._parse_bordeaux_signs(metadata, publication, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['title'], 'PONT FERME / SUIVRE DEVIATION')
+        self.assertEqual(rows[0]['properties']['updated_at'], '2026-09-28T00:35:00+00:00')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_bordeaux_signs(metadata, publication, now + 21 * 60)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_bordeaux_signs(metadata, {'total_count': 5, 'results': publication['results']}, now)
+
     def test_brussels_counters_only_map_recent_active_measurements(self):
         now = dt.datetime(2026, 9, 27, 19, tzinfo=dt.timezone.utc).timestamp()
         def counter(name, measured='2026-09-27T18:58:00Z', active=1, count=8, speed=42):
