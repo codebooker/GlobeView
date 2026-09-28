@@ -784,7 +784,7 @@ import { createCyberTrails } from './cyber-trails.js';
       ? 'Aircraft: <a href="https://opensky-network.org/">OpenSky</a> / <a href="https://www.adsb.lol/">ADSB.lol</a>'
       : type === 'vessels' ? 'Vessels: <a href="https://aisstream.io/">AISStream</a>'
       : type === 'webcams' ? 'Webcam catalog: <a href="https://github.com/simplifaisoul/osiris">OSIRIS</a> / camera operators'
-      : type === 'lpr' ? 'Plate-reader locations: <a href="https://deflock.me/">DeFlock / OpenStreetMap</a> / <a href="https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html">Dutch Police</a> / <a href="https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13">Via Lietuva</a> / <a href="https://dati.comune.milano.it/dataset/ds959-varchi-areab">Comune di Milano Area B</a> / <a href="https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_">Area C</a> (CC BY)'
+      : type === 'lpr' ? 'Plate-reader locations: <a href="https://deflock.me/">DeFlock / OpenStreetMap</a> / <a href="https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html">Dutch Police</a> / <a href="https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13">Via Lietuva</a> / <a href="https://dati.comune.milano.it/dataset/ds959-varchi-areab">Comune di Milano Area B</a> / <a href="https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_">Area C</a> / <a href="https://www.data.gouv.fr/datasets/autoroutes-et-peages-en-flux-libre">Maxime Lopes · French toll gantries</a>'
       : type === 'cyclones' ? 'Cyclones: <a href="https://eonet.gsfc.nasa.gov/">NASA EONET</a>'
       : type === 'earthquakes' ? 'Earthquakes: <a href="https://earthquake.usgs.gov/">USGS</a>'
       : type === 'nws_alerts' ? 'Weather alerts: <a href="https://api.weather.gov/alerts/active">National Weather Service</a>'
@@ -2806,7 +2806,7 @@ import { createCyberTrails } from './cyber-trails.js';
     const nearest = candidates[0]?.station;
     radioTarget.classList.toggle('locked', !!nearest);
     radioTargetLabel.textContent = nearest ? nearest.name : 'Drag globe to a station dot';
-    radioList.hidden = true;
+    if (autoplay) radioList.hidden = true;
     nearbyRadioStations = candidates.slice(0, 12).map(item => item.station);
     radioNearbyButton.hidden = candidates.length < 2;
     radioNearbyButton.textContent = `${candidates.length} stations nearby`;
@@ -3359,6 +3359,7 @@ import { createCyberTrails } from './cyber-trails.js';
     content.append(source);
     new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(event.lngLat).setDOMContent(content).addTo(map);
   });
+  map.on('dragstart', () => { radioList.hidden = true; });
   map.on('dragend', () => {
     if (!enabled.radio || !radioTargetEnabled) return;
     radioTuneAfterMove = true;
@@ -3804,6 +3805,9 @@ import { createCyberTrails } from './cyber-trails.js';
   });
   function setLayerEnabled(type, next, quiet = false) {
     if (enabled[type] === next) return;
+    // Continuous rotation otherwise changes the selected station and closes
+    // the nearby list while someone is trying to tune the radio.
+    if (type === 'radio' && next) stopRotation();
     enabled[type] = next;
     if (!next && trackedAircraft?.layer === type) stopTracking();
     document.querySelector(`[data-layer="${type}"]`).setAttribute('aria-pressed', String(next));

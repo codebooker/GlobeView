@@ -3,9 +3,25 @@ import unittest
 from unittest.mock import patch
 
 import proxy
+from france_toll_gantries import _catalog as french_gantry_catalog, gantries_for_bbox as french_gantries_for_bbox
 
 
 class GlobalPlateReaderTests(unittest.TestCase):
+    def test_french_toll_gantries_are_bounded_published_locations(self):
+        self.assertEqual(len(french_gantry_catalog()), 32)
+        rows = french_gantries_for_bbox((2.9, 46.2, 4.0, 46.7))
+        self.assertTrue(rows)
+        self.assertTrue(all(row['id'].startswith('fr:freeflow:') for row in rows))
+        self.assertTrue(all('October 2025' in row['detail'] for row in rows))
+        self.assertEqual(french_gantries_for_bbox((-0.3, 51.3, 0.2, 51.7)), [])
+
+    def test_french_gantries_survive_deflock_outage(self):
+        with patch.object(proxy, 'cached_deflock_json', side_effect=OSError('index unavailable')):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((2.9, 46.2, 4.0, 46.7)))
+        self.assertTrue(payload['elements'])
+        self.assertTrue(all(row['id'].startswith('fr:freeflow:') for row in payload['elements']))
+        self.assertTrue(payload['sourceErrors'])
+
     def test_region_selection_uses_viewport(self):
         index = {'tile_size_degrees': 20, 'tile_url': 'https://example.test/{lat}/{lon}.json',
                  'regions': ['40/-20', '40/0', '20/-100']}

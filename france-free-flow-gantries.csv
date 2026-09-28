@@ -1,0 +1,38 @@
+Nom;Coordonnées GPS;Autoroute;Type;Sens;PK;Concessionnaire;Observations
+A79 - Péage de Deux Chaises;46.370332954830154, 3.027671017213333;A79;BPV;1+2;nc;Aliaé;BPV avec arrêt sauf télépéage sans arrêt interconnexion A71
+Portique flux libre Le Montet Ouest;46.3891493669593, 3.033184796389492;A79;Flux libre;1+2;nc;Aliaé;-
+Portique flux libre Le Montet Est;46.41735692394454, 3.107230101015186;A79;Flux libre;1+2;nc;Aliaé;-
+Portique flux libre Montbeugny Ouest;46.504369873389386, 3.426121557058431;A79;Flux libre;1+2;nc;Aliaé;-
+Portique flux libre  Montbeugny Est;46.516367174388684, 3.468908690028212;A79;Flux libre;1+2;nc;Aliaé;-
+Portique Molinet Ouest;46.5073818954721, 3.768571795122128;A79;Flux libre;1+2;nc;Aliaé;-
+Portique Molinet Est;46.456290550595, 3.9042617671344235;A79;Flux libre;1+2;nc;Aliaé;-
+Buchelay FL;48.98370276677796, 1.6812133933960551;A13;Flux libre;1+2;48;SAPN;-
+Heudebouville FL;49.19146011366729, 1.2324629005967371;A13;Flux libre;1+2;90;SAPN;BPV
+Heudebouville FL E vers Caen;49.196633086459045, 1.2298063220911815;A13;Flux libre;1;90;SAPN;bretelle vers Caen
+Heudebouville FL E vers Paris;49.193366094028164, 1.2302205867320604;A13;Flux libre;2;90;SAPN;bretelle vers Paris
+Incarville FL;49.24562627600375, 1.1838234172651245;A13;Flux libre;2;nc;SAPN;-
+Péage d'Incarville FL;49.24776074460694, 1.181451444761634;A154;Flux libre;1;nc;SAPN;interconnexion A154 A13 vers province
+Bourg-Achard FL Entrée;49.36676774745055, 0.8170244591204662;A13;Flux libre;1;nc;SAPN;sortie 25
+Bourneville;49.37716100563025, 0.6255959651770168;A13;Barrière;2;nc;SAPN;bretelle entrée / D89
+Péage flux libre de Bourneville-Sainte-Croix -;49.37792946136258, 0.6256733008872346;A13;Flux libre;1;nc;SAPN;-
+Bourneville FL;49.386299162156035, 0.6023747523987777;A131;Flux libre;1;1;SAPN;-
+N°27 Toutainville FL E;49.36465266483861, 0.4679990804508471;A13;Flux libre;1+2;nc;SAPN;-
+Beuzeville;49.33779733561549, 0.3646729445355953;A13;Flux libre;1+2;167;SAPN;BPV
+Beuzeville FL E vers Caen;49.33906175878891, 0.3680937656860297;A13;Flux libre;1;167;SAPN;Péage flux libre Le Torpte
+Beuzeville FL E vers Paris;49.33756226851832, 0.3694239039511729;A13;Flux libre;1+2;167;SAPN;Bretelle entrée sortie Péage flux libre Le Torpte
+Beuzeville - bretelle de sortie;49.338020203348776, 0.37430247666009026;A13;Flux libre;1;167;SAPN;Bretelle de sortie depuis Paris vers D675
+Dozulé FL;49.22845962318107, -0.08119395859987798;A13;Flux libre;1+2;203;SAPN;-
+Dozulé FL E;49.230296689641854, -0.08398770657270314;A13;Flux libre;;nc;SAPN;Bretelle entrée sortie
+Troarn FL;49.1778328116575, -0.20297240384555648;A13;Flux libre;1;nc;SAPN;Bretelle entrée vers Caen
+Troarn FL;49.178641969403415, -0.20074405118151983;A13;Flux libre;2;nc;SAPN;Bretelle sortie vers Paris
+Cagny FL;49.1683432404019, -0.24499245194057515;A13;Flux libre;1;nc;SAPN;Bretelle d'entrée depuis Paris
+Cagny FL;49.167953778260625, -0.24843552252497111;A13;Flux libre;2;nc;SAPN;Bretelle de sortie depuis Caen
+Montesson FL;48.91348746350013, 2.1620305614049316;A14;Flux libre;1+2;nc;SAPN;-
+Chambourcy;48.91174196525679, 2.0467543790780898;A14;Flux libre;1;nc;SAPN;Bretelle de sortie
+Chambourcy;48.912011825222294, 2.0453801818328845;A14;BPV;2;nc;SAPN;Bretelle
+Quetteville;49.32055650013019, 0.3111458195311986;A29;Flux libre;1+2;nc;SAPN;-
+Quetteville;49.32078572920442, 0.31041472149070903;A29;Flux libre;2;nc;SAPN;bretelle vers A13
+Boulay;49.140468356235324, 6.464721572545085;A4;Flux libre;2;nc;SANEF;-
+Boulay;49.14111107302624, 6.466542316558337;A4;Flux libre;1;nc;SANEF;-
+Parçay Meslay;47.45241309965617, 0.7393910581517196;A10;Mixte : Flux libre + BPV;1+2;200;Cofiroute;Diffuseur 19 - Tours Nord
+Tonnay Charente;45.955001688205954, -0.8811022586435732;A387;Mixte : Flux libre + BPV;1+2;10;ASF;Diffuseur 33

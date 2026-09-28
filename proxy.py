@@ -34,6 +34,7 @@ from cyclone_guidance import guidance_snapshot as cyclone_guidance_snapshot
 from trip_routing import RouteBusy, RouteNotFound, RouteTooLong, RouteUnavailable, parse_point as parse_route_point, route_snapshot
 from arcgis_catalog import arcgis_viewport
 from dutch_anpr import SEARCH_URL as DUTCH_ANPR_SEARCH_URL, latest_plan as dutch_anpr_latest_plan, parse_plan as parse_dutch_anpr_plan, plan_for_bbox as dutch_anpr_for_bbox
+from france_toll_gantries import gantries_for_bbox as france_gantries_for_bbox
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = os.getenv('AMERICAMAP_HOST', os.getenv('FLORIDAMAP_HOST', '127.0.0.1'))
@@ -18702,12 +18703,14 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                      and min_lat <= 53.7 and max_lat >= 50.7)
     milan_visible = (min_lon <= 9.35 and max_lon >= 9.0
                      and min_lat <= 45.6 and max_lat >= 45.35)
+    france_visible = (min_lon <= 10 and max_lon >= -5.5
+                      and min_lat <= 51.5 and max_lat >= 41)
     source_errors = []
     try:
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible or france_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18740,7 +18743,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible or france_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -18761,6 +18764,12 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as error:
             source_errors.append(f'Dutch ANPR plan: {error}')
+    if france_visible:
+        try:
+            for item in france_gantries_for_bbox(bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'French toll gantries: {error}')
     if milan_visible:
         try:
             catalog = cached_deflock_json(MILAN_AREA_B_GATES_URL, 'it-milan-area-b-gates:v1', ttl=86400)
