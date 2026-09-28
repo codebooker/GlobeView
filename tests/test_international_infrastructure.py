@@ -721,6 +721,22 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_brussels_signs(locations, {**displays, 'numberMatched': 6}, now)
 
+    def test_brussels_signs_retry_a_stale_api_replica(self):
+        locations, stale, fresh = {'features': []}, {'replica': 'old'}, {'replica': 'new'}
+        with patch.object(feeds, '_get_json', side_effect=[locations, stale, fresh]) as fetch, \
+                patch.object(feeds, '_parse_brussels_signs',
+                             side_effect=[ValueError('Brussels sign displays are stale'),
+                                          ['current sign']]) as parse:
+            self.assertEqual(feeds._brussels_signs(), ['current sign'])
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(parse.call_count, 2)
+
+        with patch.object(feeds, '_get_json', side_effect=[locations, stale]), \
+                patch.object(feeds, '_parse_brussels_signs',
+                             side_effect=ValueError('Brussels sign catalog is incomplete or invalid')):
+            with self.assertRaisesRegex(ValueError, 'incomplete'):
+                feeds._brussels_signs()
+
     def test_vigo_cameras_reject_unavailable_stills_and_untrusted_urls(self):
         row = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-8.72, 42.23]},
                'properties': {'id': '05', 'nombre': 'Junction',

@@ -4352,8 +4352,13 @@ def _parse_brussels_signs(locations, displays, now=None):
 
 def _brussels_signs():
     locations = _get_json(BRUSSELS_SIGN_LOCATIONS_URL)
-    displays = _get_json(BRUSSELS_SIGN_DISPLAYS_URL)
-    return _parse_brussels_signs(locations, displays)
+    for attempt in range(3):
+        displays = _get_json(BRUSSELS_SIGN_DISPLAYS_URL)
+        try:
+            return _parse_brussels_signs(locations, displays)
+        except ValueError as error:
+            if attempt == 2 or str(error) != 'Brussels sign displays are stale':
+                raise
 
 
 def _france_sensors():
