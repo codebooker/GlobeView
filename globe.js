@@ -201,8 +201,10 @@ import { createCyberTrails } from './cyber-trails.js';
   const radioListItems = document.getElementById('radio-list-items');
   const radioTarget = document.getElementById('radio-target');
   const radioTargetLabel = document.getElementById('radio-target-label');
+  const radioTuneButton = document.getElementById('radio-tune');
   const radioNearbyButton = document.getElementById('radio-nearby');
   let nearbyRadioStations = [];
+  let targetRadioStation = null;
   const radioTargetToggle = document.getElementById('radio-target-toggle');
   let radioTargetEnabled = true;
   let radioTuneAfterMove = false;
@@ -2800,18 +2802,21 @@ import { createCyberTrails } from './cyber-trails.js';
   }
 
   function tuneRadioTarget(autoplay) {
-    if (!enabled.radio || !radioTargetEnabled) return;
+    if (!enabled.radio || !radioTargetEnabled) return false;
     positionRadioTarget();
     const candidates = stationsAtTarget();
     const nearest = candidates[0]?.station;
+    targetRadioStation = nearest || null;
     radioTarget.classList.toggle('locked', !!nearest);
     radioTargetLabel.textContent = nearest ? nearest.name : 'Drag globe to a station dot';
+    radioTuneButton.hidden = !nearest;
     if (autoplay) radioList.hidden = true;
     nearbyRadioStations = candidates.slice(0, 12).map(item => item.station);
     radioNearbyButton.hidden = candidates.length < 2;
     radioNearbyButton.textContent = `${candidates.length} stations nearby`;
-    if (!nearest) return;
+    if (!nearest) return false;
     if (autoplay && (currentRadioId !== nearest.id || radioAudio.paused)) startRadio(nearest);
+    return true;
   }
 
   function showRadioList(stations, title) {
@@ -2856,7 +2861,7 @@ import { createCyberTrails } from './cyber-trails.js';
     if (attempt) attempt.catch(() => {
       if (currentRadioId === station.id) {
         clearTimeout(radioConnectTimer);
-        radioPlayerStatus.textContent = 'Could not start this stream. Try another station.';
+        radioPlayerStatus.textContent = 'Playback did not start. Tap Play station or choose another stream.';
       }
     });
   }
@@ -2877,6 +2882,9 @@ import { createCyberTrails } from './cyber-trails.js';
     if (!radioPlayer.hidden) radioPlayerStatus.textContent = 'This stream is unavailable. Try another station.';
   });
   document.getElementById('radio-list-close').addEventListener('click', () => { radioList.hidden = true; });
+  radioTuneButton.addEventListener('click', () => {
+    if (targetRadioStation) startRadio(targetRadioStation);
+  });
   radioNearbyButton.addEventListener('click', () => {
     if (nearbyRadioStations.length) showRadioList(nearbyRadioStations,
       `${nearbyRadioStations.length} stations nearest target`);
@@ -3362,7 +3370,8 @@ import { createCyberTrails } from './cyber-trails.js';
   map.on('dragstart', () => { radioList.hidden = true; });
   map.on('dragend', () => {
     if (!enabled.radio || !radioTargetEnabled) return;
-    radioTuneAfterMove = true;
+    // Safari requires play() inside a direct gesture; moveend can arrive too late.
+    radioTuneAfterMove = !tuneRadioTarget(true);
   });
   map.on('error', event => {
     console.error('MapLibre:', event.error || event);
