@@ -98,6 +98,7 @@ GIPOD_SOURCE = ('https://www.vlaanderen.be/datavindplaats/catalogus/'
                 'geplande-innames-en-mobiliteitshinder-publieke-geo-informatie-uit-gipod')
 NDW_BASE = 'https://opendata.ndw.nu/'
 NDW_SOURCE = 'https://docs.ndw.nu/producten/werkzaamhedenenevenementen/'
+NDW_SENSORS_FILE = 'snelheden_en_intensiteiten_meetgegevens_en_configuratie_meetlocaties.xml.gz'
 DGT_BASE = 'https://nap.dgt.es/datex2/v3/dgt/'
 DGT_CAMERAS_SOURCE = 'https://nap.dgt.es/es/dataset/camaras-dgt-datex2-v3-7'
 DGT_INCIDENTS_SOURCE = 'https://nap.dgt.es/es/dataset/incidencias-dgt-datex2-v3-7'
@@ -3508,6 +3509,104 @@ def _ndw_signs():
     return _parse_ndw_signs(_get_gzip_xml(NDW_BASE + 'dynamische_route_informatie_paneel.xml.gz'))
 
 
+def _parse_ndw_sensors(compressed, now=None):
+    """Stream NDW's combined DATEX site table and current speed/flow readings."""
+    now = time.time() if now is None else now
+    if len(compressed) > 5 * 1024 * 1024:
+        raise ValueError('NDW sensor publication exceeded compressed size limit')
+    sites = {}
+    features = []
+    published = []
+    site_count = reading_count = 0
+    with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as archive:
+        for _, element in ET.iterparse(archive, events=('end',)):
+            if archive.tell() > 260 * 1024 * 1024:
+                raise ValueError('NDW sensor publication exceeded expanded size limit')
+            kind = element.tag.rsplit('}', 1)[-1]
+            if kind == 'publicationTime':
+                published.append(_timestamp(element.text))
+            elif kind == 'measurementSite':
+                site_count += 1
+                if site_count > 25000:
+                    raise ValueError('NDW sensor site count exceeded limit')
+                site_id = element.get('id', '')
+                try:
+                    lon = float(element.findtext('.//{*}longitude'))
+                    lat = float(element.findtext('.//{*}latitude'))
+                except (TypeError, ValueError):
+                    lon = lat = float('nan')
+                if site_id and 3 <= lon <= 7.5 and 50.5 <= lat <= 54:
+                    indexes = {'trafficFlow': set(), 'trafficSpeed': set()}
+                    for characteristic in element.findall('{*}measurementSpecificCharacteristics'):
+                        value_type = characteristic.findtext('.//{*}specificMeasurementValueType')
+                        if (value_type in indexes
+                                and characteristic.findtext('.//{*}vehicleType') == 'anyVehicle'):
+                            indexes[value_type].add(characteristic.get('index'))
+                    if any(indexes.values()):
+                        sites[site_id] = ([lon, lat],
+                                          _clean(element.findtext('.//{*}measurementSiteName/{*}values/{*}value'), 100),
+                                          indexes)
+                element.clear()
+            elif kind == 'siteMeasurements':
+                reading_count += 1
+                if reading_count > 25000:
+                    raise ValueError('NDW sensor reading count exceeded limit')
+                reference = element.find('{*}measurementSiteReference')
+                site = sites.get(reference.get('id')) if reference is not None else None
+                observed_text = element.findtext('.//{*}measurementTimeDefault/{*}timeValue')
+                observed = _timestamp(observed_text)
+                if site and observed is not None and -300 <= now - observed <= 15 * 60:
+                    point, name, indexes = site
+                    flows, speeds = [], []
+                    for quantity in element.findall('{*}physicalQuantity'):
+                        index = quantity.get('index')
+                        if quantity.findtext('.//{*}dataError') == 'true':
+                            continue
+                        if index in indexes['trafficFlow']:
+                            value = quantity.findtext('.//{*}vehicleFlowRate')
+                            try:
+                                value = float(value)
+                                if math.isfinite(value) and 0 <= value <= 10000:
+                                    flows.append(value)
+                            except (TypeError, ValueError):
+                                pass
+                        elif index in indexes['trafficSpeed']:
+                            value = quantity.findtext('.//{*}speed')
+                            try:
+                                value = float(value)
+                                if math.isfinite(value) and 0 <= value <= 200:
+                                    speeds.append(value)
+                            except (TypeError, ValueError):
+                                pass
+                    if speeds or flows:
+                        detail = []
+                        if speeds:
+                            detail.append(f'Average lane speed {round(sum(speeds) / len(speeds))} km/h')
+                        if flows:
+                            detail.append(f'Flow {round(sum(flows))} vehicles/hour')
+                        features.append(_feature(point, {
+                            'key': f'nl:ndw:sensor:{_clean(reference.get("id"), 100)}',
+                            'layer': 'sensors', 'title': name or 'Traffic sensor',
+                            'detail': ' · '.join(detail), 'source': 'NDW Open Data · traffic measurements',
+                            'source_url': NDW_BASE, 'updated_at': observed_text,
+                        }))
+                element.clear()
+    if not site_count or not reading_count or not published or any(
+            timestamp is None or not -300 <= now - timestamp <= 20 * 60 for timestamp in published):
+        raise ValueError('NDW sensor publication is missing or stale')
+    if not features:
+        raise ValueError('NDW sensor publication has no current readings')
+    return features
+
+
+def _ndw_sensors():
+    request = urllib.request.Request(NDW_BASE + NDW_SENSORS_FILE, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=25) as response:
+        compressed = response.read(5 * 1024 * 1024 + 1)
+    return _parse_ndw_sensors(compressed)
+
+
 def _parse_hamburg_roads(payload, now=None):
     now = time.time() if now is None else now
     if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection':
@@ -5577,6 +5676,7 @@ _FETCHERS = {
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_bridge_openings': _ndw_bridge_openings,
         'nl_ndw_signs': _ndw_signs,
+        'nl_ndw_sensors': _ndw_sensors,
         'ch_zurich_roadworks': _zurich_roadworks,
         'ch_zurich_sensors': _zurich_sensors,
         'no_road_events': _norway_roads,

@@ -3,6 +3,7 @@ import base64
 import csv
 import datetime as dt
 import email.utils
+import gzip
 import io
 import threading
 import time
@@ -19,6 +20,33 @@ NOW = 1790445600  # 2026-09-26 UTC
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_ndw_sensors_join_current_sites_and_skip_bad_readings(self):
+        publication = dt.datetime.fromtimestamp(NOW - 90, dt.timezone.utc).isoformat()
+        observed = dt.datetime.fromtimestamp(NOW - 120, dt.timezone.utc).isoformat()
+        xml = f'''<root><payload><publicationTime>{publication}</publicationTime>
+          <measurementSiteTable><measurementSite id="site-1">
+            <measurementSiteName><values><value lang="nl">Amsterdam A10</value></values></measurementSiteName>
+            <measurementSiteLocation><latitude>52.37</latitude><longitude>4.90</longitude></measurementSiteLocation>
+            <measurementSpecificCharacteristics index="1"><specificMeasurementValueType>trafficFlow</specificMeasurementValueType><vehicleType>anyVehicle</vehicleType></measurementSpecificCharacteristics>
+            <measurementSpecificCharacteristics index="2"><specificMeasurementValueType>trafficSpeed</specificMeasurementValueType><vehicleType>anyVehicle</vehicleType></measurementSpecificCharacteristics>
+            <measurementSpecificCharacteristics index="3"><specificMeasurementValueType>trafficSpeed</specificMeasurementValueType><vehicleType>anyVehicle</vehicleType></measurementSpecificCharacteristics>
+          </measurementSite></measurementSiteTable></payload>
+          <payload><publicationTime>{publication}</publicationTime><measuredDataPublication>
+            <siteMeasurements><measurementSiteReference id="site-1"/>
+              <measurementTimeDefault><timeValue>{observed}</timeValue></measurementTimeDefault>
+              <physicalQuantity index="1"><vehicleFlowRate>480</vehicleFlowRate></physicalQuantity>
+              <physicalQuantity index="2"><speed>62</speed></physicalQuantity>
+              <physicalQuantity index="3"><dataError>true</dataError><speed>190</speed></physicalQuantity>
+            </siteMeasurements></measuredDataPublication></payload></root>'''
+        archive = gzip.compress(xml.encode())
+        rows = feeds._parse_ndw_sensors(archive, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [4.9, 52.37])
+        self.assertEqual(rows[0]['properties']['detail'],
+                         'Average lane speed 62 km/h · Flow 480 vehicles/hour')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_ndw_sensors(archive, NOW + 3600)
+
     def test_dublin_closures_require_current_window_and_coordinates(self):
         page = '''<table>
           <tr><td><a href="/travel-and-transport/read-latest-traffic-news/current-road-closures/active-road"
