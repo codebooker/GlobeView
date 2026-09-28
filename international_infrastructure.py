@@ -31,6 +31,8 @@ TII_TRAFFIC_BASE = 'https://iretg.carsprogram.org'
 TII_TRAFFIC_SOURCE = 'https://traffic.tii.ie/'
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
+COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
+COPENHAGEN_WORKS_SOURCE = 'https://www.opendata.dk/city-of-copenhagen/raden-over-vej-med-historik'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
@@ -395,6 +397,64 @@ def _point(geometry):
 
 def _feature(lonlat, properties):
     return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': lonlat}, 'properties': properties}
+
+
+def _parse_copenhagen_roadworks(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') if isinstance(payload, dict) else None
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(rows, list) or not 50 <= len(rows) <= 3000
+            or not isinstance(payload.get('totalFeatures'), int)
+            or payload['totalFeatures'] != len(rows)):
+        raise ValueError('Copenhagen roadwork publication is incomplete')
+    cases = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        properties = row.get('properties') or {}
+        case = str(properties.get('sagsnr') or '')
+        work = str(properties.get('gravetype') or '')
+        closed = str(properties.get('veje_spaerret_for_biltrafik') or '').casefold() == 'true'
+        start = _timestamp(properties.get('projekt_start'))
+        end = _timestamp(properties.get('projekt_slut'))
+        geometry = row.get('geometry') or {}
+        point = _point(geometry)
+        if (not re.fullmatch(r'\d{4,12}', case)
+                or properties.get('sagstype') != 'Gravetilladelser'
+                or ('kørebane' not in work.casefold() and not closed)
+                or start is None or end is None or not start <= now <= end
+                or not point or not (12.3 <= point[0] <= 12.75 and 55.58 <= point[1] <= 55.83)):
+            continue
+        priority = {'Point': 3, 'LineString': 2, 'Polygon': 1}.get(geometry.get('type'), 0)
+        if not priority or case in cases and cases[case][0] >= priority:
+            continue
+        title = _clean(properties.get('lokation'), 100) or 'Copenhagen roadwork'
+        category = _clean(properties.get('kategori'), 80)
+        end_date = dt.datetime.fromtimestamp(end, ZoneInfo('Europe/Copenhagen')).strftime('%-d %b %Y')
+        detail = ('Road closure permit' if closed else 'Roadway excavation permit')
+        if category:
+            detail += f' · {category}'
+        detail += f' · scheduled through {end_date}; actual road conditions may differ'
+        cases[case] = (priority, _feature(point, {
+            'key': f'dk:copenhagen:works:{case}', 'layer': 'construction',
+            'title': title, 'detail': detail,
+            'source': 'Københavns Kommune · CC BY 4.0',
+            'source_url': COPENHAGEN_WORKS_SOURCE,
+        }))
+    return [feature for _, feature in cases.values()]
+
+
+def _copenhagen_roadworks():
+    query = urllib.parse.urlencode({
+        'service': 'WFS', 'version': '1.0.0', 'request': 'GetFeature',
+        'typeName': 'k101:raaden_over_vej_events_anonym_aktuelt',
+        'outputFormat': 'json', 'SRSNAME': 'EPSG:4326',
+        'propertyName': ('sagsnr,sagstype,lokation,projekt_start,projekt_slut,'
+                         'kategori,gravetype,veje_spaerret_for_biltrafik,wkb_geometry'),
+        'CQL_FILTER': ("sagstype = 'Gravetilladelser' AND "
+                       "(gravetype ILIKE '%Kørebane%' OR veje_spaerret_for_biltrafik = 'True')"),
+    })
+    return _parse_copenhagen_roadworks(_get_json(f'{COPENHAGEN_WORKS_BASE}?{query}'))
 
 
 def _parse_dublin_closures(page, now=None):
@@ -6803,6 +6863,7 @@ _FETCHERS = {
         'ie_tii_cameras': _tii_cameras,
         'ie_tii_events': _tii_events,
         'ie_tii_signs': _tii_signs,
+        'dk_copenhagen_roadworks': _copenhagen_roadworks,
         'fi_signs': _fintraffic_signs,
         'fi_cameras': _fintraffic_cameras,
         'lt_eismoinfo_cameras': _lithuania_cameras,

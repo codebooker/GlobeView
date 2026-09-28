@@ -27,6 +27,37 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_copenhagen_roadworks_filter_dates_road_effect_and_duplicate_shapes(self):
+        now = 1790611200
+
+        def row(case, work='Kørebane', start=now - 3600, end=now + 86400,
+                closed='False', lon=12.55):
+            return {'geometry': {'type': 'Point', 'coordinates': [lon, 55.68]},
+                    'properties': {'sagsnr': str(case), 'sagstype': 'Gravetilladelser',
+                                   'lokation': 'Testvej 1', 'kategori': 'Water',
+                                   'gravetype': work, 'veje_spaerret_for_biltrafik': closed,
+                                   'projekt_start': dt.datetime.fromtimestamp(
+                                       start, dt.timezone.utc).isoformat(),
+                                   'projekt_slut': dt.datetime.fromtimestamp(
+                                       end, dt.timezone.utc).isoformat()}}
+
+        rows = [row(case) for case in range(1000, 1050)]
+        duplicate = row(1000)
+        duplicate['geometry'] = {'type': 'Polygon', 'coordinates': [
+            [[12.56, 55.68], [12.57, 55.68], [12.56, 55.69], [12.56, 55.68]]]}
+        rows.extend([duplicate, row(1050, work='Fortov'),
+                     row(1051, start=now + 3600), row(1052, end=now - 1),
+                     row(1053, closed='True', work='Fortov'), row(1054, lon=14)])
+        payload = {'type': 'FeatureCollection', 'features': rows,
+                   'totalFeatures': len(rows)}
+        features = feeds._parse_copenhagen_roadworks(payload, now)
+        self.assertEqual(len(features), 51)
+        self.assertEqual(features[0]['geometry']['coordinates'], [12.55, 55.68])
+        self.assertEqual(features[-1]['properties']['key'], 'dk:copenhagen:works:1053')
+        self.assertIn('Road closure permit', features[-1]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_copenhagen_roadworks(dict(payload, totalFeatures=10), now)
+
     def test_valencia_counters_show_only_recent_valid_vehicle_readings(self):
         now = 1790611200
 
