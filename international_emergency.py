@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from functools import lru_cache
@@ -38,6 +39,8 @@ SWEDEN_VMA_URL = 'https://vmaapi.sr.se/api/v3/alerts'
 SWEDEN_POLICE_URL = 'https://polisen.se/api/events'
 POLAND_RSO_URL = 'https://komunikaty.tvp.pl/komunikatyxml/wszystkie/ogolne/0?_format=json'
 POLAND_RSO_SOURCE = 'https://komunikaty.tvp.pl/komunikaty/wszystkie/ogolne'
+NETHERLANDS_P2000_URL = 'https://zwaailicht.nl/api/v1/alerts?limit=100'
+NETHERLANDS_P2000_SOURCE = 'https://zwaailicht.nl/'
 USTI_EMERGENCY_URL = 'https://pkr.kr-ustecky.cz/pkr/zasahy-jednotek-pozarni-ochrany/'
 PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/services/'
                 'OcorrenciasSite/FeatureServer/0/query?where=1%3D1&outFields='
@@ -51,6 +54,8 @@ _CACHE = {'until': 0, 'value': None, 'sources': {}, 'source_times': {}}
 _REFRESH_LOCK = threading.Lock()
 _SWEDEN_POLICE_LOCK = threading.Lock()
 _SWEDEN_POLICE_CACHE = {'until': 0, 'items': None}
+_P2000_HTTP_CACHE = {'etag': None, 'payload': None}
+_P2000_HTTP_LOCK = threading.Lock()
 _JTSK_TO_WGS84 = Transformer.from_crs('EPSG:5514', 'EPSG:4326', always_xy=True)
 
 
@@ -884,6 +889,84 @@ def _usti_emergencies():
                                   _xml(USTI_EMERGENCY_URL + 'feed.xml'))
 
 
+def parse_netherlands_p2000(payload, now=None):
+    """Recent public pager alerts, with source links required by Zwaailicht.nl."""
+    now = time.time() if now is None else now
+    if not isinstance(payload, dict) or payload.get('of') != 'alert':
+        raise ValueError('Dutch pager publication is invalid')
+    license_info = payload.get('license') or {}
+    if license_info.get('holder') != 'Zwaailicht.nl':
+        raise ValueError('Dutch pager attribution is missing')
+    rows = payload.get('results')
+    if not isinstance(rows, list) or len(rows) > 100:
+        raise ValueError('Dutch pager publication has an invalid size')
+    items = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        alert_id = str(row.get('id') or '')
+        if not re.fullmatch(r'[a-f0-9]{16}', alert_id):
+            continue
+        observed = _iso(row.get('observed_at'))
+        try:
+            age = now - dt.datetime.fromisoformat(observed.replace('Z', '+00:00')).timestamp()
+        except ValueError:
+            continue
+        if not -300 <= age <= 30 * 60:
+            continue
+        location = row.get('location') or {}
+        lon, lat = location.get('longitude'), location.get('latitude')
+        if not _valid(lon, lat) or not (3.2 <= float(lon) <= 7.3 and 50.7 <= float(lat) <= 53.6):
+            continue
+        city = _clean(location.get('city'), 70)
+        if not city:
+            continue
+        source_path = (row.get('_links') or {}).get('html')
+        if not isinstance(source_path, str) or not re.fullmatch(r'/[a-z0-9/\-]+', source_path):
+            continue
+        service = (row.get('service') or {}).get('id')
+        kind = (row.get('incident_type') or {}).get('id')
+        category = ('traffic' if kind == 'traffic' else
+                    'fire' if service == 'brandweer' else
+                    'medical' if service in ('ambulance', 'lifeliner') else
+                    'police' if service == 'politie' else 'warning')
+        label = {'brandweer': 'Fire brigade', 'ambulance': 'Ambulance',
+                 'lifeliner': 'Air ambulance', 'politie': 'Police',
+                 'knrm': 'Lifeboat'}.get(service, 'Emergency service')
+        priority = _clean(row.get('priority'), 12)
+        detail = ' · '.join(part for part in (priority,
+                           'Public pager alert; approximate location, incident unconfirmed') if part)
+        items.append(_item(f'nl:p2000:{alert_id}', lon, lat,
+                           f'{label} alert · {city}', detail,
+                           'Zwaailicht.nl · P2000 alert', NETHERLANDS_P2000_SOURCE + source_path.lstrip('/'),
+                           observed, category))
+    return items
+
+
+def _netherlands_p2000():
+    with _P2000_HTTP_LOCK:
+        headers = {'User-Agent': 'GlobeView/1.0 (+https://globeview.app/; public emergency map)',
+                   'Accept': 'application/json'}
+        if _P2000_HTTP_CACHE['etag']:
+            headers['If-None-Match'] = _P2000_HTTP_CACHE['etag']
+        request = urllib.request.Request(NETHERLANDS_P2000_URL, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                body = response.read(1024 * 1024 + 1)
+                etag = response.headers.get('ETag')
+            if len(body) > 1024 * 1024:
+                raise ValueError('Dutch pager publication exceeded size limit')
+            payload = json.loads(body)
+            rows = parse_netherlands_p2000(payload)
+            _P2000_HTTP_CACHE.update(etag=etag if etag and len(etag) <= 200 else None,
+                                     payload=payload)
+            return rows
+        except urllib.error.HTTPError as error:
+            if error.code != 304 or _P2000_HTTP_CACHE['payload'] is None:
+                raise
+            return parse_netherlands_p2000(_P2000_HTTP_CACHE['payload'])
+
+
 _LOADERS = {
     'nsw_rfs': lambda: parse_nsw(_json(NSW_URL)),
     'victoria': lambda: parse_victoria(_json(VIC_URL)),
@@ -899,6 +982,7 @@ _LOADERS = {
     'sweden_police': _sweden_police,
     'poland_rso': lambda: parse_poland_rso(_json(POLAND_RSO_URL)),
     'cz_usti_fire': _usti_emergencies,
+    'nl_p2000': _netherlands_p2000,
 }
 
 

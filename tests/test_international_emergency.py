@@ -7,6 +7,27 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_dutch_pager_alerts_are_recent_attributed_and_approximately_mapped(self):
+        now = dt.datetime(2026, 9, 28, 9, 35, tzinfo=dt.timezone.utc).timestamp()
+        alert = {'id': 'fc9d5e80e214ead6', 'observed_at': '2026-09-28T09:34:33Z',
+                 'title': 'Private street details', 'service': {'id': 'ambulance'},
+                 'priority': 'A1', 'incident_type': {'id': 'medical'},
+                 'location': {'city': 'Ottersum', 'latitude': 51.7103, 'longitude': 5.9963},
+                 '_links': {'html': '/ottersum/medisch/2026-09-28/14ead6'}}
+        payload = {'of': 'alert', 'license': {'holder': 'Zwaailicht.nl'},
+                   'results': [alert, {**alert, 'id': '1111111111111111',
+                                       'observed_at': '2026-09-28T08:00:00Z'},
+                               {**alert, 'id': '2222222222222222',
+                                '_links': {'html': 'https://untrusted.example/alert'}}]}
+        rows = feeds.parse_netherlands_p2000(payload, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['category'], 'medical')
+        self.assertEqual(rows[0]['title'], 'Ambulance alert · Ottersum')
+        self.assertEqual(rows[0]['sourceUrl'],
+                         'https://zwaailicht.nl/ottersum/medisch/2026-09-28/14ead6')
+        with self.assertRaisesRegex(ValueError, 'attribution'):
+            feeds.parse_netherlands_p2000({**payload, 'license': {}}, now)
+
     def test_poland_rso_maps_only_current_geocoded_advisories(self):
         now = dt.datetime(2026, 9, 28, 6, tzinfo=dt.timezone.utc)
         active = {'id': 23344126, 'title': 'Jakość wody przeznaczonej do spożycia',
