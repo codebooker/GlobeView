@@ -23,7 +23,7 @@ NSW_URL = 'https://www.rfs.nsw.gov.au/feeds/majorIncidents.json'
 VIC_URL = 'https://data.emergency.vic.gov.au/Show?pageId=getIncidentJSON'
 QLD_URL = 'https://publiccontent-gis-psba-qld-gov-au.s3.amazonaws.com/content/Feeds/BushfireCurrentIncidents/bushfireAlert_capau.xml'
 NZ_URL = 'https://alerthub.civildefence.govt.nz/atom/pwp'
-ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods'
+ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods.json?min-severity=3'
 BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
 UPPER_AUSTRIA_URL = 'https://cf-einsaetze.ooelfv.at/webext2/rss/json_laufend.txt'
 UPPER_AUSTRIA_SOURCE = 'https://einsaetze.ooelfv.at/einsatz/aktuell'
@@ -341,7 +341,9 @@ def _england_area(area_id):
 
 
 def parse_england(payload):
-    rows = [row for row in (payload.get('items') or []) if re.fullmatch(r'[A-Za-z0-9]+', str(row.get('floodAreaID') or ''))]
+    rows = [row for row in (payload.get('items') or [])
+            if row.get('severityLevel') in (1, 2, 3)
+            and re.fullmatch(r'[A-Za-z0-9]+', str(row.get('floodAreaID') or ''))]
     def build(row):
         area_id = row['floodAreaID']
         area = _england_area(area_id)

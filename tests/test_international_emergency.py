@@ -163,12 +163,19 @@ class InternationalEmergencyTests(unittest.TestCase):
         self.assertEqual(feeds.parse_nz_cap(root, now=now + dt.timedelta(days=3)), [])
 
     def test_england_uses_official_area_centroid(self):
-        payload = {'items': [{'floodAreaID': 'ABC12', 'severity': 'Flood warning',
+        payload = {'items': [{'floodAreaID': 'ABC12', 'severity': 'Flood warning', 'severityLevel': 2,
                               'description': 'River area', 'timeRaised': '2026-09-26T12:00:00'}]}
         with patch.object(feeds, '_england_area', return_value={'long': 0.8, 'lat': 51.7}):
             items = feeds.parse_england(payload)
         self.assertEqual(len(items), 1)
         self.assertEqual((items[0]['lon'], items[0]['lat']), (0.8, 51.7))
+
+    def test_england_omits_warnings_no_longer_in_force(self):
+        payload = {'items': [{'floodAreaID': 'ABC12', 'severity': 'Warning no longer in force',
+                              'severityLevel': 4, 'timeRaised': '2026-09-26T12:00:00'}]}
+        with patch.object(feeds, '_england_area') as area:
+            self.assertEqual(feeds.parse_england(payload), [])
+        area.assert_not_called()
 
     def test_england_area_uses_json_route_with_full_view_fallback(self):
         base = 'https://environment.data.gov.uk/flood-monitoring/id/floodAreas/ABC12'
