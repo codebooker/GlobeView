@@ -137,6 +137,12 @@ BRUSSELS_EVENTS_SOURCE = 'https://data.mobility.brussels/fr/info/events/'
 BRUSSELS_EVENTS_URL = ('https://data.mobility.brussels/geoserver/bm_traffic/wfs?'
                        'service=WFS&version=1.1.0&request=GetFeature&'
                        'typeName=bm_traffic:events&outputFormat=json&srsName=EPSG:4326')
+BRUSSELS_SIGNS_SOURCE = 'https://data.mobility.brussels/fr/info/a020de91-8071-443d-95f3-efa34fea4df2/'
+BRUSSELS_SIGN_LOCATIONS_URL = ('https://data.mobility.brussels/geoserver/bm_mobiris/wfs?'
+                               'service=WFS&version=1.1.0&request=GetFeature&'
+                               'typeName=bm_mobiris:pmv&outputFormat=json&srsName=EPSG:4326')
+BRUSSELS_SIGN_DISPLAYS_URL = ('https://api.mobility.brussels/datasets/v1/traffic/'
+                              'collections/pmv_display/items/?limit=1000&f=json')
 ZURICH_ROADWORKS_URL = ('https://maps.zh.ch/wfs/TbaBaustellenZHWFS?SERVICE=WFS&REQUEST=GetFeature'
                         '&VERSION=2.0.0&TYPENAMES=ms:baustellen-uebersicht'
                         '&OUTPUTFORMAT=application%2Fjson&SRSNAME=EPSG:4326')
@@ -741,7 +747,6 @@ def _parse_madrid_cameras(root, published):
             'title': _clean(data.get('Nombre'), 110) or f'Madrid road camera {camera_id}',
             'detail': 'Latest available still · normally updated every 5 min',
             'snapshot_url': f'/madrid-camera/{camera_id}',
-            'snapshot_fallback_url': _madrid_camera_url(camera_id),
             'snapshot_refresh_ms': 300000,
             'source': 'Madrid City Council · CC BY 4.0', 'source_url': MADRID_CAMERAS_SOURCE,
             'updated_at': published,
@@ -3070,6 +3075,64 @@ def _brussels_events():
     return _parse_brussels_events(_get_json(BRUSSELS_EVENTS_URL))
 
 
+def _parse_brussels_signs(locations, displays, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(locations, dict) or locations.get('type') != 'FeatureCollection'
+            or not isinstance(locations.get('features'), list)
+            or (isinstance(locations.get('totalFeatures'), int)
+                and locations['totalFeatures'] != len(locations['features']))
+            or not isinstance(displays, dict) or displays.get('type') != 'FeatureCollection'
+            or not isinstance(displays.get('features'), list)
+            or displays.get('numberMatched') != len(displays['features'])):
+        raise ValueError('Brussels sign catalog is incomplete or invalid')
+    points = {}
+    for row in locations['features']:
+        props = row.get('properties') or {}
+        identifier = str(props.get('id_mobigis') or '')
+        point = _point(row.get('geometry'))
+        if (re.fullmatch(r'[A-Za-z0-9_-]{2,32}', identifier) and point
+                and 4.2 <= point[0] <= 4.5 and 50.7 <= point[1] <= 51.0):
+            points[identifier] = (point, props)
+    features = []
+    recent = False
+    for row in displays['features']:
+        props = row.get('properties') or {}
+        updated = _brussels_event_time(props.get('last_update'))
+        if updated is None or not -300 <= now - updated <= 20 * 60:
+            continue
+        recent = True
+        identifier = str(props.get('id_mobigis') or '')
+        if props.get('status') != 'OK' or identifier not in points:
+            continue
+        messages = []
+        for language in ('fr', 'nl'):
+            lines = [_clean(props.get(f'{language}_l{i}'), 70) for i in range(1, 5)]
+            message = _clean(' / '.join(line for line in lines if line), 150)
+            if message and message not in messages:
+                messages.append(message)
+        if not messages:
+            continue
+        point, site = points[identifier]
+        location = _clean(site.get('localisation') or props.get('localisation'), 70)
+        direction = _clean(site.get('sens') or props.get('sens'), 50)
+        features.append(_feature(point, {
+            'key': f'be:brussels:sign:{identifier}', 'layer': 'signs',
+            'title': 'Message sign' + (f' · {location}' if location else ''),
+            'detail': ' · '.join(part for part in (direction, *messages) if part)[:280],
+            'source': 'Brussels Mobility · CC0', 'source_url': BRUSSELS_SIGNS_SOURCE,
+            'updated_at': dt.datetime.fromtimestamp(updated, dt.timezone.utc).isoformat(),
+        }))
+    if displays['features'] and not recent:
+        raise ValueError('Brussels sign displays are stale')
+    return features
+
+
+def _brussels_signs():
+    locations = _get_json(BRUSSELS_SIGN_LOCATIONS_URL)
+    displays = _get_json(BRUSSELS_SIGN_DISPLAYS_URL)
+    return _parse_brussels_signs(locations, displays)
+
+
 def _france_sensors():
     now = time.time()
     if now >= _FRANCE_SENSOR_REFERENCES['until']:
@@ -3891,7 +3954,6 @@ def _parse_dgt_cameras(root, now=None):
             'detail': ' · '.join(part for part in (f'km {km}' if km else '', province,
                                               'Latest available still') if part),
             'snapshot_url': f'/dgt-camera/{image_id}', 'snapshot_refresh_ms': 120000,
-            'snapshot_fallback_url': _dgt_camera_url(image_id),
             'source': 'Spain DGT · CC BY', 'source_url': DGT_CAMERAS_SOURCE,
             'updated_at': published,
         }))
@@ -5675,6 +5737,7 @@ _FETCHERS = {
         'fr_traffic_sensors': _france_sensors,
         'be_brussels_counters': _brussels_counters,
         'be_brussels_events': _brussels_events,
+        'be_brussels_signs': _brussels_signs,
         'be_flemish_roads': _belgium_roads,
         'nl_ndw_roads': _ndw_roads,
         'nl_ndw_bridge_openings': _ndw_bridge_openings,

@@ -324,6 +324,34 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_brussels_events({'type': 'FeatureCollection', 'features': [old]}, now)
 
+    def test_brussels_signs_require_fresh_working_text_and_locations(self):
+        now = dt.datetime(2026, 9, 28, 10, 55, tzinfo=dt.timezone.utc).timestamp()
+        locations = {'type': 'FeatureCollection', 'totalFeatures': 2, 'features': [
+            {'geometry': {'type': 'Point', 'coordinates': [4.35, 50.84]},
+             'properties': {'id_mobigis': 'PMV1', 'localisation': 'Ring'}},
+            {'geometry': {'type': 'Point', 'coordinates': [4.36, 50.85]},
+             'properties': {'id_mobigis': 'PMV2'}}]}
+        def display(identifier, **overrides):
+            props = {'id_mobigis': identifier, 'status': 'OK',
+                     'last_update': '2026-09-28T12:54:00',
+                     'fr_l1': 'SORTIE FERMEE', 'nl_l1': 'AFRIT DICHT'}
+            props.update(overrides)
+            return {'properties': props}
+        displays = {'type': 'FeatureCollection', 'numberMatched': 5, 'features': [
+            display('PMV1'), display('PMV2', status='FAULT'),
+            display('PMV2', fr_l1='', nl_l1=''), display('UNKNOWN'),
+            display('PMV2', last_update='2026-09-28T10:00:00')]}
+        rows = feeds._parse_brussels_signs(locations, displays, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'be:brussels:sign:PMV1')
+        self.assertIn('SORTIE FERMEE · AFRIT DICHT', rows[0]['properties']['detail'])
+        self.assertEqual(rows[0]['properties']['updated_at'], '2026-09-28T10:54:00+00:00')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_brussels_signs(locations, {'type': 'FeatureCollection',
+                'numberMatched': 1, 'features': [display('PMV1', last_update='2026-09-28T10:00:00')]}, now)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_brussels_signs(locations, {**displays, 'numberMatched': 6}, now)
+
     def test_vigo_cameras_reject_unavailable_stills_and_untrusted_urls(self):
         row = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-8.72, 42.23]},
                'properties': {'id': '05', 'nombre': 'Junction',
@@ -1022,8 +1050,7 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_madrid_cameras(root, NOW)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/madrid-camera/06303')
-        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
-                         'https://informo.madrid.es/cameras/Camara06303.jpg')
+        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
 
     def test_madrid_camera_health_checks_image_body(self):
         class Response(io.BytesIO):
@@ -1242,8 +1269,7 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'],
                          '/dgt-camera/168408')
-        self.assertEqual(rows[0]['properties']['snapshot_fallback_url'],
-                         'https://etraffic.dgt.es/camarasEtraffic/168408.jpg')
+        self.assertNotIn('snapshot_fallback_url', rows[0]['properties'])
         self.assertEqual(rows[0]['geometry']['coordinates'], [-0.4282263, 42.304092])
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_dgt_cameras(root, now + 4 * 3600)
