@@ -2009,6 +2009,7 @@ import { createCyberTrails } from './cyber-trails.js';
       showStatus('This aircraft has no trackable ICAO position.', true);
       return;
     }
+    clearMapPopups();
     stopTracking();
     if (cyberFocus) setCyberFocus(false);
     const layer = governmentAircraft(item) ? 'govair' : 'civair';
