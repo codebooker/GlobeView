@@ -390,11 +390,6 @@ MEDIA_RESPONSE_CACHE = SharedResponseCache(
     max_bytes=int(os.getenv('AMERICAMAP_MEDIA_CACHE_MAX_BYTES', str(96 * 1024 * 1024))),
     load_semaphore=MEDIA_UPSTREAM_SEMAPHORE,
 )
-COMPRESSED_RESPONSE_CACHE = SharedResponseCache(
-    None,
-    max_entries=int(os.getenv('AMERICAMAP_GZIP_CACHE_MAX_ENTRIES', '256')),
-    max_bytes=int(os.getenv('AMERICAMAP_GZIP_CACHE_MAX_BYTES', str(64 * 1024 * 1024))),
-)
 STATIC_RESPONSE_CACHE = SharedResponseCache(
     None,
     max_entries=64,
@@ -19228,21 +19223,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             content = content.encode('utf-8')
         elif isinstance(content, bytearray):
             content = bytes(content)
-        compressible = (
-            content_type.startswith('text/') or
-            any(token in content_type for token in ('json', 'javascript', 'xml', 'svg'))
-        )
-        content_digest = None
         etag = None
         if status == 200 and cache_control != 'no-store':
-            content_digest = hashlib.blake2b(content, digest_size=16).hexdigest()
-            etag = f'W/"{content_digest}"'
+            etag = f'W/"{hashlib.blake2b(content, digest_size=16).hexdigest()}"'
             request_etags = str(self.headers.get('If-None-Match') or '')
             if request_etags.strip() == '*' or etag in request_etags:
                 self.send_response(304)
                 self.send_header('ETag', etag)
-                if compressible:
-                    self.send_header('Vary', 'Accept-Encoding')
                 if allow_origin:
                     self.send_header('Access-Control-Allow-Origin', allow_origin)
                 for key, value in (extra_headers or {}).items():
@@ -19251,31 +19238,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_header('Content-Length', '0')
                 self.end_headers()
                 return
-        use_gzip = (
-            len(content) >= 1024 and
-            compressible and
-            'gzip' in str(self.headers.get('Accept-Encoding') or '').lower()
-        )
-        if use_gzip:
-            if content_digest is None:
-                content_digest = hashlib.blake2b(content, digest_size=16).hexdigest()
-            try:
-                content, _, _ = COMPRESSED_RESPONSE_CACHE.get_or_load(
-                    f'gzip:v1:{content_digest}',
-                    lambda: (gzip.compress(content, compresslevel=4), 'application/gzip'),
-                    ttl=86400,
-                    stale_ttl=7 * 86400,
-                    persist=False,
-                )
-            except Exception:
-                content = gzip.compress(content, compresslevel=4)
         self.send_response(status)
         self.send_header('Content-Type', content_type)
         if etag:
             self.send_header('ETag', etag)
-        if use_gzip:
-            self.send_header('Content-Encoding', 'gzip')
-            self.send_header('Vary', 'Accept-Encoding')
         if allow_origin:
             self.send_header('Access-Control-Allow-Origin', allow_origin)
         for key, value in (extra_headers or {}).items():
@@ -19534,7 +19500,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'cache': {
                 'api': API_RESPONSE_CACHE.snapshot(),
                 'media': MEDIA_RESPONSE_CACHE.snapshot(),
-                'compression': COMPRESSED_RESPONSE_CACHE.snapshot(),
                 'static': STATIC_RESPONSE_CACHE.snapshot(),
             },
             'server': self.server.snapshot() if hasattr(self.server, 'snapshot') else {},
@@ -21818,5 +21783,4 @@ if __name__ == '__main__':
         CACHE_REFRESH_EXECUTOR.shutdown(wait=True, cancel_futures=True)
         API_RESPONSE_CACHE.close()
         MEDIA_RESPONSE_CACHE.close()
-        COMPRESSED_RESPONSE_CACHE.close()
         STATIC_RESPONSE_CACHE.close()
