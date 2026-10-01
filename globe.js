@@ -145,6 +145,8 @@ import { createCyberTrails } from './cyber-trails.js';
   const arcgisQueryKeys = new Map();
   const fetchedAt = new Map();
   const roadCache = new Map();
+  const roadFailureUntil = new Map();
+  let lastRoadFailureNoticeAt = 0;
   let roadRegions = [];
   let styleReady = false;
   setTimeout(() => { if (!styleReady) showLoadingError('The globe is taking too long to load. Please retry.'); }, 20000);
@@ -1427,12 +1429,29 @@ import { createCyberTrails } from './cyber-trails.js';
     const key = `${region.code}/${endpoint}`;
     const cached = roadCache.get(key);
     if (cached && Date.now() - cached.at < refreshMs) return cached.items;
-    const response = await fetch(`/511/${region.code}/${endpoint}`, { signal });
-    if (!response.ok) throw new Error(`${region.name} ${endpoint}: ${response.status}`);
-    const data = await response.json();
-    const items = Array.isArray(data.item2) ? data.item2 : [];
-    roadCache.set(key, { at: Date.now(), items });
-    return items;
+    if (Date.now() < (roadFailureUntil.get(key) || 0)) {
+      if (cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.items;
+      const error = new Error(`${region.name} ${endpoint}: retry pending`);
+      error.cooldown = true;
+      throw error;
+    }
+    try {
+      const response = await fetch(`/511/${region.code}/${endpoint}`, { signal });
+      if (!response.ok) {
+        const retrySeconds = Number(response.headers.get('Retry-After')) || 300;
+        roadFailureUntil.set(key, Date.now() + Math.min(900, Math.max(60, retrySeconds)) * 1000);
+        throw new Error(`${region.name} ${endpoint}: ${response.status}`);
+      }
+      const data = await response.json();
+      if (!Array.isArray(data.item2)) throw new Error(`${region.name} ${endpoint}: invalid response`);
+      roadFailureUntil.delete(key);
+      roadCache.set(key, { at: Date.now(), items: data.item2 });
+      return data.item2;
+    } catch (error) {
+      if (!signal.aborted && !roadFailureUntil.has(key)) roadFailureUntil.set(key, Date.now() + 60000);
+      if (!signal.aborted && cached && Date.now() - cached.at < 30 * 60 * 1000) return cached.items;
+      throw error;
+    }
   }
 
   async function fetchInternationalRoad(type, bounds, signal) {
@@ -1482,7 +1501,10 @@ import { createCyberTrails } from './cyber-trails.js';
           const items = await fetchRoad(region, endpoint, POINT[type].refreshMs, controller.signal);
           rows.push(...items.map(item => ({ item, region, endpoint })));
         } catch (error) {
-          if (!controller.signal.aborted) { failures += 1; console.warn('Road feed:', error); }
+          if (!controller.signal.aborted) {
+            failures += 1;
+            if (!error.cooldown) console.warn('Road feed:', error);
+          }
         }
       }
     }));
@@ -1535,7 +1557,10 @@ import { createCyberTrails } from './cyber-trails.js';
       // Keep the last working markers when an upstream request briefly fails.
       // Retry sooner than the normal refresh without starting a request every tick.
       fetchedAt.set(type, Date.now() - POINT[type].refreshMs + 30000);
-      showStatus(`${POINT[type].label} feed is temporarily unavailable. Retrying.`, true);
+      if (Date.now() - lastRoadFailureNoticeAt > 5 * 60 * 1000) {
+        lastRoadFailureNoticeAt = Date.now();
+        showStatus('Some road feeds are unavailable here. Retrying later.', true, 6000);
+      }
       return;
     }
     setPoints(type, features, records);
