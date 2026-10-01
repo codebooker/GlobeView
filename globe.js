@@ -159,6 +159,8 @@ import { createCyberTrails } from './cyber-trails.js';
   let rotationTime = 0;
   let cyberFocus = false;
   let activePointPopup = null;
+  let activeArcgisPopup = null;
+  const aircraftSelectionEvents = new WeakSet();
   let cycloneGuidanceController = null;
   let selectedCycloneId = null;
   let cycloneGuidanceData = EMPTY;
@@ -878,6 +880,13 @@ import { createCyberTrails } from './cyber-trails.js';
       map.on('mouseenter', layerId, () => { if (!cyberFocus || type === 'scans') map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
       map.on('click', layerId, event => {
+        if (type === 'govair' || type === 'civair') {
+          if (event.originalEvent && typeof event.originalEvent === 'object') {
+            aircraftSelectionEvents.add(event.originalEvent);
+          }
+        } else if (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent)) {
+          return;
+        }
         if (enabled.radio && map.getLayer('gm-radio-points') &&
             map.queryRenderedFeatures(event.point, { layers: ['gm-radio-points'] }).length) return;
         const item = event.features?.[0];
@@ -888,7 +897,7 @@ import { createCyberTrails } from './cyber-trails.js';
           const aircraft = aircraftSnapshot.find(row => String(row.hex || '').toLowerCase() === ref)
             || { hex: ref, flight: item.properties.flight || '', r: item.properties.registration || '',
               lat: item.geometry.coordinates[1], lon: item.geometry.coordinates[0] };
-          activePointPopup?.remove();
+          clearMapPopups();
           startTracking(aircraft, true);
           return;
         }
@@ -920,6 +929,7 @@ import { createCyberTrails } from './cyber-trails.js';
     setPointLayerFilter('gm-power-points', ['==', ['geometry-type'], 'Point']);
     for (const id of ['gm-power-fill', 'gm-power-line', 'gm-power-points']) {
       map.on('click', id, event => {
+        if (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent)) return;
         const item = event.features?.[0];
         if (item) openPopup('power', item.properties.ref, event.lngLat.toArray());
       });
@@ -1271,7 +1281,7 @@ import { createCyberTrails } from './cyber-trails.js';
     if (!enabled[type] || zoomHint(type) || (cyberFocus && type !== 'scans')) return;
     const meta = refs.get(type)?.get(ref);
     if (!meta) return;
-    activePointPopup?.remove();
+    clearMapPopups();
     const root = document.createElement('div');
     const title = textElement('strong', 'popup-title', meta.title || POINT[type].label);
     const detail = textElement('span', 'popup-detail', meta.detail || '');
@@ -1386,6 +1396,15 @@ import { createCyberTrails } from './cyber-trails.js';
         }
       }).catch(error => console.warn('Road detail:', error));
     }
+  }
+
+  function clearMapPopups() {
+    activePointPopup?.remove();
+    activeArcgisPopup?.remove();
+    seaPopup?.remove();
+    activePointPopup = null;
+    activeArcgisPopup = null;
+    seaPopup = null;
   }
 
   function currentBounds() {
@@ -2624,7 +2643,7 @@ import { createCyberTrails } from './cyber-trails.js';
   async function openSeaConditions(coordinates) {
     const [lon, lat] = coordinates.map(Number);
     if (!validCoordinate(lat, lon)) return;
-    seaPopup?.remove();
+    clearMapPopups();
     const root = document.createElement('div');
     root.append(textElement('span', 'popup-kicker', 'Sea conditions · model forecast'),
       textElement('strong', 'popup-title', `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`));
@@ -3205,6 +3224,7 @@ import { createCyberTrails } from './cyber-trails.js';
         paint: { 'line-color': nwsColor, 'line-width': 1.5, 'line-opacity': 0.85 }, layout: { visibility: 'none' } });
       for (const id of ['gm-nws-alerts-area-fill', 'gm-nws-alerts-area-line']) {
         map.on('click', id, event => {
+          if (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent)) return;
           const item = event.features?.[0];
           if (item) openPopup('nws_alerts', item.properties.ref, event.lngLat.toArray());
         });
@@ -3222,6 +3242,7 @@ import { createCyberTrails } from './cyber-trails.js';
         paint: { 'line-color': worldAlertColor, 'line-width': 1.5, 'line-opacity': 0.85 }, layout: { visibility: 'none' } });
       for (const id of ['gm-world-alerts-area-fill', 'gm-world-alerts-area-line']) {
         map.on('click', id, event => {
+          if (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent)) return;
           const item = event.features?.[0];
           if (item) openPopup('world_alerts', item.properties.ref, event.lngLat.toArray());
         });
@@ -3329,11 +3350,13 @@ import { createCyberTrails } from './cyber-trails.js';
     radioTuneAfterMove = false;
   });
   map.on('click', event => {
+    if (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent)) return;
     const layers = Object.keys(ARCGIS).filter(type => enabled[type] && map.getLayer(`gm-arcgis-${type}-layer`))
       .map(type => `gm-arcgis-${type}-layer`);
     if (!layers.length) return;
     const feature = map.queryRenderedFeatures(event.point, { layers })[0];
     if (!feature) return;
+    clearMapPopups();
     const type = feature.layer.id.replace('gm-arcgis-', '').replace('-layer', '');
     const properties = feature.properties || {};
     const title = type === 'rail_narn' ? (properties.SUBDIV || properties.DIVISION || 'Rail segment')
@@ -3365,7 +3388,8 @@ import { createCyberTrails } from './cyber-trails.js';
     const source = document.createElement('small');
     source.textContent = ARCGIS[type].source + ' · inventory, not live status';
     content.append(source);
-    new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(event.lngLat).setDOMContent(content).addTo(map);
+    activeArcgisPopup = new maplibregl.Popup({ maxWidth: '280px' })
+      .setLngLat(event.lngLat).setDOMContent(content).addTo(map);
   });
   map.on('dragstart', () => { radioList.hidden = true; });
   map.on('dragend', () => {
@@ -3378,6 +3402,7 @@ import { createCyberTrails } from './cyber-trails.js';
     if (!styleReady) showStatus('Map style is unavailable.', true, 0);
   });
   map.on('click', 'gm-radio-points', event => {
+    if (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent)) return;
     if (window.globalMapDrawing || !enabled.radio || !event.features?.length) return;
     const station = radioStations.get(event.features[0].properties.id);
     if (!station) return;
@@ -3875,6 +3900,7 @@ import { createCyberTrails } from './cyber-trails.js';
     setPanelOpen(event.currentTarget.getAttribute('aria-expanded') !== 'true');
   });
   map.on('click', event => {
+    if (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent)) return;
     if (window.innerWidth < 901) setPanelOpen(false);
     if (window.globalMapTripPicking || window.globalMapDrawing) return;
     if (enabled.marine) {

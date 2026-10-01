@@ -205,7 +205,7 @@ body.shipping-routes-on .shipping-route-legend{display:flex}
 .github-link svg{width:15px;height:15px}
 body.attribution-expanded .github-link{bottom:calc(88px + env(safe-area-inset-bottom))}
 .cyber-map-key{position:fixed;z-index:4;right:62px;bottom:85px;width:226px;padding:11px 12px;border:1px solid #68565c;border-radius:5px;background:#1b272deF;box-shadow:0 8px 24px #0006;color:#dce6e5}
-.aircraft-track{position:fixed;z-index:5;top:64px;right:16px;width:270px;padding:11px 12px;border:1px solid #9b8355;border-radius:5px;background:#1b292eee;box-shadow:0 8px 24px #0007;color:#e9ece9}
+.aircraft-track{position:fixed;z-index:5;top:64px;right:16px;width:270px;padding:11px 12px;border:1px solid #9b8355;border-radius:5px;background:#17262b;box-shadow:0 8px 24px #0007;color:#e9ece9}
 .aircraft-track[hidden]{display:none}
 .aircraft-track-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#ddc690;font-size:9px;font-weight:700;letter-spacing:.09em}
 .aircraft-track-head button{padding:3px 6px;border:1px solid #816d48;border-radius:3px;background:#463c2d;color:#f2e6ce;font-size:10px;letter-spacing:0}
