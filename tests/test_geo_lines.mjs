@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { splitLineAtAntimeridian } from '../geo-lines.mjs';
+import { boundsAroundLongitude, splitLineAtAntimeridian } from '../geo-lines.mjs';
+
+test('cyclone guidance bounds stay together across the date line', () => {
+  const bounds = boundsAroundLongitude([[144.6, 17.7], [179.8, 55.4], [-174.7, 48.2]], 144.6);
+  assert.deepEqual([bounds[0][0], bounds[0][1], bounds[1][1]], [144.6, 17.7, 55.4]);
+  assert.ok(Math.abs(bounds[1][0] - 185.3) < 1e-9);
+});
 
 test('westward storm tracks connect at the date line', () => {
   const segments = splitLineAtAntimeridian([[-178.6, 24.3], [178.3, 25.4], [175.4, 26.4]]);

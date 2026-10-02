@@ -1,6 +1,6 @@
 /* One MapLibre map renders the globe and every live layer. */
 import { createCyberTrails } from './cyber-trails.js';
-import { splitLineAtAntimeridian } from './geo-lines.mjs';
+import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?v=2';
 (async () => {
   'use strict';
 
@@ -2377,10 +2377,7 @@ import { splitLineAtAntimeridian } from './geo-lines.mjs';
   function frameCycloneGuidance(tracks, stormCoordinates) {
     const coreTracks = tracks.filter(track => track.kind !== 'ensemble');
     const positions = (coreTracks.length ? coreTracks : tracks).flatMap(track => track.points || []).concat([stormCoordinates]);
-    const west = Math.min(...positions.map(point => point[0]));
-    const east = Math.max(...positions.map(point => point[0]));
-    const south = Math.min(...positions.map(point => point[1]));
-    const north = Math.max(...positions.map(point => point[1]));
+    const bounds = boundsAroundLongitude(positions, stormCoordinates[0]);
     const selectedId = selectedCycloneId;
     if (window.innerWidth <= 700) map.once('moveend', () => {
       if (selectedCycloneId !== selectedId || cycloneGuidancePanel.hidden) return;
@@ -2392,14 +2389,10 @@ import { splitLineAtAntimeridian } from './geo-lines.mjs';
           duration: 450, essential: true });
       }
     });
-    if (east - west > 180) {
-      map.easeTo({ center: stormCoordinates, zoom: 4, duration: 800, essential: true });
-      return;
-    }
     const wide = map.getCanvas().clientWidth > 700;
     const panelBottomPadding = Math.ceil(map.getCanvas().getBoundingClientRect().bottom -
       cycloneGuidancePanel.getBoundingClientRect().top + 24);
-    map.fitBounds([[west, south], [east, north]], {
+    map.fitBounds(bounds, {
       padding: wide ? { top: 110, right: 365, bottom: 70, left: 320 }
         : { top: 75, right: 24, bottom: Math.max(250, panelBottomPadding), left: 24 },
       maxZoom: 5.8, duration: 800, essential: true,
