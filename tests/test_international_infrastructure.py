@@ -27,6 +27,32 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_zaragoza_only_current_road_effects_with_city_coordinates(self):
+        now = dt.datetime(2026, 10, 2, 12, tzinfo=dt.timezone.utc).timestamp()
+
+        def row(identifier, category=1, start='2026-10-01T00:00:00',
+                end='2026-10-03T00:00:00', reason='Street repairs',
+                coordinates=None):
+            return {'id': identifier, 'tipo': {'id': category}, 'inicio': start, 'fin': end,
+                    'title': 'Main street', 'motivo': reason, 'lastUpdated': '2026-10-02T08:00:00',
+                    'geometry': {'type': 'Point', 'coordinates': coordinates or [-0.89, 41.65]}}
+
+        rows = [row(1), row(2, category=2, reason='Obras en el carril derecho'),
+                row(3, category=2, reason='Renovación de aceras'),
+                row(4, category=0),
+                row(5, start='2026-10-04T00:00:00'),
+                row(6, end='2026-10-01T00:00:00'),
+                row(7, coordinates=[-3.7, 40.4]), row(1)]
+        payload = {'totalCount': len(rows), 'result': rows}
+        features = feeds._parse_zaragoza_roadworks(payload, now)
+        self.assertEqual([item['properties']['key'] for item in features], ['zgz:1', 'zgz:2'])
+        self.assertTrue(all(item['properties']['layer'] == 'construction' for item in features))
+        self.assertEqual(features[0]['properties']['source'], 'Ayuntamiento de Zaragoza')
+        self.assertEqual(features[0]['properties']['updated_at'],
+                         dt.datetime(2026, 10, 2, 8, tzinfo=ZoneInfo('Europe/Madrid')).timestamp())
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_zaragoza_roadworks({'totalCount': len(rows) + 1, 'result': rows}, now)
+
     def test_zagreb_closures_require_fresh_publication_and_current_window(self):
         now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
 

@@ -45,6 +45,8 @@ ZAGREB_CLOSURES_SOURCE = 'https://data.zagreb.hr/dataset/prometnice'
 MADRID_BASE = 'https://informo.madrid.es/informo/tmadrid/'
 MADRID_SOURCE = 'https://datos.madrid.es/dataset/202062-0-trafico-incidencias-viapublica'
 MADRID_CAMERAS_SOURCE = 'https://datos.madrid.es/dataset/202088-0-trafico-camaras'
+ZARAGOZA_ROADS_URL = 'https://www.zaragoza.es/sede/servicio/via-publica/incidencia.json?rows=500&srsname=wgs84'
+ZARAGOZA_ROADS_SOURCE = 'https://www.zaragoza.es/sede/servicio/catalogo/67'
 LYON_CAMERAS_SOURCE = 'https://www.data.gouv.fr/datasets/cameras-web-criter-de-la-metropole-de-lyon'
 LYON_WORKS_SOURCE = 'https://data.grandlyon.com/portail/fr/jeux-de-donnees/chantiers-perturbants-metropole-lyon/info'
 LYON_WORKS_METADATA_URL = 'https://www.data.gouv.fr/api/1/datasets/chantiers-perturbants-de-la-metropole-de-lyon/'
@@ -7421,6 +7423,70 @@ def lithuania_event_detail(event_id, now=None):
             'detail': ' · '.join(part for part in (fields.get('Place', ''), description, end_label) if part)}
 
 
+def _parse_zaragoza_roadworks(payload, now=None):
+    """Map only current, located city-reported closures and clear road impacts."""
+    now = dt.datetime.fromtimestamp(time.time() if now is None else now, ZoneInfo('Europe/Madrid')).date()
+    rows = payload.get('result') if isinstance(payload, dict) else None
+    if (not isinstance(rows, list) or not isinstance(payload.get('totalCount'), int)
+            or payload['totalCount'] != len(rows) or len(rows) > 500):
+        raise ValueError('Zaragoza roadwork publication is incomplete')
+    features = []
+    seen = set()
+    road_impact = re.compile(r'\b(?:calzada|carril|tr[aá]fico|circulaci[oó]n|cruce|'
+                             r'asfalt\w*|paviment\w*|rotonda|puente|isleta)\b', re.I)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        identifier = row.get('id')
+        category = (row.get('tipo') or {}).get('id') if isinstance(row.get('tipo'), dict) else None
+        if not isinstance(identifier, int) or not 0 < identifier < 1_000_000_000 or identifier in seen:
+            continue
+        if category not in (1, 2):
+            continue
+        reason = _clean(row.get('motivo'), 140)
+        effect = _clean(row.get('observaciones'), 180)
+        if category == 2 and not road_impact.search(f'{reason} {effect}'):
+            continue
+        try:
+            start = dt.datetime.fromisoformat(str(row.get('inicio'))).date()
+            end = dt.datetime.fromisoformat(str(row.get('fin'))).date()
+        except ValueError:
+            continue
+        if not start <= now <= end:
+            continue
+        point = _point(row.get('geometry'))
+        if not point or not (-1.05 <= point[0] <= -0.70 and 41.50 <= point[1] <= 41.80):
+            continue
+        title = _clean(row.get('title') or row.get('calle'), 90)
+        if not title:
+            continue
+        updated = None
+        if row.get('lastUpdated'):
+            try:
+                updated = dt.datetime.fromisoformat(str(row['lastUpdated']))
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=ZoneInfo('Europe/Madrid'))
+                updated = updated.timestamp()
+            except ValueError:
+                pass
+        detail = 'Scheduled road closure' if category == 1 else 'Scheduled road impact'
+        if reason:
+            detail += ' · ' + reason
+        detail += ' · Through ' + end.isoformat()
+        properties = {'key': f'zgz:{identifier}', 'layer': 'construction', 'title': title,
+                      'detail': detail, 'source': 'Ayuntamiento de Zaragoza',
+                      'source_url': f'https://www.zaragoza.es/sede/servicio/via-publica/incidencia/{identifier}'}
+        if updated is not None:
+            properties['updated_at'] = updated
+        features.append(_feature(point, properties))
+        seen.add(identifier)
+    return features
+
+
+def _zaragoza_roadworks():
+    return _parse_zaragoza_roadworks(_get_json(ZARAGOZA_ROADS_URL))
+
+
 _FETCHERS = {
     'roads': {
         'ie_dublin_closures': _dublin_closures,
@@ -7455,6 +7521,7 @@ _FETCHERS = {
         'es_sct_incidents': _sct_incidents,
         'es_sct_cameras': _sct_cameras,
         'es_madrid_incidents': _madrid_incidents,
+        'es_zaragoza_roadworks': _zaragoza_roadworks,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
