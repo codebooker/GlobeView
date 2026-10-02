@@ -788,6 +788,7 @@ import { createCyberTrails } from './cyber-trails.js';
       ? 'Aircraft: <a href="https://opensky-network.org/">OpenSky</a> / <a href="https://www.adsb.lol/">ADSB.lol</a>'
       : type === 'vessels' ? 'Vessels: <a href="https://aisstream.io/">AISStream</a>'
       : type === 'webcams' ? 'Webcam catalog: <a href="https://github.com/simplifaisoul/osiris">OSIRIS</a> / camera operators'
+      : type === 'cameras' ? 'Singapore traffic images: <a href="https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view">Land Transport Authority via data.gov.sg</a> (<a href="https://data.gov.sg/open-data-licence">Singapore Open Data Licence</a>)'
       : type === 'lpr' ? 'Plate-reader locations: <a href="https://deflock.me/">DeFlock / OpenStreetMap</a> / <a href="https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html">Dutch Police</a> / <a href="https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13">Via Lietuva</a> / <a href="https://dati.comune.milano.it/dataset/ds959-varchi-areab">Comune di Milano Area B</a> / <a href="https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_">Area C</a> / <a href="https://www.data.gouv.fr/datasets/autoroutes-et-peages-en-flux-libre">Maxime Lopes · French toll gantries</a>'
       : type === 'cyclones' ? 'Cyclones: <a href="https://eonet.gsfc.nasa.gov/">NASA EONET</a>'
       : type === 'earthquakes' ? 'Earthquakes: <a href="https://earthquake.usgs.gov/">USGS</a>'

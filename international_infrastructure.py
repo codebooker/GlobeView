@@ -41,6 +41,8 @@ HONG_KONG_SENSOR_LOCATIONS_URL = ('https://static.data.gov.hk/td/traffic-data-st
                                   'info/traffic_speed_volume_occ_info.csv')
 HONG_KONG_SENSORS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-sm_4-traffic-data-strategic-major-roads'
 HONG_KONG_SENSOR_MAX_AGE = 20 * 60
+SINGAPORE_CAMERAS_URL = 'https://api.data.gov.sg/v1/transport/traffic-images'
+SINGAPORE_CAMERAS_SOURCE = 'https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view'
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
@@ -307,6 +309,7 @@ _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Loc
                        for service in ('cameras', 'sign_locations')}
 _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_SINGAPORE_CAMERA_CATALOG = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _HONG_KONG_SENSOR_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_HEALTH = {'until': {}, 'unavailable': set(), 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
@@ -7657,6 +7660,108 @@ def _hong_kong_sensors():
                                     _hong_kong_sensor_locations())
 
 
+def _singapore_camera_image_url(value):
+    parsed = urllib.parse.urlsplit(str(value or ''))
+    if (parsed.scheme != 'https' or parsed.netloc != 'images.data.gov.sg' or
+            parsed.query or parsed.fragment or not re.fullmatch(
+                r'/api/traffic-images/\d{4}/\d{2}/[0-9a-f-]{36}\.jpg', parsed.path)):
+        raise ValueError('Invalid Singapore traffic image URL')
+    return parsed.geturl()
+
+
+def _parse_singapore_cameras(payload, now=None):
+    now = time.time() if now is None else now
+    items = payload.get('items') if isinstance(payload, dict) else None
+    if not isinstance(items, list) or len(items) != 1:
+        raise ValueError('Singapore traffic-image publication is invalid')
+    cameras = items[0].get('cameras') if isinstance(items[0], dict) else None
+    if not isinstance(cameras, list) or not 1 <= len(cameras) <= 500:
+        raise ValueError('Singapore traffic-image publication is incomplete')
+    rows = {}
+    for camera in cameras:
+        if not isinstance(camera, dict):
+            continue
+        camera_id = str(camera.get('camera_id') or '')
+        location = camera.get('location') or {}
+        if not re.fullmatch(r'\d{3,6}', camera_id) or not isinstance(location, dict):
+            continue
+        try:
+            lon, lat = float(location['longitude']), float(location['latitude'])
+            image_url = _singapore_camera_image_url(camera.get('image'))
+        except (KeyError, TypeError, ValueError):
+            continue
+        measured = _timestamp(camera.get('timestamp'))
+        if (not math.isfinite(lon) or not math.isfinite(lat) or
+                not (103.6 <= lon <= 104.1 and 1.15 <= lat <= 1.5) or
+                measured is None or not -120 <= now - measured <= 15 * 60):
+            continue
+        rows[camera_id] = ([lon, lat], image_url, camera['timestamp'])
+    if not rows:
+        raise ValueError('Singapore traffic images are unavailable or stale')
+    return rows
+
+
+def _singapore_camera_catalog():
+    cache = _SINGAPORE_CAMERA_CATALOG
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+    rows = _parse_singapore_cameras(_get_json(SINGAPORE_CAMERAS_URL))
+    with cache['lock']:
+        cache.update(until=time.time() + 90, rows=rows)
+    return rows
+
+
+def _singapore_image_usable(url):
+    try:
+        request = urllib.request.Request(_singapore_camera_image_url(url), method='HEAD',
+                                         headers={'User-Agent': 'GlobeView/1.0 (public camera reader)'})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return (urllib.parse.urlsplit(response.url).hostname == 'images.data.gov.sg'
+                    and response.status == 200
+                    and 1000 <= int(response.headers.get('Content-Length', '0')) <= 2 * 1024 * 1024)
+    except (OSError, ValueError):
+        return False
+
+
+def _singapore_cameras():
+    rows = _singapore_camera_catalog()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        checks = dict(zip(rows, executor.map(
+            lambda camera_id: _singapore_image_usable(rows[camera_id][1]), rows)))
+    return [_feature(point, {
+        'key': f'sg:lta:camera:{camera_id}', 'layer': 'cameras',
+        'title': f'Singapore traffic camera {camera_id}', 'detail': 'Recent traffic still',
+        'snapshot_url': f'/singapore-camera/{camera_id}', 'snapshot_refresh_ms': 120000,
+        'source': 'Singapore Land Transport Authority · data.gov.sg',
+        'source_url': SINGAPORE_CAMERAS_SOURCE, 'updated_at': measured,
+    }) for camera_id, (point, _, measured) in rows.items() if checks[camera_id]]
+
+
+def singapore_camera_snapshot(camera_id):
+    if not re.fullmatch(r'\d{3,6}', str(camera_id)):
+        raise ValueError('Invalid Singapore camera ID')
+    row = _singapore_camera_catalog().get(str(camera_id))
+    if row is None or not -120 <= time.time() - _timestamp(row[2]) <= 15 * 60:
+        raise FileNotFoundError('Singapore traffic image is unavailable or stale')
+    request = urllib.request.Request(row[1], headers={
+        'User-Agent': 'GlobeView/1.0 (public camera reader)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'images.data.gov.sg':
+            raise ValueError('Singapore traffic image changed origin')
+        body = response.read(2 * 1024 * 1024 + 1)
+    if len(body) > 2 * 1024 * 1024 or not body.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Singapore traffic image is invalid')
+    try:
+        with Image.open(io.BytesIO(body)) as picture:
+            if picture.format != 'JPEG' or min(picture.size) < 240:
+                raise ValueError('Singapore traffic image has unexpected dimensions')
+            picture.verify()
+    except UnidentifiedImageError as exc:
+        raise ValueError('Singapore traffic image is invalid') from exc
+    return body, 'image/jpeg'
+
+
 def _hong_kong_camera_url(camera_id):
     if not re.fullmatch(r'[A-Z0-9]{2,20}', str(camera_id)):
         raise ValueError('Invalid Hong Kong camera ID')
@@ -7802,6 +7907,7 @@ _FETCHERS = {
         'hk_td_roadworks': _hong_kong_roadworks,
         'hk_td_cameras': _hong_kong_cameras,
         'hk_td_sensors': _hong_kong_sensors,
+        'sg_lta_cameras': _singapore_cameras,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
@@ -7955,6 +8061,10 @@ def road_snapshot(layer, bbox=None):
                     or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
                         and -120 <= now - stamp <= HONG_KONG_SENSOR_MAX_AGE)]
     if layer == 'cameras':
+        now = time.time()
+        features = [item for item in features if not item['properties']['key'].startswith('sg:lta:camera:')
+                    or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
+                        and -120 <= now - stamp <= 15 * 60)]
         hong_kong = [item for item in features if item['properties']['key'].startswith('hk:td:camera:')]
         if len(hong_kong) > 80:
             selected = {item['properties']['key'] for item in hong_kong[::math.ceil(len(hong_kong) / 80)]}
