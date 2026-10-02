@@ -138,6 +138,72 @@ def _item(key, lon, lat, title, detail, source, source_url, observed, category='
             'observed': observed, 'category': category}
 
 
+NEPAL_BIPAD_API = 'https://bipadportal.gov.np/api/v1/incident/'
+NEPAL_BIPAD_SOURCE = 'https://bipadportal.gov.np/incidents/'
+
+
+def parse_nepal_bipad(payload, now=None):
+    """Recent, approved BIPAD disaster reports with supplied Nepal coordinates."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    rows = payload.get('results') if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or len(rows) > 500:
+        raise ValueError('Nepal BIPAD incident page is invalid')
+    output, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict) or row.get('verified') is not True or row.get('approved') is not True:
+            continue
+        identifier = row.get('id')
+        if not isinstance(identifier, int) or identifier < 1 or identifier in seen:
+            continue
+        reported = _iso(row.get('reportedOn'))
+        occurred = _iso(row.get('incidentOn'))
+        if not reported or not occurred:
+            continue
+        reported_at = dt.datetime.fromisoformat(reported.replace('Z', '+00:00'))
+        occurred_at = dt.datetime.fromisoformat(occurred.replace('Z', '+00:00'))
+        if not (dt.timedelta(minutes=-5) <= now - reported_at <= dt.timedelta(days=3)):
+            continue
+        if not (dt.timedelta(minutes=-5) <= now - occurred_at <= dt.timedelta(days=7)):
+            continue
+        point = (row.get('point') or {}).get('coordinates') if isinstance(row.get('point'), dict) else None
+        if not isinstance(point, list) or len(point) < 2 or not _valid(point[0], point[1]):
+            continue
+        lon, lat = float(point[0]), float(point[1])
+        if not (80 <= lon <= 88.5 and 26 <= lat <= 31):
+            continue
+        title = _clean(row.get('title'), 140)
+        if not title:
+            continue
+        label = title.lower()
+        category = ('fire' if 'fire' in label else
+                    'traffic' if 'road accident' in label or 'vehicle accident' in label else
+                    'medical' if 'snake bite' in label else 'warning')
+        seen.add(identifier)
+        output.append(_item(f'np:bipad:{identifier}', lon, lat, title,
+                            'Reported incident · mapped location may be approximate',
+                            'Nepal BIPAD', f'{NEPAL_BIPAD_SOURCE}{identifier}/', reported, category))
+    return output
+
+
+def _nepal_bipad():
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=3)).strftime('%Y-%m-%d')
+    items, seen = [], set()
+    for offset in range(0, 2000, 500):
+        query = urllib.parse.urlencode({'reported_on__gt': cutoff, 'ordering': '-reported_on',
+                                        'limit': 500, 'offset': offset})
+        payload = _json(f'{NEPAL_BIPAD_API}?{query}')
+        rows = payload.get('results') if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or len(rows) > 500:
+            raise ValueError('Nepal BIPAD incident feed is invalid')
+        for item in parse_nepal_bipad(payload):
+            if item['id'] not in seen:
+                seen.add(item['id'])
+                items.append(item)
+        if len(rows) < 500:
+            return items
+    raise ValueError('Nepal BIPAD incident feed exceeds supported page count')
+
+
 def parse_thailand_ddpm(payload, now=None):
     """Recent, still-open disaster reports from Thailand's public DDPM map."""
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -1397,6 +1463,7 @@ _LOADERS = {
     'lu_alert': _luxembourg_alerts,
     'th_ddpm': _thailand_ddpm,
     'id_bnpb': lambda: parse_indonesia_bnpb(_html(INDONESIA_BNPB_URL)),
+    'np_bipad': _nepal_bipad,
 }
 
 
