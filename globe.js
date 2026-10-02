@@ -1,5 +1,6 @@
 /* One MapLibre map renders the globe and every live layer. */
 import { createCyberTrails } from './cyber-trails.js';
+import { splitLineAtAntimeridian } from './geo-lines.mjs';
 (async () => {
   'use strict';
 
@@ -2353,19 +2354,10 @@ import { createCyberTrails } from './cyber-trails.js';
   function cycloneGuidanceFeatures(tracks) {
     const features = [];
     for (const track of tracks) {
-      let segment = [];
-      for (const raw of track.points || []) {
-        const lon = Number(raw?.[0]), lat = Number(raw?.[1]);
-        if (!validCoordinate(lat, lon)) continue;
-        if (segment.length && Math.abs(lon - segment.at(-1)[0]) > 180) {
-          if (segment.length > 1) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: segment },
-            properties: { code: track.code, model: track.model, kind: track.kind, color: track.color } });
-          segment = [];
-        }
-        segment.push([lon, lat]);
+      for (const segment of splitLineAtAntimeridian(track.points || [])) {
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: segment },
+          properties: { code: track.code, model: track.model, kind: track.kind, color: track.color } });
       }
-      if (segment.length > 1) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: segment },
-        properties: { code: track.code, model: track.model, kind: track.kind, color: track.color } });
     }
     return { type: 'FeatureCollection', features };
   }
@@ -2524,15 +2516,7 @@ import { createCyberTrails } from './cyber-trails.js';
         if (type === 'cyclones') {
           detail = [Number.isFinite(Number(item.windKt)) && item.windKt != null ? `${Number(item.windKt).toFixed(0)} kt wind` : '',
             observedLabel(item.observed)].filter(Boolean).join(' · ');
-          const segments = [[]];
-          for (const position of item.track || []) {
-            if (!validCoordinate(Number(position?.[1]), Number(position?.[0]))) continue;
-            const point = [Number(position[0]), Number(position[1])];
-            const segment = segments.at(-1);
-            if (segment.length && Math.abs(segment.at(-1)[0] - point[0]) > 180) segments.push([]);
-            segments.at(-1).push(point);
-          }
-          for (const segment of segments) if (segment.length > 1) tracks.push({
+          for (const segment of splitLineAtAntimeridian(item.track || [])) tracks.push({
             type: 'Feature', geometry: { type: 'LineString', coordinates: segment }, properties: { ref }
           });
         } else if (type === 'earthquakes') {

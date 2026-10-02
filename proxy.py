@@ -944,6 +944,7 @@ ALLOWED_STREAM_HOST_SUFFIXES = (
 PUBLIC_STATIC_FILES = frozenset({
     'index.html',
     'globe.js',
+    'geo-lines.mjs',
     'cyber-trails.js',
     'maplibre-gl.mjs',
     'maplibre-gl-shared.mjs',
