@@ -15,6 +15,7 @@ import http.cookiejar
 import math
 import os
 import re
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -7940,9 +7941,29 @@ def _taipei_cms_signs():
     return _parse_taipei_cms_live(_get_xml(TAIPEI_CMS_LIVE_URL), _taipei_cms_locations())
 
 
+def _taiwan_highway_bytes(url, max_bytes):
+    # Taiwan's source chain fails Python/OpenSSL's strict CA extension check on
+    # the production host. curl validates the chain and hostname with the OS CA
+    # store; keep this path limited to the official THB hosts.
+    parsed = urllib.parse.urlsplit(url)
+    if (parsed.scheme != 'https' or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or parsed.hostname not in {'thbapp.thb.gov.tw', 'cctv-maintain.thb.gov.tw'}
+            | {f'cctv-ss{i:02d}.thb.gov.tw' for i in range(1, 9)}):
+        raise ValueError('Unexpected Taiwan highway source')
+    try:
+        result = subprocess.run(
+            ['curl', '--fail', '--silent', '--show-error', '--max-time', '20',
+             '--max-filesize', str(max_bytes), '--proto', '=https', url],
+            capture_output=True, check=True, timeout=22)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise OSError('Taiwan highway source unavailable') from exc
+    if len(result.stdout) > max_bytes:
+        raise ValueError('Taiwan highway source exceeded size limit')
+    return result.stdout
+
+
 def _taiwan_highway_root(url, name, max_age, max_bytes=2 * 1024 * 1024, min_rows=500, now=None):
-    # THB's XML host returns 406 for a specific XML Accept header.
-    root = _get_xml(url, max_bytes=max_bytes, extra_headers={'Accept': '*/*'})
+    root = ET.fromstring(_taiwan_highway_bytes(url, max_bytes))
     if root.tag.rsplit('}', 1)[-1] != name:
         raise ValueError('Unexpected Taiwan highway publication')
     age = (now or time.time()) - (_timestamp(root.findtext('{*}UpdateTime')) or 0)
@@ -8008,11 +8029,7 @@ def taiwan_highway_camera_snapshot(camera_id):
     row = _taiwan_highway_catalog('cameras', TAIWAN_HIGHWAY_CCTV_URL, 'CCTVList', 1500).get(camera_id)
     if not row:
         raise FileNotFoundError('Taiwan highway camera is not in the official catalog')
-    request = urllib.request.Request(row['url'], headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
-    with urllib.request.urlopen(request, timeout=10) as response:
-        if urllib.parse.urlsplit(response.url).hostname not in {f'cctv-ss{i:02d}.thb.gov.tw' for i in range(1, 9)}:
-            raise ValueError('Taiwan highway camera changed origin')
-        image = response.read(2 * 1024 * 1024 + 1)
+    image = _taiwan_highway_bytes(row['url'], 2 * 1024 * 1024)
     if not 4000 <= len(image) <= 2 * 1024 * 1024 or not image.startswith(b'\xff\xd8\xff'):
         raise FileNotFoundError('Taiwan highway camera returned no usable JPEG')
     try:
