@@ -43,6 +43,8 @@ HONG_KONG_SENSORS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-sm_4-traff
 HONG_KONG_SENSOR_MAX_AGE = 20 * 60
 SINGAPORE_CAMERAS_URL = 'https://api.data.gov.sg/v1/transport/traffic-images'
 SINGAPORE_CAMERAS_SOURCE = 'https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view'
+TAIPEI_WORKS_URL = 'https://tpnco.blob.core.windows.net/blobfs/Todaywork.json'
+TAIPEI_WORKS_SOURCE = 'https://data.gov.tw/en/datasets/145614'
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
@@ -310,12 +312,14 @@ _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Loc
 _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _SINGAPORE_CAMERA_CATALOG = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
+_TAIPEI_WORKS_CACHE = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _HONG_KONG_SENSOR_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_HEALTH = {'until': {}, 'unavailable': set(), 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
                     for name in ('vms', 'road_segments', 'weather_stations')}
 _LITHUANIA_TRANSFORMER = Transformer.from_crs('EPSG:3346', 'EPSG:4326', always_xy=True)
 _NIE_TRANSFORMER = Transformer.from_crs('EPSG:29903', 'EPSG:4326', always_xy=True)
+_TAIPEI_TRANSFORMER = Transformer.from_crs('EPSG:3826', 'EPSG:4326', always_xy=True)
 
 
 def _get_json(url, fintraffic=False, extra_headers=None):
@@ -7762,6 +7766,89 @@ def singapore_camera_snapshot(camera_id):
     return body, 'image/jpeg'
 
 
+def _taipei_roc_date(value):
+    match = re.fullmatch(r'(\d{2,3})/(\d{2})/(\d{2})', str(value or ''))
+    if not match:
+        return None
+    try:
+        result = dt.date(int(match[1]) + 1911, int(match[2]), int(match[3]))
+    except ValueError:
+        return None
+    return result if 2000 <= result.year <= 2100 else None
+
+
+def _parse_taipei_roadworks(payload, now=None, published_at=''):
+    today = (now or dt.datetime.now(ZoneInfo('Asia/Taipei'))).date()
+    rows = payload.get('features') if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(rows, list) or not 100 <= len(rows) <= 10000:
+        raise ValueError('Taipei roadwork publication is incomplete')
+    features = []
+    seen = set()
+    work_types = {'0': 'Construction', '3': 'Road milling', '4': 'Emergency repair',
+                  '5': 'Road maintenance', '6': 'Manhole work', 'B': 'Utility restoration'}
+    for row in rows:
+        props = row.get('properties') if isinstance(row, dict) else None
+        geometry = row.get('geometry') if isinstance(row, dict) else None
+        coords = geometry.get('coordinates') if isinstance(geometry, dict) else None
+        if not isinstance(props, dict) or not isinstance(coords, list) or len(coords) != 2:
+            continue
+        reference = str(props.get('Ac_no') or '')
+        sequence = str(props.get('sno') or '')
+        start, end = _taipei_roc_date(props.get('Cb_Da')), _taipei_roc_date(props.get('Ce_Da'))
+        if (props.get('IsBlock') != '是' or not re.fullmatch(r'\d{6,12}(?:-\d{1,3})?', reference) or
+                not re.fullmatch(r'\d{1,4}', sequence) or not start or not end or
+                not start <= today <= end):
+            continue
+        key = f'tw:taipei:work:{reference}:{sequence}'
+        if key in seen:
+            continue
+        try:
+            east, north = float(coords[0]), float(coords[1])
+            lon, lat = _TAIPEI_TRANSFORMER.transform(east, north)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(lon) and math.isfinite(lat) and 121.35 <= lon <= 121.75 and 24.9 <= lat <= 25.25):
+            continue
+        address = _clean(props.get('Addr'), 95)
+        purpose = _clean(props.get('NPurp'), 110)
+        kind = work_types.get(str(props.get('AppMode') or ''), 'Road work')
+        detail = f'{kind} · affects traffic · through {end.isoformat()}'
+        if purpose:
+            detail += f' · {purpose}'
+        features.append(_feature([lon, lat], {
+            'key': key, 'layer': 'construction',
+            'title': f'Road work · {address}' if address else 'Road work · Taipei',
+            'detail': _clean(detail, 260),
+            'source': f'Public Works Department, Taipei City Government · {today.year} Taipei City Today\'s Construction Information',
+            'source_url': TAIPEI_WORKS_SOURCE,
+            'updated_at': published_at,
+        }))
+        seen.add(key)
+    return features
+
+
+def _taipei_roadworks():
+    cache = _TAIPEI_WORKS_CACHE
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+    request = urllib.request.Request(TAIPEI_WORKS_URL, headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/json'})
+    with urllib.request.urlopen(request, timeout=25) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'tpnco.blob.core.windows.net':
+            raise ValueError('Taipei roadwork feed changed origin')
+        modified = email.utils.parsedate_to_datetime(response.headers.get('Last-Modified', ''))
+        if not -120 <= time.time() - modified.timestamp() <= 2 * 3600:
+            raise ValueError('Taipei roadwork publication is stale')
+        body = response.read(8 * 1024 * 1024 + 1)
+    if len(body) > 8 * 1024 * 1024:
+        raise ValueError('Taipei roadwork publication exceeded 8 MB')
+    rows = _parse_taipei_roadworks(json.loads(body), published_at=modified.isoformat())
+    with cache['lock']:
+        cache.update(until=time.time() + 300, rows=rows)
+    return rows
+
+
 def _hong_kong_camera_url(camera_id):
     if not re.fullmatch(r'[A-Z0-9]{2,20}', str(camera_id)):
         raise ValueError('Invalid Hong Kong camera ID')
@@ -7908,6 +7995,7 @@ _FETCHERS = {
         'hk_td_cameras': _hong_kong_cameras,
         'hk_td_sensors': _hong_kong_sensors,
         'sg_lta_cameras': _singapore_cameras,
+        'tw_taipei_roadworks': _taipei_roadworks,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
