@@ -24,6 +24,7 @@ USER_AGENT = 'GlobeView/1.0 (on-demand tropical cyclone guidance)'
 TTL_SECONDS = 900
 _UTC = dt.timezone.utc
 _cache = {}
+_index_cache = {}
 _lock = threading.RLock()
 
 # Official and consensus tracks are visually separate from the model guidance.
@@ -162,8 +163,29 @@ def parse_adeck(text, now=None, basin='nhc'):
 
 
 def _storm_name(title):
-    return re.sub(r'^(?:HURRICANE|TYPHOON|TROPICAL STORM|TROPICAL DEPRESSION|TROPICAL CYCLONE)\s+',
+    return re.sub(r'^(?:HURRICANE|SUPER TYPHOON|TYPHOON|TROPICAL STORM|TROPICAL DEPRESSION|TROPICAL CYCLONE)\s+',
                   '', title.strip().upper())
+
+
+def _nhc_storm_index():
+    """The per-basin .nhc indexes can be historical; use NOAA's master list."""
+    with _lock:
+        cached = _index_cache.get('nhc')
+        if cached and cached[0] > time.time():
+            return cached[1]
+        text = _read(f'{NHC_BASE}/index/storm_list.txt', 1024 * 1024)
+        storms = {}
+        for line in text.splitlines():
+            parts = [part.strip() for part in line.split(',')]
+            if not parts or not parts[0]:
+                continue
+            match = re.fullmatch(r'(?:AL|EP|CP)\d{2}(\d{4})', parts[-1].upper())
+            if match:
+                storms.setdefault((parts[0].upper(), int(match[1])), set()).add(parts[-1].upper())
+        # Ambiguous names must not select a different storm's forecast.
+        index = {key: next(iter(ids)) for key, ids in storms.items() if len(ids) == 1}
+        _index_cache['nhc'] = (time.time() + TTL_SECONDS, index)
+        return index
 
 
 def _resolve_atcf_id(storm):
@@ -179,19 +201,14 @@ def _resolve_atcf_id(storm):
     if not name or name.isdigit():
         return None
     year = dt.datetime.now(_UTC).year
-    for basin in ('AL', 'EP', 'CP'):
-        try:
-            index = _read(f'{NHC_BASE}/index/{basin}_storms.txt.nhc', 256 * 1024)
-        except Exception:
-            continue
-        for line in index.splitlines():
-            parts = [part.strip() for part in line.split(',')]
-            if not parts or parts[0].upper() != name:
-                continue
-            matches = re.findall(r'\b(?:AL|EP|CP)\d{2}\d{4}\b', line.upper())
-            if matches and matches[-1].endswith(str(year)):
-                return matches[-1]
-    return None
+    if source.hostname in {'www.nhc.noaa.gov', 'nhc.noaa.gov'}:
+        archive = re.match(r'/archive/(\d{4})/', source.path)
+        if archive:
+            year = int(archive[1])
+    try:
+        return _nhc_storm_index().get((name, year))
+    except Exception:
+        return None
 
 
 def guidance_snapshot(event_id):
@@ -223,6 +240,8 @@ def guidance_snapshot(event_id):
                 if forecast:
                     result.update({'status': 'available', 'tracks': forecast['tracks'],
                                    'cycle': forecast['cycle'], 'sourceUrl': source_url, 'message': ''})
+                else:
+                    result['message'] = 'No current model runs. This storm may have weakened or ended.'
             except Exception:
                 result['message'] = 'Current model guidance could not be loaded from UCAR.' if basin in JTWC_BASINS else 'Current model guidance could not be loaded from NHC.'
         _cache[event_id] = (time.time() + TTL_SECONDS, result)

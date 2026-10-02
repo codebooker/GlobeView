@@ -49,6 +49,52 @@ class CycloneGuidanceTests(unittest.TestCase):
             'title': 'Typhoon Example', 'sourceUrl': 'https://www.metoc.navy.mil/jtwc/products/wp2526.tcw',
         }), 'WP252026')
 
+    def test_nhc_master_index_resolves_named_storms_and_is_shared(self):
+        year = dt.datetime.now(dt.timezone.utc).year
+        index = '\n'.join([
+            f' HANNA, AL, L, , , , , 08, {year}, TS, O, , , , , , , , WARNING, 3, AL08{year}',
+            f' HANNA, AL, L, , , , , 08, {year - 6}, TS, O, , , , , , , , ARCHIVE, , AL08{year - 6}',
+            f' RACHEL, EP, E, , , , , 18, {year}, HU, O, , , , , , , , WARNING, 2, EP18{year}',
+        ])
+        with mock.patch.dict(cyclone_guidance._index_cache, {}, clear=True), \
+                mock.patch.object(cyclone_guidance, '_read', return_value=index) as read:
+            self.assertEqual(cyclone_guidance._resolve_atcf_id({
+                'title': 'Tropical Storm Hanna',
+                'sourceUrl': f'https://www.nhc.noaa.gov/archive/{year}/HANNA.shtml',
+            }), f'AL08{year}')
+            self.assertEqual(cyclone_guidance._resolve_atcf_id({
+                'title': 'Hurricane Rachel',
+            }), f'EP18{year}')
+            read.assert_called_once_with(f'{cyclone_guidance.NHC_BASE}/index/storm_list.txt', 1024 * 1024)
+
+    def test_nhc_archive_year_does_not_match_a_new_season_or_ambiguous_name(self):
+        index = ' EXAMPLE, AL, L, AL012025\n EXAMPLE, EP, E, EP012026\n DUPLICATE, AL, L, AL022026\n DUPLICATE, EP, E, EP022026'
+        with mock.patch.dict(cyclone_guidance._index_cache, {}, clear=True), \
+                mock.patch.object(cyclone_guidance, '_read', return_value=index):
+            self.assertEqual(cyclone_guidance._resolve_atcf_id({
+                'title': 'Hurricane Example', 'sourceUrl': 'https://www.nhc.noaa.gov/archive/2025/EXAMPLE.shtml',
+            }), 'AL012025')
+            self.assertIsNone(cyclone_guidance._resolve_atcf_id({
+                'title': 'Hurricane Duplicate', 'sourceUrl': 'https://www.nhc.noaa.gov/archive/2026/DUPLICATE.shtml',
+            }))
+
+    def test_master_index_is_refreshed_after_cache_expiry(self):
+        with mock.patch.dict(cyclone_guidance._index_cache, {'nhc': (0, {})}, clear=True), \
+                mock.patch.object(cyclone_guidance, '_read', return_value=' NEW, AL, L, AL092026'):
+            self.assertEqual(cyclone_guidance._nhc_storm_index()[('NEW', 2026)], 'AL092026')
+
+    def test_ended_storms_do_not_display_archived_forecasts(self):
+        storm = {'id': 'ended', 'title': 'Typhoon Example',
+                 'sourceUrl': 'https://www.metoc.navy.mil/jtwc/products/wp2526.tcw'}
+        rows = '\n'.join(f'WP, 25, 2020010100, 03, CMC, {tau}, 150N, 1400E' for tau in (0, 12, 24))
+        with mock.patch.dict(cyclone_guidance._cache, {}, clear=True), \
+                mock.patch.object(cyclone_guidance, 'hazard_snapshot', return_value=json.dumps({'items': [storm]})), \
+                mock.patch.object(cyclone_guidance, '_read', return_value=rows):
+            result = cyclone_guidance.guidance_snapshot('ended')
+        self.assertEqual(result['status'], 'unavailable')
+        self.assertEqual(result['tracks'], [])
+        self.assertIn('No current model runs', result['message'])
+
     def test_indian_and_southern_hemisphere_guidance_uses_ucar(self):
         now = dt.datetime.now(dt.timezone.utc)
         cycle = now.strftime('%Y%m%d%H')
