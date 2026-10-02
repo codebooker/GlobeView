@@ -1085,6 +1085,93 @@ def _sachet_alerts():
     return items
 
 
+_MALAYSIA_WARNINGS_URL = 'https://api.data.gov.my/weather/warning?limit=100'
+_MALAYSIA_STATE_ALIASES = {
+    'Malacca': ('Malacca', 'Melaka'),
+    'Negeri Sembilan': ('Negeri Sembilan', 'N. Sembilan'),
+    'Penang': ('Penang', 'Pulau Pinang'),
+    'Putrajaya': ('Putrajaya',),
+    **{name: (name,) for name in ('Johor', 'Kedah', 'Kelantan', 'Kuala Lumpur',
+                                  'Labuan', 'Pahang', 'Perak', 'Perlis', 'Sabah',
+                                  'Sarawak', 'Selangor', 'Terengganu')},
+}
+
+
+@lru_cache(maxsize=1)
+def _malaysia_state_points():
+    path = Path(__file__).with_name('malaysia-state-points.json')
+    return json.loads(path.read_text(encoding='utf-8'))['states']
+
+
+def _malaysia_local_time(value):
+    try:
+        parsed = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo('Asia/Kuala_Lumpur'))
+        return parsed.astimezone(_UTC)
+    except (TypeError, ValueError):
+        return None
+
+
+def _malaysia_alerts(now=None):
+    records = _get_json(_MALAYSIA_WARNINGS_URL, max_bytes=1_000_000)
+    if not isinstance(records, list) or len(records) > 100:
+        raise ValueError('Unexpected MET Malaysia warning feed')
+    states = _malaysia_state_points()
+    now = now or dt.datetime.now(_UTC)
+    candidates = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        issue = record.get('warning_issue') or {}
+        if not isinstance(issue, dict):
+            continue
+        issued = _malaysia_local_time(issue.get('issued'))
+        starts = _malaysia_local_time(record.get('valid_from'))
+        ends = _malaysia_local_time(record.get('valid_to'))
+        if not issued or not starts or not ends or starts > now or ends <= now:
+            continue
+        title = str(issue.get('title_en') or record.get('heading_en') or '').strip()[:150]
+        body = str(record.get('text_en') or '')[:20_000]
+        if not title or title.lower() == 'no advisory' or not body:
+            continue
+        # The API gives prose, not geometry. Locate only explicitly named land
+        # states; sea forecasts must never look like a warning on land.
+        land_sections = []
+        for match in re.finditer(r'\bover the states? of\s+', body, re.I):
+            section = body[match.end():match.end() + 1600]
+            land_sections.append(re.split(r'\buntil\b|\bwithin the period\b', section, maxsplit=1,
+                                            flags=re.I)[0])
+        if not land_sections:
+            continue
+        for state, aliases in _MALAYSIA_STATE_ALIASES.items():
+            if state not in states or not any(re.search(r'(?<!\w)' + re.escape(alias) + r'(?!\w)', section, re.I)
+                                              for section in land_sections for alias in aliases):
+                continue
+            candidates.append((issued, title, state, ends, record))
+    candidates.sort(key=lambda row: row[0], reverse=True)
+    items = []
+    seen = set()
+    for issued, title, state, ends, record in candidates:
+        key = (title.casefold(), state)
+        if key in seen:
+            continue
+        seen.add(key)
+        lon, lat = states[state]
+        if not _point((lon, lat)) or not (99 <= lon <= 120 and 0 <= lat <= 8):
+            continue
+        instruction = ' '.join(str(record.get('instruction_en') or '').split())[:250]
+        items.append({
+            'id': f'my:met:{issued:%Y%m%d%H%M}:{re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")}:{state.lower().replace(" ", "-")}',
+            'title': title, 'country': 'Malaysia', 'source': 'MET Malaysia · state point: geoBoundaries / OpenStreetMap',
+            'lon': lon, 'lat': lat, 'area': f'{state} · approximate state point; warning may name specific districts',
+            'locationKind': 'published area representative point', 'severity': 'Unknown', 'advice': instruction,
+            'observed': issued.isoformat(), 'ends': ends.isoformat(),
+            'sourceUrl': 'https://api.data.gov.my/weather/warning',
+        })
+    return items
+
+
 def _world_alerts():
     items = []
     unavailable = []
@@ -1092,7 +1179,8 @@ def _world_alerts():
                ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
                ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
                ('Philippines', _pagasa_alerts), ('India', _sachet_alerts),
-               ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts)]
+               ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts),
+               ('Malaysia', _malaysia_alerts)]
     # Each provider is independent; a slow national service should not delay
     # every other country's current alerts.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:
