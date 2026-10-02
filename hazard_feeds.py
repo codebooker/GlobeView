@@ -1172,6 +1172,139 @@ def _malaysia_alerts(now=None):
     return items
 
 
+_KAZAKHSTAN_CAP_FEED = 'https://meteoalert.meteoinfo.ru/kazakhstan/cap-feed/en/atom.xml'
+_KAZAKHSTAN_CAP_URL = re.compile(
+    r'https://meteoalert\.meteoinfo\.ru/kazakhstan/cap-feed/en/'
+    r'2\.49\.0\.0\.398\.0-[A-Za-z0-9-]{1,100}\.xml')
+_KAZAKHSTAN_LOCK = threading.Lock()
+_KAZAKHSTAN_STATE = {'caps': None, 'fetched_at': 0, 'refresh_after': 0, 'inflight': False}
+
+
+@lru_cache(maxsize=2048)
+def _kazakhstan_cap_alert(url):
+    if not _KAZAKHSTAN_CAP_URL.fullmatch(url):
+        raise ValueError('Unexpected Kazakhstan CAP URL')
+    return _get_xml(url, max_bytes=150_000)
+
+
+def _parse_kazakhstan_caps(caps, now):
+    referenced = set()
+    for _, cap in caps:
+        for reference in (cap.findtext('cap:references', namespaces=_CAP_NS) or '').split():
+            parts = reference.split(',')
+            if len(parts) == 3 and cap.findtext('cap:status', namespaces=_CAP_NS) == 'Actual':
+                referenced.add(parts[1])
+    items, seen = [], set()
+    for url, cap in caps:
+        identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or ''
+        if (not identifier.startswith('2.49.0.0.398.0-') or len(identifier) > 160
+                or identifier in referenced or identifier in seen
+                or cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual'
+                or cap.findtext('cap:scope', namespaces=_CAP_NS) != 'Public'
+                or cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')):
+            continue
+        seen.add(identifier)
+        sent = cap.findtext('cap:sent', namespaces=_CAP_NS)
+        try:
+            issued = dt.datetime.fromisoformat(sent.replace('Z', '+00:00'))
+            if not dt.timedelta(minutes=-5) <= now - issued <= dt.timedelta(days=2):
+                continue
+        except (AttributeError, TypeError, ValueError):
+            continue
+        for index, info in enumerate(cap.findall('cap:info', _CAP_NS)):
+            if (not (info.findtext('cap:language', namespaces=_CAP_NS) or '').lower().startswith('en')
+                    or not _future_timestamp(info.findtext('cap:expires', namespaces=_CAP_NS), now)
+                    or info.findtext('cap:urgency', namespaces=_CAP_NS) == 'Past'
+                    or info.findtext('cap:responseType', namespaces=_CAP_NS) == 'AllClear'):
+                continue
+            polygons, names = [], []
+            for area in info.findall('cap:area', _CAP_NS):
+                name = area.findtext('cap:areaDesc', namespaces=_CAP_NS)
+                if name:
+                    names.append(name)
+                for polygon in area.findall('cap:polygon', _CAP_NS):
+                    ring = _cap_polygon(polygon.text)
+                    if ring and all(45 <= lon <= 88 and 40 <= lat <= 56 for lon, lat in ring):
+                        polygons.append([ring])
+            if not polygons or len(polygons) > 50 or sum(len(p[0]) for p in polygons) > 20_000:
+                continue
+            geometry = {'type': 'MultiPolygon', 'coordinates': polygons}
+            point = _polygon_point(geometry)
+            if not point:
+                continue
+            advice = (info.findtext('cap:instruction', namespaces=_CAP_NS) or
+                      info.findtext('cap:description', namespaces=_CAP_NS) or '')
+            items.append({
+                'id': f'kz:{identifier}:{index}',
+                'title': info.findtext('cap:headline', namespaces=_CAP_NS) or
+                         info.findtext('cap:event', namespaces=_CAP_NS) or 'Weather warning',
+                'lon': round(point[0], 5), 'lat': round(point[1], 5), 'geometry': geometry,
+                'locationKind': 'polygon', 'country': 'Kazakhstan', 'source': 'Kazhydromet',
+                'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+                'area': '; '.join(names)[:250], 'advice': ' '.join(advice.split())[:480],
+                'observed': sent, 'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
+                'sourceUrl': url,
+            })
+    return items
+
+
+def _load_kazakhstan_caps():
+    feed = _get_xml(_KAZAKHSTAN_CAP_FEED, max_bytes=1_000_000)
+    if (feed.findtext('atom:rights', namespaces=_ATOM_NS) or '').strip().lower() != 'public domain':
+        raise ValueError('Kazakhstan CAP feed reuse terms changed')
+    entries = feed.findall('atom:entry', _ATOM_NS)
+    if len(entries) > 1000:
+        raise ValueError('Kazakhstan CAP feed exceeded entry limit')
+    now = dt.datetime.now(_UTC)
+    urls = set()
+    for entry in entries:
+        try:
+            updated = dt.datetime.fromisoformat(entry.findtext('atom:updated', namespaces=_ATOM_NS).replace('Z', '+00:00'))
+            if not dt.timedelta(minutes=-5) <= now - updated <= dt.timedelta(days=2):
+                continue
+        except (AttributeError, TypeError, ValueError):
+            continue
+        for link in entry.findall('atom:link', _ATOM_NS):
+            url = link.get('href') or ''
+            if link.get('type') == 'application/cap+xml' and _KAZAKHSTAN_CAP_URL.fullmatch(url):
+                urls.add(url)
+                break
+    # Immutable CAP documents are cached once across users and feed refreshes.
+    # Bounded concurrency keeps the first national catalog fetch considerate.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        caps = list(zip(sorted(urls), executor.map(_kazakhstan_cap_alert, sorted(urls))))
+    return caps
+
+
+def _refresh_kazakhstan_caps():
+    try:
+        caps = _load_kazakhstan_caps()
+    except Exception:
+        with _KAZAKHSTAN_LOCK:
+            _KAZAKHSTAN_STATE.update(refresh_after=time.monotonic() + 60, inflight=False)
+    else:
+        with _KAZAKHSTAN_LOCK:
+            fetched_at = time.monotonic()
+            _KAZAKHSTAN_STATE.update(caps=caps, fetched_at=fetched_at,
+                                     refresh_after=fetched_at + 300, inflight=False)
+
+
+def _kazakhstan_alerts():
+    # A first download can contain hundreds of immutable CAP documents. Keep it
+    # off the request path so all other countries remain responsive while warming.
+    with _KAZAKHSTAN_LOCK:
+        if (time.monotonic() >= _KAZAKHSTAN_STATE['refresh_after']
+                and not _KAZAKHSTAN_STATE['inflight']):
+            _KAZAKHSTAN_STATE['inflight'] = True
+            threading.Thread(target=_refresh_kazakhstan_caps,
+                             name='kazakhstan-cap-refresh', daemon=True).start()
+        caps = _KAZAKHSTAN_STATE['caps']
+        fetched_at = _KAZAKHSTAN_STATE['fetched_at']
+    if caps is None or time.monotonic() - fetched_at > 900:
+        raise RuntimeError('Kazakhstan warning catalog is warming or unavailable')
+    return _parse_kazakhstan_caps(caps, dt.datetime.now(_UTC))
+
+
 def _world_alerts():
     items = []
     unavailable = []
@@ -1180,7 +1313,7 @@ def _world_alerts():
                ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
                ('Philippines', _pagasa_alerts), ('India', _sachet_alerts),
                ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts),
-               ('Malaysia', _malaysia_alerts)]
+               ('Malaysia', _malaysia_alerts), ('Kazakhstan', _kazakhstan_alerts)]
     # Each provider is independent; a slow national service should not delay
     # every other country's current alerts.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:
