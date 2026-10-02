@@ -31,6 +31,11 @@ import shapefile
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
 TII_TRAFFIC_BASE = 'https://iretg.carsprogram.org'
 TII_TRAFFIC_SOURCE = 'https://traffic.tii.ie/'
+HONG_KONG_CAMERAS_URL = ('https://static.data.gov.hk/td/traffic-snapshot-images/'
+                         'code/Traffic_Camera_Locations_En.xml')
+HONG_KONG_CAMERAS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-tis_2-traffic-snapshot-images'
+HONG_KONG_WORKS_URL = 'https://resource.data.one.gov.hk/td/roadworks-location/get_all_the_roadworks.geojson'
+HONG_KONG_WORKS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-tis_18-roadworks-location'
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
@@ -296,6 +301,8 @@ _AUTOBAHN_CACHE = {service: {'until': 0, 'roads': {}, 'lock': threading.Lock()}
 _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Lock()}
                        for service in ('cameras', 'sign_locations')}
 _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_HONG_KONG_CAMERA_HEALTH = {'until': {}, 'unavailable': set(), 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
                     for name in ('vms', 'road_segments', 'weather_stations')}
 _LITHUANIA_TRANSFORMER = Transformer.from_crs('EPSG:3346', 'EPSG:4326', always_xy=True)
@@ -7487,6 +7494,176 @@ def _zaragoza_roadworks():
     return _parse_zaragoza_roadworks(_get_json(ZARAGOZA_ROADS_URL))
 
 
+def _hong_kong_time(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        return dt.datetime.strptime(value, '%Y-%m-%d %H:%M:%S').replace(
+            tzinfo=ZoneInfo('Asia/Hong_Kong')).timestamp()
+    except ValueError:
+        try:
+            return dt.datetime.strptime(value, '%Y-%m-%d %H:%M').replace(
+                tzinfo=ZoneInfo('Asia/Hong_Kong')).timestamp()
+        except ValueError:
+            return None
+
+
+def _parse_hong_kong_roadworks(payload, now=None):
+    now = time.time() if now is None else now
+    rows = payload.get('features') if isinstance(payload, dict) else None
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(rows, list) or len(rows) > 2000):
+        raise ValueError('Hong Kong roadworks publication is invalid')
+    features = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('properties'), dict):
+            continue
+        props = row['properties']
+        work_id = str(props.get('roadworks_id') or '')
+        if not re.fullmatch(r'\d{1,12}', work_id) or work_id in seen:
+            continue
+        start = _hong_kong_time(props.get('starttime'))
+        end = _hong_kong_time(props.get('endtime'))
+        updated = _hong_kong_time(props.get('lastupdatetime'))
+        if (start is None or end is None or updated is None or
+                not start <= now <= end or not -600 <= now - updated <= 36 * 3600):
+            continue
+        if props.get('worksstatus') != 'In Progress':
+            continue
+        geometry = row.get('geometry') or {}
+        if geometry.get('type') != 'Point':
+            continue
+        point = _point(geometry)
+        if not point or not (113.8 <= point[0] <= 114.5 and 22.1 <= point[1] <= 22.6):
+            continue
+        road = _clean(props.get('roadname'), 100)
+        work = _clean(props.get('workstype'), 160)
+        lane = _clean(props.get('lane'), 100)
+        location = _clean(props.get('locdesc'), 120)
+        detail = ' · '.join(part for part in (work, location, lane) if part)
+        features.append(_feature(point, {
+            'key': f'hk:td:works:{work_id}', 'layer': 'construction',
+            'title': road or 'Hong Kong roadworks', 'detail': detail,
+            'source': 'Hong Kong Transport Department / Highways Department · DATA.GOV.HK',
+            'source_url': HONG_KONG_WORKS_SOURCE,
+            'updated_at': props['lastupdatetime'] + ' HKT',
+        }))
+        seen.add(work_id)
+    return features
+
+
+def _hong_kong_roadworks():
+    return _parse_hong_kong_roadworks(_get_json(HONG_KONG_WORKS_URL))
+
+
+def _hong_kong_camera_url(camera_id):
+    if not re.fullmatch(r'[A-Z0-9]{2,20}', str(camera_id)):
+        raise ValueError('Invalid Hong Kong camera ID')
+    return f'https://tdcctv.data.one.gov.hk/{camera_id}.JPG'
+
+
+def _parse_hong_kong_cameras(root):
+    if root.tag != 'image-list' or not 50 <= len(root) <= 2000:
+        raise ValueError('Hong Kong camera catalog is incomplete')
+    features = []
+    seen = set()
+    for row in root:
+        camera_id = row.findtext('key') or ''
+        if camera_id in seen:
+            continue
+        try:
+            expected_url = _hong_kong_camera_url(camera_id)
+            point = [float(row.findtext('longitude')), float(row.findtext('latitude'))]
+        except (TypeError, ValueError):
+            continue
+        if (row.findtext('url') != expected_url or not
+                (113.8 <= point[0] <= 114.5 and 22.1 <= point[1] <= 22.6)):
+            continue
+        features.append(_feature(point, {
+            'key': f'hk:td:camera:{camera_id}', 'layer': 'cameras',
+            'title': _clean(row.findtext('description'), 110) or 'Hong Kong road camera',
+            'detail': 'Recent traffic still · normally updated every 2 minutes',
+            'snapshot_url': f'/hong-kong-camera/{camera_id}',
+            'snapshot_refresh_ms': 120000,
+            'source': 'Hong Kong Transport Department · DATA.GOV.HK',
+            'source_url': HONG_KONG_CAMERAS_SOURCE,
+        }))
+        seen.add(camera_id)
+    if len(features) < 50:
+        raise ValueError('Hong Kong camera catalog has no usable locations')
+    return features
+
+
+def _hong_kong_cameras():
+    cache = _HONG_KONG_CAMERA_CATALOG
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+    rows = _parse_hong_kong_cameras(_get_xml(HONG_KONG_CAMERAS_URL))
+    with cache['lock']:
+        cache.update(until=time.time() + 6 * 3600, rows=rows)
+    return rows
+
+
+def _hong_kong_camera_headers_usable(response, now):
+    if urllib.parse.urlsplit(response.url).hostname != 'tdcctv.data.one.gov.hk':
+        return False
+    headers = response.headers
+    if headers.get('Content-Type', '').split(';')[0] != 'image/jpeg':
+        return False
+    try:
+        size = int(headers['Content-Length'])
+        age = now - email.utils.parsedate_to_datetime(headers['Last-Modified']).timestamp()
+    except (KeyError, TypeError, ValueError):
+        return False
+    return 5000 <= size <= 200000 and -300 <= age <= 20 * 60
+
+
+def _hong_kong_camera_usable(camera_id):
+    now = time.time()
+    cache = _HONG_KONG_CAMERA_HEALTH
+    with cache['lock']:
+        if now < cache['until'].get(camera_id, 0):
+            return camera_id not in cache['unavailable']
+    request = urllib.request.Request(_hong_kong_camera_url(camera_id), method='HEAD',
+                                     headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            usable = _hong_kong_camera_headers_usable(response, now)
+    except (OSError, ValueError):
+        usable = False
+    with cache['lock']:
+        cache['until'][camera_id] = now + 300
+        if usable:
+            cache['unavailable'].discard(camera_id)
+        else:
+            cache['unavailable'].add(camera_id)
+    return usable
+
+
+def hong_kong_camera_snapshot(camera_id):
+    if camera_id not in {feature['properties']['key'].rsplit(':', 1)[-1]
+                         for feature in _hong_kong_cameras()}:
+        raise FileNotFoundError('Hong Kong camera is not in the official catalog')
+    request = urllib.request.Request(_hong_kong_camera_url(camera_id), headers={
+        'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=8) as response:
+        if not _hong_kong_camera_headers_usable(response, time.time()):
+            raise FileNotFoundError('Hong Kong camera still is unavailable or stale')
+        image = response.read(200001)
+    if not 5000 <= len(image) <= 200000 or not image.startswith(b'\xff\xd8\xff'):
+        raise ValueError('Hong Kong camera returned no usable JPEG still')
+    try:
+        with Image.open(io.BytesIO(image)) as decoded:
+            if decoded.format != 'JPEG' or decoded.size != (320, 240):
+                raise ValueError('Hong Kong camera returned an unexpected image')
+            decoded.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError('Hong Kong camera returned an invalid image') from exc
+    return image, 'image/jpeg'
+
+
 _FETCHERS = {
     'roads': {
         'ie_dublin_closures': _dublin_closures,
@@ -7522,6 +7699,8 @@ _FETCHERS = {
         'es_sct_cameras': _sct_cameras,
         'es_madrid_incidents': _madrid_incidents,
         'es_zaragoza_roadworks': _zaragoza_roadworks,
+        'hk_td_roadworks': _hong_kong_roadworks,
+        'hk_td_cameras': _hong_kong_cameras,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
@@ -7670,6 +7849,18 @@ def road_snapshot(layer, bbox=None):
         features = [item for item in features if west <= item['geometry']['coordinates'][0] <= east
                     and south <= item['geometry']['coordinates'][1] <= north]
     if layer == 'cameras':
+        hong_kong = [item for item in features if item['properties']['key'].startswith('hk:td:camera:')]
+        if len(hong_kong) > 80:
+            selected = {item['properties']['key'] for item in hong_kong[::math.ceil(len(hong_kong) / 80)]}
+            features = [item for item in features if not item['properties']['key'].startswith('hk:td:camera:')
+                        or item['properties']['key'] in selected]
+            hong_kong = [item for item in hong_kong if item['properties']['key'] in selected]
+        if hong_kong:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+                usable = dict(zip((item['properties']['key'] for item in hong_kong), executor.map(
+                    lambda item: _hong_kong_camera_usable(item['properties']['key'].rsplit(':', 1)[-1]),
+                    hong_kong)))
+            features = [item for item in features if usable.get(item['properties']['key'], True)]
         unavailable = _dgt_unavailable_cameras(features)
         unavailable.update(_tfl_unavailable_cameras(features))
         unavailable.update(_madrid_unavailable_cameras(features))

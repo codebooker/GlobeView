@@ -27,6 +27,52 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_hong_kong_roadworks_require_current_local_window_and_location(self):
+        now = dt.datetime(2026, 10, 2, 16, 50, tzinfo=dt.timezone.utc).timestamp()
+
+        def work(identifier, start='2026-10-02 22:00', status='In Progress', lon=114.1):
+            return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [lon, 22.3]},
+                    'properties': {'roadworks_id': str(identifier), 'worksstatus': status,
+                                   'starttime': start, 'endtime': '2026-10-03 06:00',
+                                   'lastupdatetime': '2026-10-02 23:45:00',
+                                   'roadname': 'TEST HIGHWAY', 'workstype': 'Resurfacing',
+                                   'lane': 'Fast lane'}}
+
+        payload = {'type': 'FeatureCollection', 'features': [
+            work(1), work(2, start='2026-10-03 03:00'),
+            work(3, status='Under Preparation'), work(4, lon=0), work(1)]}
+        rows = feeds._parse_hong_kong_roadworks(payload, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'hk:td:works:1')
+        self.assertIn('Fast lane', rows[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'invalid'):
+            feeds._parse_hong_kong_roadworks({'features': []}, now)
+
+    def test_hong_kong_camera_catalog_rejects_wrong_origin_and_bounds_viewport(self):
+        entries = []
+        for number in range(101):
+            camera_id = f'H{number:04d}F'
+            entries.append(f'<image><key>{camera_id}</key><description>Road {number}</description>'
+                           f'<longitude>114.15</longitude><latitude>22.3</latitude>'
+                           f'<url>https://tdcctv.data.one.gov.hk/{camera_id}.JPG</url></image>')
+        entries.append('<image><key>BAD01</key><longitude>114.15</longitude>'
+                       '<latitude>22.3</latitude><url>https://example.com/bad.jpg</url></image>')
+        rows = feeds._parse_hong_kong_cameras(ET.fromstring(
+            '<image-list>' + ''.join(entries) + '</image-list>'))
+        self.assertEqual(len(rows), 101)
+        self.assertEqual(rows[0]['properties']['snapshot_url'], '/hong-kong-camera/H0000F')
+        with patch.object(feeds, '_snapshot', return_value={
+                'sources': {'hk': rows}, 'errors': [], 'loading': False}), \
+                patch.object(feeds, '_hong_kong_camera_usable', return_value=True) as probe, \
+                patch.object(feeds, '_dgt_unavailable_cameras', return_value=set()), \
+                patch.object(feeds, '_tfl_unavailable_cameras', return_value=set()), \
+                patch.object(feeds, '_madrid_unavailable_cameras', return_value=set()):
+            result = feeds.road_snapshot('cameras', (114.0, 22.2, 114.3, 22.4))
+        self.assertLessEqual(len(result['features']), 80)
+        self.assertEqual(probe.call_count, len(result['features']))
+        with self.assertRaises(ValueError):
+            feeds._hong_kong_camera_url('../BAD')
+
     def test_zaragoza_only_current_road_effects_with_city_coordinates(self):
         now = dt.datetime(2026, 10, 2, 12, tzinfo=dt.timezone.utc).timestamp()
 
