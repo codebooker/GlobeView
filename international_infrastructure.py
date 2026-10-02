@@ -45,6 +45,9 @@ SINGAPORE_CAMERAS_URL = 'https://api.data.gov.sg/v1/transport/traffic-images'
 SINGAPORE_CAMERAS_SOURCE = 'https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view'
 TAIPEI_WORKS_URL = 'https://tpnco.blob.core.windows.net/blobfs/Todaywork.json'
 TAIPEI_WORKS_SOURCE = 'https://data.gov.tw/en/datasets/145614'
+TAIPEI_CMS_STATIC_URL = 'https://tcgbusfs.blob.core.windows.net/blobtisv/CMS.xml'
+TAIPEI_CMS_LIVE_URL = 'https://tcgbusfs.blob.core.windows.net/blobtisv/CMSLive.xml'
+TAIPEI_CMS_SOURCE = 'https://data.gov.tw/en/datasets/129029'
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
@@ -313,6 +316,7 @@ _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _SINGAPORE_CAMERA_CATALOG = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _TAIPEI_WORKS_CACHE = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_TAIPEI_CMS_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _HONG_KONG_SENSOR_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_HEALTH = {'until': {}, 'unavailable': set(), 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
@@ -7849,6 +7853,83 @@ def _taipei_roadworks():
     return rows
 
 
+def _parse_taipei_cms_locations(root, min_rows=100):
+    if root.tag.rsplit('}', 1)[-1] != 'CMSList':
+        raise ValueError('Unexpected Taipei sign catalog')
+    locations = {}
+    for row in root.findall('.//{*}CMS'):
+        sign_id = (row.findtext('{*}CMSID') or '').strip()
+        if not re.fullmatch(r'[A-Za-z0-9]{3,24}', sign_id):
+            continue
+        try:
+            lon = float(row.findtext('{*}PositionLon'))
+            lat = float(row.findtext('{*}PositionLat'))
+        except (TypeError, ValueError):
+            continue
+        if not (121.35 <= lon <= 121.75 and 24.9 <= lat <= 25.25):
+            continue
+        locations[sign_id] = ([lon, lat], _clean(row.findtext('{*}RoadName'), 80))
+    if len(locations) < min_rows:
+        raise ValueError('Taipei sign catalog is incomplete')
+    return locations
+
+
+def _parse_taipei_cms_live(root, locations, now=None, min_rows=100):
+    if root.tag.rsplit('}', 1)[-1] != 'CMSLiveList':
+        raise ValueError('Unexpected Taipei live sign feed')
+    now = (now or dt.datetime.now(dt.timezone.utc)).timestamp()
+    published = _timestamp(root.findtext('{*}UpdateTime'))
+    if published is None or not -120 <= now - published <= 10 * 60:
+        raise ValueError('Taipei live sign publication is stale')
+    rows = root.findall('.//{*}CMSLive')
+    if len(rows) < min_rows:
+        raise ValueError('Taipei live sign feed is incomplete')
+    features = []
+    seen = set()
+    for row in rows:
+        sign_id = (row.findtext('{*}CMSID') or '').strip()
+        if sign_id in seen or sign_id not in locations:
+            continue
+        if row.findtext('{*}Status') != '1' or row.findtext('{*}MessageStatus') != '1':
+            continue
+        collected_at = row.findtext('{*}DataCollectTime') or ''
+        collected = _timestamp(collected_at)
+        if collected is None or not -120 <= now - collected <= 10 * 60:
+            continue
+        messages = list(dict.fromkeys(_clean(message.text, 150) for message in row.findall('.//{*}Text')))
+        messages = [message for message in messages if message and message not in {'-99', 'null'}]
+        if not messages:
+            continue
+        coordinates, road_name = locations[sign_id]
+        features.append(_feature(coordinates, {
+            'key': f'tw:taipei:sign:{sign_id}', 'layer': 'signs',
+            'title': f'Road sign · {road_name}' if road_name else 'Road sign · Taipei',
+            'detail': _clean(' / '.join(messages), 400),
+            'source': 'Department of Transportation Engineering and Management, Taipei City',
+            'source_url': TAIPEI_CMS_SOURCE,
+            'updated_at': collected_at,
+            'alert': any(word in message for message in messages
+                         for word in ('施工', '封閉', '事故', '改道', '管制')),
+        }))
+        seen.add(sign_id)
+    return features
+
+
+def _taipei_cms_locations():
+    cache = _TAIPEI_CMS_LOCATIONS
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+    locations = _parse_taipei_cms_locations(_get_xml(TAIPEI_CMS_STATIC_URL))
+    with cache['lock']:
+        cache.update(until=time.time() + 6 * 3600, rows=locations)
+    return locations
+
+
+def _taipei_cms_signs():
+    return _parse_taipei_cms_live(_get_xml(TAIPEI_CMS_LIVE_URL), _taipei_cms_locations())
+
+
 def _hong_kong_camera_url(camera_id):
     if not re.fullmatch(r'[A-Z0-9]{2,20}', str(camera_id)):
         raise ValueError('Invalid Hong Kong camera ID')
@@ -7996,6 +8077,7 @@ _FETCHERS = {
         'hk_td_sensors': _hong_kong_sensors,
         'sg_lta_cameras': _singapore_cameras,
         'tw_taipei_roadworks': _taipei_roadworks,
+        'tw_taipei_cms_signs': _taipei_cms_signs,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
@@ -8148,6 +8230,11 @@ def road_snapshot(layer, bbox=None):
         features = [item for item in features if not item['properties']['key'].startswith('hk:td:sensor:')
                     or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
                         and -120 <= now - stamp <= HONG_KONG_SENSOR_MAX_AGE)]
+    if layer == 'signs':
+        now = time.time()
+        features = [item for item in features if not item['properties']['key'].startswith('tw:taipei:sign:')
+                    or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
+                        and -120 <= now - stamp <= 10 * 60)]
     if layer == 'cameras':
         now = time.time()
         features = [item for item in features if not item['properties']['key'].startswith('sg:lta:camera:')

@@ -27,6 +27,37 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_taipei_signs_join_current_display_text_and_hide_offline_records(self):
+        now = dt.datetime(2026, 10, 2, 18, 25, tzinfo=dt.timezone.utc)
+        locations_xml = ET.fromstring('''<CMSList><CMSs>
+          <CMS><CMSID>SIGN1</CMSID><PositionLon>121.53</PositionLon>
+            <PositionLat>25.04</PositionLat><RoadName>市民大道</RoadName></CMS>
+          <CMS><CMSID>SIGN2</CMSID><PositionLon>121.54</PositionLon>
+            <PositionLat>25.05</PositionLat><RoadName>忠孝東路</RoadName></CMS>
+        </CMSs></CMSList>''')
+        locations = feeds._parse_taipei_cms_locations(locations_xml, min_rows=2)
+        live_xml = ET.fromstring('''<CMSLiveList>
+          <UpdateTime>2026-10-02T18:24:00Z</UpdateTime><CMSLives>
+            <CMSLive><CMSID>SIGN1</CMSID><MessageStatus>1</MessageStatus>
+              <Messages><Message><Text>前方施工請改道</Text></Message>
+                <Message><Text>前方施工請改道</Text></Message></Messages>
+              <Status>1</Status><DataCollectTime>2026-10-02T18:24:00Z</DataCollectTime></CMSLive>
+            <CMSLive><CMSID>SIGN2</CMSID><MessageStatus>0</MessageStatus>
+              <Messages><Message><Text>-99</Text></Message></Messages>
+              <Status>1</Status><DataCollectTime>2026-10-02T18:24:00Z</DataCollectTime></CMSLive>
+          </CMSLives></CMSLiveList>''')
+        rows = feeds._parse_taipei_cms_live(live_xml, locations, now, min_rows=2)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['geometry']['coordinates'], [121.53, 25.04])
+        self.assertEqual(rows[0]['properties']['detail'], '前方施工請改道')
+        self.assertTrue(rows[0]['properties']['alert'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_taipei_cms_live(live_xml, locations, now + dt.timedelta(minutes=12), min_rows=2)
+        with patch.object(feeds, '_snapshot', return_value={
+                'sources': {'taipei': rows}, 'errors': [], 'loading': False}), \
+                patch.object(feeds.time, 'time', return_value=(now + dt.timedelta(minutes=12)).timestamp()):
+            self.assertEqual(feeds.road_snapshot('signs')['features'], [])
+
     def test_taipei_roadworks_filter_current_traffic_effects_and_private_fields(self):
         now = dt.datetime(2026, 10, 3, 1, tzinfo=dt.timezone(dt.timedelta(hours=8)))
         sample = {'type': 'Feature', 'geometry': {'type': 'Point',
