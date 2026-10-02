@@ -63,6 +63,7 @@ PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/se
                 'returnGeometry=true&outSR=4326&f=json')
 THAILAND_DDPM_WFS = 'https://wgeo.disaster.go.th/geoserver/wfs'
 THAILAND_DDPM_SOURCE = 'https://ddc.disaster.go.th/'
+INDONESIA_BNPB_URL = 'https://gis.bnpb.go.id/databencana/tabel/pencarian.php'
 _ATOM = '{http://www.w3.org/2005/Atom}'
 _CAP = '{urn:oasis:names:tc:emergency:cap:1.2}'
 _LOCK = threading.Lock()
@@ -191,6 +192,96 @@ def _thailand_ddpm():
     context.load_verify_locations(cafile=str(Path(__file__).with_name('certs') /
                                              'globalsign-rsa-ov-ssl-ca-2018.pem'))
     return parse_thailand_ddpm(_json(f'{THAILAND_DDPM_WFS}?{query}', context=context))
+
+
+class _IndonesiaDisasterRows(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.in_table = self.in_body = self.in_row = self.in_cell = False
+        self.cells = []
+        self.rows = []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == 'table' and 'datatab' in attributes.get('class', '').split():
+            self.in_table = True
+        elif self.in_table and tag == 'tbody':
+            self.in_body = True
+        elif self.in_body and tag == 'tr':
+            self.in_row = True
+            self.cells = []
+        elif self.in_row and tag == 'td':
+            self.in_cell = True
+            self.cells.append('')
+
+    def handle_data(self, data):
+        if self.in_cell and self.cells:
+            self.cells[-1] += data
+
+    def handle_endtag(self, tag):
+        if tag == 'td':
+            self.in_cell = False
+        elif tag == 'tr' and self.in_row:
+            if len(self.cells) >= 16:
+                self.rows.append(self.cells)
+            self.in_row = False
+        elif tag == 'tbody':
+            self.in_body = False
+        elif tag == 'table':
+            self.in_table = self.in_body = self.in_row = self.in_cell = False
+
+
+@lru_cache(maxsize=1)
+def _indonesia_regencies():
+    path = Path(__file__).with_name('indonesia-regency-points.json')
+    return json.loads(path.read_text())['points']
+
+
+def parse_indonesia_bnpb(page, now=None):
+    """BNPB event dates mapped to the agency's approximate regency points."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    parser = _IndonesiaDisasterRows()
+    parser.feed(page.decode('utf-8', errors='replace') if isinstance(page, bytes) else page)
+    if not parser.rows or len(parser.rows) > 500:
+        raise ValueError('Indonesia BNPB disaster table is unavailable')
+    regencies = _indonesia_regencies()
+    output = []
+    seen = set()
+    def name_key(value):
+        return re.sub(r'[^A-Z0-9]', '', str(value).upper().replace('KAB.', '').replace('KOTA', ''))
+    for cells in parser.rows:
+        code = _clean(cells[2], 10)
+        point = regencies.get(code)
+        if not point:
+            continue
+        try:
+            event_day = dt.date.fromisoformat(_clean(cells[3], 10))
+            observed = dt.datetime.combine(event_day, dt.time.min, ZoneInfo('Asia/Jakarta'))
+        except ValueError:
+            continue
+        if not dt.timedelta(hours=-18) <= now - observed.astimezone(dt.timezone.utc) <= dt.timedelta(days=7):
+            continue
+        kind = _clean(cells[4], 80)
+        place = _clean(cells[5], 140)
+        regency = _clean(cells[6], 100)
+        province = _clean(cells[7], 100)
+        if (not kind or not regency or not province or
+                name_key(regency) != name_key(point[2]) or
+                name_key(province) != name_key(point[3])):
+            continue
+        fingerprint = hashlib.sha256(f'{event_day}|{code}|{kind}|{place}'.encode()).hexdigest()[:12]
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        category = 'fire' if 'KEBAKARAN' in kind.upper() else 'warning'
+        output.append(_item(f'id:bnpb:{fingerprint}', point[0], point[1],
+                            f'{kind.title()} · {regency}',
+                            f'Reported {event_day.isoformat()} in {regency}, {province}. '
+                            'Marker is a representative regency point, not the incident site.',
+                            'Indonesia BNPB · disaster report', INDONESIA_BNPB_URL,
+                            observed.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z'),
+                            category))
+    return output[:250]
 
 
 def parse_poland_rso(payload, now=None):
@@ -1305,6 +1396,7 @@ _LOADERS = {
     'nl_p2000': _netherlands_p2000,
     'lu_alert': _luxembourg_alerts,
     'th_ddpm': _thailand_ddpm,
+    'id_bnpb': lambda: parse_indonesia_bnpb(_html(INDONESIA_BNPB_URL)),
 }
 
 
