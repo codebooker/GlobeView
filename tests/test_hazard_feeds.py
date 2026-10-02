@@ -166,10 +166,45 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_ireland_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_germany_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_azores_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_pagasa_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_pagasa_cap_updates_clear_prior_warning_and_keep_current_polygon(self):
+        now = dt.datetime(2026, 10, 2, 12, tzinfo=dt.timezone.utc)
+        old_id = '11111111-1111-1111-1111-111111111111'
+        new_id = '22222222-2222-2222-2222-222222222222'
+        cancel_id = '33333333-3333-3333-3333-333333333333'
+
+        def cap(identifier, response='', references='', expires='2026-10-03T00:00:00Z'):
+            return ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+              <identifier>{identifier}</identifier><sent>2026-10-02T11:00:00Z</sent>
+              <status>Actual</status><msgType>Update</msgType><scope>Public</scope>
+              <references>{references}</references><info><event>Flood Advisory</event>
+              <responseType>{response}</responseType><expires>{expires}</expires>
+              <area><areaDesc>Test province</areaDesc>
+              <polygon>8,123 8,124 9,124 9,123 8,123</polygon></area>
+              </info></alert>''')
+
+        old = cap(old_id)
+        update = cap(new_id, references=f'PAGASA-DOST,{old_id},2026-10-02T10:00:00Z')
+        rows = hazard_feeds._parse_pagasa_caps([('https://example.test/old', old),
+                                                 ('https://example.test/new', update)], now)
+        self.assertEqual([row['id'] for row in rows], [f'ph:pagasa:{new_id}:0'])
+        self.assertEqual(rows[0]['geometry']['coordinates'][0][0][0], [123.0, 8.0])
+        final = cap(cancel_id, response='AllClear',
+                    references=f'PAGASA-DOST,{new_id},2026-10-02T11:00:00Z')
+        self.assertEqual(hazard_feeds._parse_pagasa_caps([
+            ('https://example.test/old', old), ('https://example.test/new', update),
+            ('https://example.test/final', final)], now), [])
+        self.assertEqual(hazard_feeds._parse_pagasa_caps([
+            ('https://example.test/old', cap(old_id, expires='2026-10-01T00:00:00Z'))], now), [])
+        self.assertEqual(hazard_feeds._pagasa_cap_url(
+            'https://121.58.193.10/output/gfa/11111111-1111-1111-1111-111111111111.cap'),
+            'https://publicalert.pagasa.dost.gov.ph/output/gfa/11111111-1111-1111-1111-111111111111.cap')
+        self.assertIsNone(hazard_feeds._pagasa_cap_url('http://localhost/private'))
 
     def test_azores_alerts_show_only_current_island_group_windows(self):
         now = dt.datetime(2026, 9, 28, 4, tzinfo=dt.timezone.utc)

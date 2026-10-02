@@ -1,11 +1,13 @@
 """Cached, normalized global natural-hazard feeds for the globe client."""
 import datetime as dt
+import concurrent.futures
 import csv
 import email.utils
 import io
 import json
 import math
 import re
+import ssl
 import threading
 import time
 import urllib.request
@@ -625,12 +627,136 @@ def _azores_alerts():
     return _parse_azores_alerts(_get_json(_AZORES_ALERT_URL, max_bytes=250_000))
 
 
+_PAGASA_FEED = 'https://publicalert.pagasa.dost.gov.ph/feeds/'
+_PAGASA_HOST = 'publicalert.pagasa.dost.gov.ph'
+_ATOM_NS = {'atom': 'http://www.w3.org/2005/Atom'}
+
+
+def _pagasa_cap_url(link):
+    """Move the agency's IP-address links to its matching public HTTPS hostname."""
+    path = urllib.parse.urlsplit(link).path
+    if re.fullmatch(r'/output/[a-z0-9_-]+/[0-9a-f-]{36}\.cap', path):
+        return f'https://{_PAGASA_HOST}{path}'
+    return None
+
+
+def _parse_pagasa_caps(caps, now=None):
+    now = now or dt.datetime.now(_UTC)
+    referenced = set()
+    for _, cap in caps:
+        for reference in (cap.findtext('cap:references', namespaces=_CAP_NS) or '').split():
+            parts = reference.split(',')
+            if len(parts) == 3:
+                referenced.add(parts[1])
+    items = []
+    for url, cap in caps:
+        identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or ''
+        if not re.fullmatch(r'[0-9a-f-]{36}', identifier) or identifier in referenced:
+            continue
+        if (cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual' or
+                cap.findtext('cap:scope', namespaces=_CAP_NS) != 'Public' or
+                cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')):
+            continue
+        sent = cap.findtext('cap:sent', namespaces=_CAP_NS)
+        try:
+            sent_at = dt.datetime.fromisoformat(sent.replace('Z', '+00:00'))
+        except (AttributeError, ValueError):
+            continue
+        if not dt.timedelta(minutes=-5) <= now - sent_at <= dt.timedelta(days=2):
+            continue
+        for index, info in enumerate(cap.findall('cap:info', _CAP_NS)):
+            if (not _future_timestamp(info.findtext('cap:expires', namespaces=_CAP_NS), now) or
+                    info.findtext('cap:responseType', namespaces=_CAP_NS) == 'AllClear' or
+                    info.findtext('cap:urgency', namespaces=_CAP_NS) == 'Past'):
+                continue
+            polygons, names = [], []
+            for area in info.findall('cap:area', _CAP_NS):
+                name = area.findtext('cap:areaDesc', namespaces=_CAP_NS)
+                if name:
+                    names.append(name)
+                for polygon in area.findall('cap:polygon', _CAP_NS):
+                    ring = _cap_polygon(polygon.text)
+                    if ring and all(116 <= lon <= 128 and 4 <= lat <= 22 for lon, lat in ring):
+                        polygons.append([ring])
+            if not polygons or len(polygons) > 50 or sum(len(polygon[0]) for polygon in polygons) > 20_000:
+                continue
+            geometry = {'type': 'MultiPolygon', 'coordinates': polygons}
+            point = _polygon_point(geometry)
+            if not point:
+                continue
+            advice = (info.findtext('cap:instruction', namespaces=_CAP_NS) or
+                      info.findtext('cap:description', namespaces=_CAP_NS) or '')
+            items.append({
+                'id': f'ph:pagasa:{identifier}:{index}',
+                'title': info.findtext('cap:headline', namespaces=_CAP_NS) or
+                         info.findtext('cap:event', namespaces=_CAP_NS) or 'Weather advisory',
+                'lon': round(point[0], 5), 'lat': round(point[1], 5),
+                'geometry': geometry, 'locationKind': 'polygon',
+                'country': 'Philippines', 'source': 'PAGASA · CC BY 4.0',
+                'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+                'area': '; '.join(names)[:250], 'advice': ' '.join(advice.split())[:480],
+                'observed': sent, 'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
+                'sourceUrl': url,
+            })
+    return items[:100]
+
+
+def _pagasa_alerts():
+    # PAGASA omits its GlobalSign intermediate; keep full TLS verification.
+    context = ssl.create_default_context()
+    cert_dir = Path(__file__).with_name('certs')
+    for name in ('globalsign-root-r46.pem', 'globalsign-gcc-r46-ov-tls-ca-2025.pem'):
+        context.load_verify_locations(cafile=str(cert_dir / name))
+
+    def fetch(url, limit):
+        request = urllib.request.Request(url, headers={
+            'User-Agent': 'GlobeView/1.0 (https://globeview.app)',
+            'Accept': 'application/xml, application/atom+xml',
+        })
+        with urllib.request.urlopen(request, context=context, timeout=15) as response:
+            body = response.read(limit + 1)
+        if len(body) > limit:
+            raise ValueError('PAGASA alert exceeded size limit')
+        return ET.fromstring(body)
+
+    feed = fetch(_PAGASA_FEED, 500_000)
+    if 'CC BY 4.0' not in (feed.findtext('atom:rights', namespaces=_ATOM_NS) or ''):
+        raise ValueError('PAGASA feed reuse terms changed')
+    now = dt.datetime.now(_UTC)
+    urls = []
+    for entry in feed.findall('atom:entry', _ATOM_NS)[:100]:
+        updated = entry.findtext('atom:updated', namespaces=_ATOM_NS)
+        try:
+            updated_at = dt.datetime.fromisoformat(updated.replace('Z', '+00:00'))
+        except (AttributeError, ValueError):
+            continue
+        if not dt.timedelta(minutes=-5) <= now - updated_at <= dt.timedelta(days=2):
+            continue
+        link = next((item.get('href') for item in entry.findall('atom:link', _ATOM_NS)
+                     if item.get('type') == 'application/cap+xml'), None)
+        url = _pagasa_cap_url(link or '')
+        if url:
+            urls.append(url)
+    caps, failed = [], 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(fetch, url, 300_000) for url in urls]
+        for url, future in zip(urls, futures):
+            try:
+                caps.append((url, future.result()))
+            except Exception:
+                failed += 1
+    if failed and not caps:
+        raise RuntimeError('PAGASA CAP notices are unavailable')
+    return _parse_pagasa_caps(caps, now)
+
+
 def _world_alerts():
     items = []
     unavailable = []
     loaders = [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
                ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
-               ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts)]
+               ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
+               ('Philippines', _pagasa_alerts)]
     for country, loader in loaders:
         try:
             items.extend(loader())
