@@ -14,7 +14,12 @@ from hazard_feeds import hazard_snapshot
 
 
 NHC_BASE = 'https://ftp.nhc.noaa.gov/atcf'
-UCAR_BASE = 'https://hurricanes.ral.ucar.edu/realtime/plots/northwestpacific'
+UCAR_BASE = 'https://hurricanes.ral.ucar.edu/realtime/plots'
+UCAR_BASINS = {
+    'WP': 'northwestpacific',
+    'IO': 'northindian',
+    'SH': 'southernhemisphere',
+}
 USER_AGENT = 'GlobeView/1.0 (on-demand tropical cyclone guidance)'
 TTL_SECONDS = 900
 _UTC = dt.timezone.utc
@@ -51,6 +56,7 @@ TYPHOON_MODEL_AIDS = (
 )
 TYPHOON_ENSEMBLE_CODES = {f'AP{number:02d}' for number in range(1, 31)}
 TYPHOON_TRACK_CODES = {code for code, _, _ in TYPHOON_MODEL_AIDS} | TYPHOON_ENSEMBLE_CODES | {'AEMN'}
+JTWC_BASINS = {'wp', 'io', 'sh'}
 
 
 def _read(url, max_bytes, gzip_content=False):
@@ -83,7 +89,7 @@ def _coordinate(value, latitude):
 def parse_adeck(text, now=None, basin='nhc'):
     """Return one recent ATCF cycle, keeping model and ensemble runs distinct."""
     now = now or dt.datetime.now(_UTC)
-    allowed_codes = TYPHOON_TRACK_CODES if basin == 'wp' else TRACK_CODES
+    allowed_codes = TYPHOON_TRACK_CODES if basin in JTWC_BASINS else TRACK_CODES
     cycles = {}
     for line in text.splitlines():
         parts = [part.strip() for part in line.split(',')]
@@ -110,7 +116,7 @@ def parse_adeck(text, now=None, basin='nhc'):
         aids = cycles[stamp]
         tracks = []
         used_names = set()
-        models = TYPHOON_MODEL_AIDS if basin == 'wp' else MODEL_AIDS
+        models = TYPHOON_MODEL_AIDS if basin in JTWC_BASINS else MODEL_AIDS
         for code, name, color in models:
             points = aids.get(code, {})
             if name in used_names or len(points) < 3 or max(points) < 24:
@@ -118,7 +124,7 @@ def parse_adeck(text, now=None, basin='nhc'):
             used_names.add(name)
             tracks.append({'code': code, 'model': name, 'kind': 'model', 'color': color,
                            'points': [points[tau] for tau in sorted(points)]})
-        if basin == 'wp':
+        if basin in JTWC_BASINS:
             for code in sorted(TYPHOON_ENSEMBLE_CODES):
                 points = aids.get(code, {})
                 if len(points) < 3 or max(points) < 24:
@@ -152,7 +158,7 @@ def parse_adeck(text, now=None, basin='nhc'):
                            'points': [points[tau] for tau in sorted(points)]})
         return {'cycle': dt.datetime.strptime(stamp, '%Y%m%d%H').replace(tzinfo=_UTC).isoformat().replace('+00:00', 'Z'),
                 'tracks': tracks}
-    return ensemble_fallback if basin == 'wp' else None
+    return ensemble_fallback if basin in JTWC_BASINS else None
 
 
 def _storm_name(title):
@@ -166,7 +172,7 @@ def _resolve_atcf_id(storm):
         match = re.search(r'/([a-z]{2})(\d{2})(\d{2})\.tcw(?:$|/)', source.path, re.I)
         if match:
             basin, number, year = match.groups()
-            if basin.upper() in {'AL', 'EP', 'CP', 'WP'}:
+            if basin.upper() in {'AL', 'EP', 'CP', 'WP', 'IO', 'SH'}:
                 return f'{basin.upper()}{number}20{year}'
             return None
     name = _storm_name(storm.get('title') or '')
@@ -203,11 +209,12 @@ def guidance_snapshot(event_id):
                   'tracks': [], 'cycle': None, 'sourceUrl': storm.get('sourceUrl') or '',
                   'message': 'Public multi-model guidance is unavailable for this storm or basin.'}
         atcf_id = _resolve_atcf_id(storm)
-        if atcf_id and re.fullmatch(r'(?:AL|EP|CP|WP)\d{2}\d{4}', atcf_id):
-            if atcf_id.startswith('WP'):
+        if atcf_id and re.fullmatch(r'(?:AL|EP|CP|WP|IO|SH)\d{2}\d{4}', atcf_id):
+            if atcf_id[:2] in UCAR_BASINS:
                 year = atcf_id[-4:]
-                source_url = f'{UCAR_BASE}/{year}/{atcf_id.lower()}/a{atcf_id.lower()}.dat'
-                max_bytes, zipped, basin = 12 * 1024 * 1024, False, 'wp'
+                directory = UCAR_BASINS[atcf_id[:2]]
+                source_url = f'{UCAR_BASE}/{directory}/{year}/{atcf_id.lower()}/a{atcf_id.lower()}.dat'
+                max_bytes, zipped, basin = 12 * 1024 * 1024, False, atcf_id[:2].lower()
             else:
                 source_url = f'{NHC_BASE}/aid_public/a{atcf_id.lower()}.dat.gz'
                 max_bytes, zipped, basin = 4 * 1024 * 1024, True, 'nhc'
@@ -217,6 +224,6 @@ def guidance_snapshot(event_id):
                     result.update({'status': 'available', 'tracks': forecast['tracks'],
                                    'cycle': forecast['cycle'], 'sourceUrl': source_url, 'message': ''})
             except Exception:
-                result['message'] = 'Current model guidance could not be loaded from UCAR.' if basin == 'wp' else 'Current model guidance could not be loaded from NHC.'
+                result['message'] = 'Current model guidance could not be loaded from UCAR.' if basin in JTWC_BASINS else 'Current model guidance could not be loaded from NHC.'
         _cache[event_id] = (time.time() + TTL_SECONDS, result)
         return result
