@@ -7,6 +7,24 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_indonesia_bnpb_uses_approximate_official_regency_point(self):
+        now = dt.datetime(2026, 10, 2, 12, tzinfo=dt.timezone.utc)
+        def row(code, day, kind, regency='Parigi Moutong', province='Sulawesi Tengah'):
+            cells = ['1', '', code, day, kind, 'Kec. Bolano', regency, province] + [''] * 8
+            return '<tr>' + ''.join(f'<td>{cell}</td>' for cell in cells) + '</tr>'
+        page = ('<table class="datatab"><tbody>' +
+                row('7208', '2026-10-01', 'KEBAKARAN HUTAN DAN LAHAN') +
+                row('7208', '2026-09-01', 'BANJIR') +
+                row('7208', '2026-10-01', 'BANJIR', regency='Wrong place') +
+                row('9999', '2026-10-01', 'BANJIR') + '</tbody></table>')
+        rows = feeds.parse_indonesia_bnpb(page, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['category'], 'fire')
+        self.assertEqual((rows[0]['lon'], rows[0]['lat']), (120.01395, -0.2385))
+        self.assertIn('representative regency point', rows[0]['detail'])
+        self.assertEqual(rows[0]['sourceUrl'], feeds.INDONESIA_BNPB_URL)
+        self.assertEqual(feeds.parse_indonesia_bnpb(page, now + dt.timedelta(days=9)), [])
+
     def test_thailand_ddpm_only_maps_recent_open_located_reports(self):
         now = dt.datetime(2026, 10, 2, 19, tzinfo=dt.timezone.utc)
         base = {'area_id': 131466, 'area_status': '1', 'disaster_end_date': None,
