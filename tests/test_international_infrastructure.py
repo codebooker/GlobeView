@@ -27,6 +27,35 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_taiwan_highway_xml_accept_and_freshness(self):
+        now = dt.datetime(2026, 10, 2, 19, tzinfo=dt.timezone.utc).timestamp()
+        xml = ET.fromstring('''<CMSLiveList><UpdateTime>2026-10-03T02:58:00+08:00</UpdateTime>
+            <CMSLives><CMSLive><CMSID>CMS-1</CMSID></CMSLive></CMSLives></CMSLiveList>''')
+        with patch.object(feeds, '_get_xml', return_value=xml) as read:
+            feeds._taiwan_highway_root('https://thbapp.thb.gov.tw/example', 'CMSLiveList', 600,
+                                      min_rows=1, now=now)
+            self.assertEqual(read.call_args.kwargs['extra_headers'], {'Accept': '*/*'})
+        with patch.object(feeds, '_get_xml', return_value=xml):
+            with self.assertRaisesRegex(ValueError, 'stale'):
+                feeds._taiwan_highway_root('https://thbapp.thb.gov.tw/example', 'CMSLiveList', 600,
+                                          min_rows=1, now=now + 900)
+
+    def test_taiwan_highway_camera_validates_official_jpeg(self):
+        picture = Image.effect_noise((320, 180), 40).convert('RGB')
+        output = io.BytesIO()
+        picture.save(output, format='JPEG')
+        camera_id = 'CCTV-14-0620-009-002'
+        official = f'https://cctv-ss02.thb.gov.tw:443/T62-9K+020/snapshot'
+        response = MagicMock()
+        response.url = official
+        response.read.return_value = output.getvalue()
+        response.__enter__.return_value = response
+        with patch.object(feeds, '_taiwan_highway_catalog', return_value={camera_id: {'url': official}}), \
+                patch.object(feeds.urllib.request, 'urlopen', return_value=response):
+            content, content_type = feeds.taiwan_highway_camera_snapshot(camera_id)
+        self.assertEqual(content_type, 'image/jpeg')
+        self.assertEqual(content, output.getvalue())
+
     def test_taipei_signs_join_current_display_text_and_hide_offline_records(self):
         now = dt.datetime(2026, 10, 2, 18, 25, tzinfo=dt.timezone.utc)
         locations_xml = ET.fromstring('''<CMSList><CMSs>

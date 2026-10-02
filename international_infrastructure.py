@@ -48,6 +48,12 @@ TAIPEI_WORKS_SOURCE = 'https://data.gov.tw/en/datasets/145614'
 TAIPEI_CMS_STATIC_URL = 'https://tcgbusfs.blob.core.windows.net/blobtisv/CMS.xml'
 TAIPEI_CMS_LIVE_URL = 'https://tcgbusfs.blob.core.windows.net/blobtisv/CMSLive.xml'
 TAIPEI_CMS_SOURCE = 'https://data.gov.tw/en/datasets/129029'
+TAIWAN_HIGHWAY_CCTV_URL = 'https://cctv-maintain.thb.gov.tw/opendataCCTVs.xml'
+TAIWAN_HIGHWAY_CMS_STATIC_URL = 'https://thbapp.thb.gov.tw/opendata/cms/info/CMSList.xml'
+TAIWAN_HIGHWAY_CMS_LIVE_URL = 'https://thbapp.thb.gov.tw/opendata/cms/two/CMSLiveList.xml'
+TAIWAN_HIGHWAY_VD_STATIC_URL = 'https://thbapp.thb.gov.tw/opendata/vd/info/VDList.xml'
+TAIWAN_HIGHWAY_VD_LIVE_URL = 'https://thbapp.thb.gov.tw/opendata/vd/one/VDLiveList.xml'
+TAIWAN_HIGHWAY_SOURCE = 'https://data.gov.tw/en/datasets/29817'
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
@@ -317,6 +323,8 @@ _HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _SINGAPORE_CAMERA_CATALOG = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _TAIPEI_WORKS_CACHE = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _TAIPEI_CMS_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
+_TAIWAN_HIGHWAY_CATALOGS = {name: {'until': 0, 'rows': {}, 'lock': threading.Lock()}
+                            for name in ('cameras', 'signs', 'sensors')}
 _HONG_KONG_SENSOR_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_HEALTH = {'until': {}, 'unavailable': set(), 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
@@ -7932,6 +7940,154 @@ def _taipei_cms_signs():
     return _parse_taipei_cms_live(_get_xml(TAIPEI_CMS_LIVE_URL), _taipei_cms_locations())
 
 
+def _taiwan_highway_root(url, name, max_age, max_bytes=2 * 1024 * 1024, min_rows=500, now=None):
+    # THB's XML host returns 406 for a specific XML Accept header.
+    root = _get_xml(url, max_bytes=max_bytes, extra_headers={'Accept': '*/*'})
+    if root.tag.rsplit('}', 1)[-1] != name:
+        raise ValueError('Unexpected Taiwan highway publication')
+    age = (now or time.time()) - (_timestamp(root.findtext('{*}UpdateTime')) or 0)
+    if not -300 <= age <= max_age:
+        raise ValueError('Taiwan highway publication is stale')
+    if len(root.findall('.//{*}' + name.removesuffix('List'))) < min_rows:
+        raise ValueError('Taiwan highway publication is incomplete')
+    return root
+
+
+def _taiwan_highway_catalog(name, url, root_name, min_rows, max_bytes=2 * 1024 * 1024):
+    cache = _TAIWAN_HIGHWAY_CATALOGS[name]
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+    root = _taiwan_highway_root(url, root_name, 48 * 3600, max_bytes, min_rows)
+    rows = {}
+    singular = {'cameras': 'CCTV', 'signs': 'CMS', 'sensors': 'VD'}[name]
+    id_tag = {'cameras': 'CCTVID', 'signs': 'CMSID', 'sensors': 'VDID'}[name]
+    for row in root.findall('.//{*}' + singular):
+        ident = (row.findtext('{*}' + id_tag) or '').strip()
+        if not re.fullmatch(r'[A-Za-z0-9-]{6,40}', ident):
+            continue
+        try:
+            lon, lat = float(row.findtext('{*}PositionLon')), float(row.findtext('{*}PositionLat'))
+        except (TypeError, ValueError):
+            continue
+        if not (119 <= lon <= 123 and 21 <= lat <= 26):
+            continue
+        rows[ident] = {'point': [lon, lat], 'road': _clean(row.findtext('{*}RoadName'), 80),
+                       'description': _clean(row.findtext('{*}SurveillanceDescription'), 120)}
+        if name == 'cameras':
+            image_url = row.findtext('{*}VideoImageURL') or ''
+            parsed = urllib.parse.urlsplit(image_url)
+            if (parsed.scheme != 'https' or not re.fullmatch(r'cctv-ss0[1-8]\.thb\.gov\.tw', parsed.hostname or '')
+                    or parsed.port not in (None, 443) or parsed.query or parsed.fragment
+                    or parsed.username or parsed.password or not parsed.path.endswith('/snapshot')
+                    or '..' in parsed.path or len(image_url) > 250):
+                rows.pop(ident)
+                continue
+            rows[ident]['url'] = image_url
+    if len(rows) < min_rows * 0.6:
+        raise ValueError('Taiwan highway catalog has too few located devices')
+    with cache['lock']:
+        cache.update(until=time.time() + 6 * 3600, rows=rows)
+    return rows
+
+
+def _taiwan_highway_cameras():
+    rows = _taiwan_highway_catalog('cameras', TAIWAN_HIGHWAY_CCTV_URL, 'CCTVList', 1500)
+    return [_feature(row['point'], {
+        'key': f'tw:thb:camera:{ident}', 'layer': 'cameras',
+        'title': row['description'] or f"Road camera · {row['road'] or 'Taiwan highway'}",
+        'detail': 'Provincial highway traffic still',
+        'snapshot_url': f'/taiwan-highway-camera/{ident}', 'snapshot_refresh_ms': 60000,
+        'source': 'Taiwan Highway Bureau', 'source_url': TAIWAN_HIGHWAY_SOURCE,
+    }) for ident, row in rows.items()]
+
+
+def taiwan_highway_camera_snapshot(camera_id):
+    if not re.fullmatch(r'[A-Za-z0-9-]{6,40}', camera_id):
+        raise ValueError('Invalid Taiwan highway camera ID')
+    row = _taiwan_highway_catalog('cameras', TAIWAN_HIGHWAY_CCTV_URL, 'CCTVList', 1500).get(camera_id)
+    if not row:
+        raise FileNotFoundError('Taiwan highway camera is not in the official catalog')
+    request = urllib.request.Request(row['url'], headers={'User-Agent': 'GlobeView/1.0 (public road feed reader)'})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        if urllib.parse.urlsplit(response.url).hostname not in {f'cctv-ss{i:02d}.thb.gov.tw' for i in range(1, 9)}:
+            raise ValueError('Taiwan highway camera changed origin')
+        image = response.read(2 * 1024 * 1024 + 1)
+    if not 4000 <= len(image) <= 2 * 1024 * 1024 or not image.startswith(b'\xff\xd8\xff'):
+        raise FileNotFoundError('Taiwan highway camera returned no usable JPEG')
+    try:
+        with Image.open(io.BytesIO(image)) as decoded:
+            if decoded.format != 'JPEG' or decoded.width < 240 or decoded.height < 160:
+                raise ValueError('Taiwan highway camera returned an unexpected image')
+            decoded.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError('Taiwan highway camera returned an invalid image') from exc
+    return image, 'image/jpeg'
+
+
+def _taiwan_highway_signs():
+    locations = _taiwan_highway_catalog('signs', TAIWAN_HIGHWAY_CMS_STATIC_URL, 'CMSList', 800)
+    root = _taiwan_highway_root(TAIWAN_HIGHWAY_CMS_LIVE_URL, 'CMSLiveList', 10 * 60, min_rows=600)
+    now = time.time()
+    features = []
+    for row in root.findall('.//{*}CMSLive'):
+        ident = row.findtext('{*}CMSID') or ''
+        location = locations.get(ident)
+        if not location or row.findtext('{*}Status') != '0' or row.findtext('{*}MessageStatus') != '1':
+            continue
+        stamp = row.findtext('{*}DataCollectTime') or ''
+        if not -120 <= now - (_timestamp(stamp) or 0) <= 10 * 60:
+            continue
+        messages = list(dict.fromkeys(_clean(item.text, 150) for item in row.findall('.//{*}Text')))
+        messages = [item for item in messages if item and item not in {'-99', 'null'}]
+        if messages:
+            features.append(_feature(location['point'], {
+                'key': f'tw:thb:sign:{ident}', 'layer': 'signs',
+                'title': f"Road sign · {location['road'] or 'Taiwan highway'}",
+                'detail': _clean(' / '.join(messages), 400), 'updated_at': stamp,
+                'source': 'Taiwan Highway Bureau', 'source_url': TAIWAN_HIGHWAY_SOURCE,
+            }))
+    return features
+
+
+def _taiwan_highway_sensors():
+    locations = _taiwan_highway_catalog('sensors', TAIWAN_HIGHWAY_VD_STATIC_URL, 'VDList', 1000)
+    root = _taiwan_highway_root(TAIWAN_HIGHWAY_VD_LIVE_URL, 'VDLiveList', 10 * 60,
+                                max_bytes=3 * 1024 * 1024, min_rows=1000)
+    now = time.time()
+    features = []
+    for row in root.findall('.//{*}VDLive'):
+        ident = row.findtext('{*}VDID') or ''
+        location = locations.get(ident)
+        if not location or row.findtext('{*}Status') != '0':
+            continue
+        stamp = row.findtext('{*}DataCollectTime') or ''
+        if not -120 <= now - (_timestamp(stamp) or 0) <= 10 * 60:
+            continue
+        lanes = row.findall('.//{*}Lane')
+        speeds = []
+        volume = 0
+        for lane in lanes:
+            try:
+                speed = float(lane.findtext('{*}Speed'))
+                if 0 < speed <= 180:
+                    speeds.append(speed)
+                volume += sum(max(0, int(item.text or 0)) for item in lane.findall('.//{*}Volume'))
+            except (TypeError, ValueError):
+                continue
+        if not speeds and not volume:
+            continue
+        detail = f"Average speed {sum(speeds) / len(speeds):.0f} km/h" if speeds else 'Speed unavailable'
+        detail += f' · {volume} vehicles in reporting interval'
+        features.append(_feature(location['point'], {
+            'key': f'tw:thb:sensor:{ident}', 'layer': 'sensors',
+            'title': f"Road detector · {location['road'] or 'Taiwan highway'}",
+            'detail': detail, 'updated_at': stamp,
+            'source': 'Taiwan Highway Bureau', 'source_url': TAIWAN_HIGHWAY_SOURCE,
+        }))
+    return features
+
+
 def _hong_kong_camera_url(camera_id):
     if not re.fullmatch(r'[A-Z0-9]{2,20}', str(camera_id)):
         raise ValueError('Invalid Hong Kong camera ID')
@@ -8080,6 +8236,9 @@ _FETCHERS = {
         'sg_lta_cameras': _singapore_cameras,
         'tw_taipei_roadworks': _taipei_roadworks,
         'tw_taipei_cms_signs': _taipei_cms_signs,
+        'tw_highway_cameras': _taiwan_highway_cameras,
+        'tw_highway_cms_signs': _taiwan_highway_signs,
+        'tw_highway_sensors': _taiwan_highway_sensors,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
@@ -8232,9 +8391,15 @@ def road_snapshot(layer, bbox=None):
         features = [item for item in features if not item['properties']['key'].startswith('hk:td:sensor:')
                     or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
                         and -120 <= now - stamp <= HONG_KONG_SENSOR_MAX_AGE)]
+        features = [item for item in features if not item['properties']['key'].startswith('tw:thb:sensor:')
+                    or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
+                        and -120 <= now - stamp <= 10 * 60)]
     if layer == 'signs':
         now = time.time()
         features = [item for item in features if not item['properties']['key'].startswith('tw:taipei:sign:')
+                    or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
+                        and -120 <= now - stamp <= 10 * 60)]
+        features = [item for item in features if not item['properties']['key'].startswith('tw:thb:sign:')
                     or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
                         and -120 <= now - stamp <= 10 * 60)]
     if layer == 'cameras':
