@@ -1,6 +1,8 @@
 import datetime as dt
 import email.utils
 import io
+import threading
+import time
 import unittest
 import urllib.error
 import zipfile
@@ -248,10 +250,88 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_sri_lanka_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_maldives_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_malaysia_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_kazakhstan_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_kazakhstan_caps_filter_replaced_expired_test_and_unlocated_notices(self):
+        now = dt.datetime(2026, 10, 2, 23, tzinfo=dt.timezone.utc)
+        def cap(name, expires='2026-10-03T15:00:00Z', status='Actual', kind='Alert', references='',
+                polygon='43,77 44,77 44,78 43,78 43,77'):
+            identifier = '2.49.0.0.398.0-' + name
+            url = 'https://meteoalert.meteoinfo.ru/kazakhstan/cap-feed/en/' + identifier + '.xml'
+            document = ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+                <identifier>{identifier}</identifier><sent>2026-10-02T16:37:01Z</sent>
+                <status>{status}</status><scope>Public</scope><msgType>{kind}</msgType>
+                <references>{references}</references><info><language>en-US</language><event>Wind</event>
+                <severity>Moderate</severity><expires>{expires}</expires>
+                <area><areaDesc>Example district</areaDesc><polygon>{polygon}</polygon></area>
+                </info></alert>''')
+            return url, document
+        records = [cap('old'), cap('new', kind='Update', references='sender,2.49.0.0.398.0-old,2026-10-02T16:00:00Z'),
+                   cap('expired', expires='2026-10-02T20:00:00Z'), cap('test', status='Test'),
+                   cap('wrong-country', polygon='1,1 2,1 2,2 1,2 1,1'), cap('cancelled'),
+                   cap('cancel', kind='Cancel', references='sender,2.49.0.0.398.0-cancelled,2026-10-02T16:00:00Z')]
+        records.append(records[1])
+        items = hazard_feeds._parse_kazakhstan_caps(records, now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['id'], 'kz:2.49.0.0.398.0-new:0')
+        self.assertEqual(items[0]['country'], 'Kazakhstan')
+        self.assertEqual(items[0]['geometry']['type'], 'MultiPolygon')
+        self.assertTrue(77 <= items[0]['lon'] <= 78 and 43 <= items[0]['lat'] <= 44)
+
+    def test_kazakhstan_immutable_caps_are_cached_and_urls_restricted(self):
+        hazard_feeds._kazakhstan_cap_alert.cache_clear()
+        self.addCleanup(hazard_feeds._kazakhstan_cap_alert.cache_clear)
+        url = 'https://meteoalert.meteoinfo.ru/kazakhstan/cap-feed/en/2.49.0.0.398.0-20261002-163701-0481238-00-EN.xml'
+        with patch.object(hazard_feeds, '_get_xml', return_value=ET.Element('alert')) as fetch:
+            hazard_feeds._kazakhstan_cap_alert(url)
+            hazard_feeds._kazakhstan_cap_alert(url)
+            with self.assertRaises(ValueError):
+                hazard_feeds._kazakhstan_cap_alert('https://example.org/alert.xml')
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_kazakhstan_catalog_checks_reuse_terms_and_deduplicates_trusted_links(self):
+        stamp = dt.datetime.now(dt.timezone.utc).isoformat()
+        url = 'https://meteoalert.meteoinfo.ru/kazakhstan/cap-feed/en/2.49.0.0.398.0-20261002-163701-0481238-00-EN.xml'
+        feed = ET.fromstring(f'''<feed xmlns="http://www.w3.org/2005/Atom"><rights>public domain</rights>
+            <entry><updated>{stamp}</updated><link type="application/cap+xml" href="{url}"/></entry>
+            <entry><updated>{stamp}</updated><link type="application/cap+xml" href="{url}"/></entry>
+            <entry><updated>{stamp}</updated><link type="application/cap+xml" href="https://example.org/alert.xml"/></entry>
+            </feed>''')
+        with patch.object(hazard_feeds, '_get_xml', return_value=feed), \
+                patch.object(hazard_feeds, '_kazakhstan_cap_alert', return_value=ET.Element('alert')) as fetch:
+            self.assertEqual(len(hazard_feeds._load_kazakhstan_caps()), 1)
+            fetch.assert_called_once_with(url)
+            feed.find('atom:rights', hazard_feeds._ATOM_NS).text = 'All rights reserved'
+            with self.assertRaises(ValueError):
+                hazard_feeds._load_kazakhstan_caps()
+
+    def test_kazakhstan_warming_is_shared_and_does_not_block_requests(self):
+        started, release = threading.Event(), threading.Event()
+        def load():
+            started.set()
+            release.wait(2)
+            return []
+        with patch.dict(hazard_feeds._KAZAKHSTAN_STATE,
+                        {'caps': None, 'fetched_at': 0, 'refresh_after': 0, 'inflight': False}, clear=True), \
+                patch.object(hazard_feeds, '_load_kazakhstan_caps', side_effect=load) as fetch:
+            try:
+                with self.assertRaises(RuntimeError):
+                    hazard_feeds._kazakhstan_alerts()
+                self.assertTrue(started.wait(1))
+                with self.assertRaises(RuntimeError):
+                    hazard_feeds._kazakhstan_alerts()
+                self.assertEqual(fetch.call_count, 1)
+            finally:
+                release.set()
+                deadline = time.monotonic() + 2
+                while hazard_feeds._KAZAKHSTAN_STATE['inflight'] and time.monotonic() < deadline:
+                    time.sleep(.01)
+            self.assertEqual(hazard_feeds._kazakhstan_alerts(), [])
+            self.assertEqual(fetch.call_count, 1)
 
     def test_malaysia_warning_maps_only_active_land_states(self):
         now = dt.datetime(2026, 10, 2, 20, tzinfo=dt.timezone.utc)
