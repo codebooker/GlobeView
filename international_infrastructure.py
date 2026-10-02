@@ -36,6 +36,10 @@ HONG_KONG_CAMERAS_URL = ('https://static.data.gov.hk/td/traffic-snapshot-images/
 HONG_KONG_CAMERAS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-tis_2-traffic-snapshot-images'
 HONG_KONG_WORKS_URL = 'https://resource.data.one.gov.hk/td/roadworks-location/get_all_the_roadworks.geojson'
 HONG_KONG_WORKS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-tis_18-roadworks-location'
+HONG_KONG_SENSORS_URL = 'https://resource.data.one.gov.hk/td/traffic-detectors/rawSpeedVol-all.xml'
+HONG_KONG_SENSOR_LOCATIONS_URL = ('https://static.data.gov.hk/td/traffic-data-strategic-major-roads/'
+                                  'info/traffic_speed_volume_occ_info.csv')
+HONG_KONG_SENSORS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-sm_4-traffic-data-strategic-major-roads'
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
@@ -302,6 +306,7 @@ _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Loc
                        for service in ('cameras', 'sign_locations')}
 _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_HONG_KONG_SENSOR_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_HEALTH = {'until': {}, 'unavailable': set(), 'lock': threading.Lock()}
 _GDYNIA_CATALOGS = {name: {'until': 0, 'rows': [], 'lock': threading.Lock()}
                     for name in ('vms', 'road_segments', 'weather_stations')}
@@ -7557,6 +7562,99 @@ def _hong_kong_roadworks():
     return _parse_hong_kong_roadworks(_get_json(HONG_KONG_WORKS_URL))
 
 
+def _parse_hong_kong_sensor_locations(rows):
+    locations = {}
+    for row in rows:
+        detector_id = str(row.get('AID_ID_Number') or '').strip()
+        if not re.fullmatch(r'(?:AID\d{5}|TDS[A-Z0-9]{5,16})', detector_id):
+            continue
+        try:
+            lat, lon = float(row['Latitude']), float(row['Longitude'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if not (math.isfinite(lat) and math.isfinite(lon) and
+                22.1 <= lat <= 22.6 and 113.8 <= lon <= 114.5):
+            continue
+        locations[detector_id] = ([lon, lat], _clean(row.get('Road_EN'), 110))
+    if len(locations) < 100:
+        raise ValueError('Hong Kong traffic-detector locations are incomplete')
+    return locations
+
+
+def _hong_kong_sensor_locations():
+    cache = _HONG_KONG_SENSOR_LOCATIONS
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+    rows = _parse_hong_kong_sensor_locations(_get_csv(HONG_KONG_SENSOR_LOCATIONS_URL))
+    with cache['lock']:
+        cache.update(until=time.time() + 6 * 3600, rows=rows)
+    return rows
+
+
+def _parse_hong_kong_sensors(root, locations, now=None):
+    now = time.time() if now is None else now
+    if root.tag != 'raw_speed_volume_list':
+        raise ValueError('Hong Kong traffic-detector publication is invalid')
+    date = root.findtext('date')
+    periods = root.findall('./periods/period')
+    if not date or not periods or len(periods) > 4:
+        raise ValueError('Hong Kong traffic-detector publication is incomplete')
+    selected = max(periods, key=lambda period: period.findtext('period_to') or '')
+    try:
+        measured = dt.datetime.strptime(f'{date} {selected.findtext("period_to")}',
+                                        '%Y-%m-%d %H:%M:%S').replace(
+                                            tzinfo=ZoneInfo('Asia/Hong_Kong'))
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Hong Kong traffic-detector timestamp is invalid') from exc
+    if not -120 <= now - measured.timestamp() <= 10 * 60:
+        raise ValueError('Hong Kong traffic-detector publication is stale')
+    features = []
+    seen = set()
+    for detector in selected.findall('./detectors/detector'):
+        detector_id = detector.findtext('detector_id') or ''
+        if detector_id not in locations or detector_id in seen:
+            continue
+        lanes = []
+        for lane in detector.findall('./lanes/lane'):
+            if lane.findtext('valid') != 'Y':
+                continue
+            try:
+                speed = float(lane.findtext('speed'))
+                occupancy = float(lane.findtext('occupancy'))
+                volume = int(lane.findtext('volume'))
+            except (TypeError, ValueError):
+                continue
+            if not (math.isfinite(speed) and math.isfinite(occupancy) and
+                    0 <= speed <= 200 and 0 <= occupancy <= 100 and 0 <= volume <= 1000):
+                continue
+            lanes.append((speed, occupancy, volume))
+        if not lanes:
+            continue
+        total = sum(volume for _, _, volume in lanes)
+        mean_speed = (sum(speed * volume for speed, _, volume in lanes) / total) if total else None
+        mean_occupancy = sum(occupancy for _, occupancy, _ in lanes) / len(lanes)
+        point, road = locations[detector_id]
+        detail = f'{total} vehicle{"s" if total != 1 else ""} / 30 sec'
+        if mean_speed is not None:
+            detail += f' · {mean_speed:.0f} km/h average'
+        detail += f' · {mean_occupancy:.0f}% lane occupancy'
+        features.append(_feature(point, {
+            'key': f'hk:td:sensor:{detector_id}', 'layer': 'sensors',
+            'title': road or 'Hong Kong traffic detector', 'detail': detail,
+            'source': 'Hong Kong Transport Department · DATA.GOV.HK',
+            'source_url': HONG_KONG_SENSORS_SOURCE,
+            'updated_at': measured.isoformat(),
+        }))
+        seen.add(detector_id)
+    return features
+
+
+def _hong_kong_sensors():
+    return _parse_hong_kong_sensors(_get_xml(HONG_KONG_SENSORS_URL),
+                                    _hong_kong_sensor_locations())
+
+
 def _hong_kong_camera_url(camera_id):
     if not re.fullmatch(r'[A-Z0-9]{2,20}', str(camera_id)):
         raise ValueError('Invalid Hong Kong camera ID')
@@ -7701,6 +7799,7 @@ _FETCHERS = {
         'es_zaragoza_roadworks': _zaragoza_roadworks,
         'hk_td_roadworks': _hong_kong_roadworks,
         'hk_td_cameras': _hong_kong_cameras,
+        'hk_td_sensors': _hong_kong_sensors,
         'es_valencia_road_occupancy': _valencia_road_occupancy,
         'es_valencia_counters': _valencia_counters,
         'es_madrid_cameras': _madrid_cameras,
@@ -7848,6 +7947,11 @@ def road_snapshot(layer, bbox=None):
     if bbox is not None:
         features = [item for item in features if west <= item['geometry']['coordinates'][0] <= east
                     and south <= item['geometry']['coordinates'][1] <= north]
+    if layer == 'sensors':
+        now = time.time()
+        features = [item for item in features if not item['properties']['key'].startswith('hk:td:sensor:')
+                    or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
+                        and -120 <= now - stamp <= 10 * 60)]
     if layer == 'cameras':
         hong_kong = [item for item in features if item['properties']['key'].startswith('hk:td:camera:')]
         if len(hong_kong) > 80:
