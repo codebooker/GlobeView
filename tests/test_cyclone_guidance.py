@@ -1,5 +1,7 @@
 import datetime as dt
+import json
 import unittest
+from unittest import mock
 
 import cyclone_guidance
 
@@ -46,6 +48,27 @@ class CycloneGuidanceTests(unittest.TestCase):
         self.assertEqual(cyclone_guidance._resolve_atcf_id({
             'title': 'Typhoon Example', 'sourceUrl': 'https://www.metoc.navy.mil/jtwc/products/wp2526.tcw',
         }), 'WP252026')
+
+    def test_indian_and_southern_hemisphere_guidance_uses_ucar(self):
+        now = dt.datetime.now(dt.timezone.utc)
+        cycle = now.strftime('%Y%m%d%H')
+        for basin, directory in (('io', 'northindian'), ('sh', 'southernhemisphere')):
+            with self.subTest(basin=basin):
+                latitude = '150S' if basin == 'sh' else '150N'
+                rows = [f'{basin.upper()}, 01, {cycle}, 03, {code}, {tau}, {latitude}, {lon}, 40, 1000'
+                        for code in ('CMC', 'UKM')
+                        for tau, lon in ((0, '850E'), (12, '860E'), (24, '870E'))]
+                storm = {'id': 'storm-1', 'title': 'Tropical Cyclone Example',
+                         'sourceUrl': f'https://www.metoc.navy.mil/jtwc/products/{basin}01{now:%y}.tcw'}
+                with mock.patch.dict(cyclone_guidance._cache, {}, clear=True), \
+                        mock.patch.object(cyclone_guidance, 'hazard_snapshot',
+                                          return_value=json.dumps({'items': [storm]})), \
+                        mock.patch.object(cyclone_guidance, '_read', return_value='\n'.join(rows)) as read:
+                    result = cyclone_guidance.guidance_snapshot('storm-1')
+                self.assertEqual(result['status'], 'available')
+                self.assertEqual(len(result['tracks']), 2)
+                self.assertEqual(read.call_args.args[0],
+                                 f'{cyclone_guidance.UCAR_BASE}/{directory}/{now.year}/{basin}01{now.year}/a{basin}01{now.year}.dat')
 
 
 if __name__ == '__main__':
