@@ -9,10 +9,12 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
+import ssl
 import threading
 import time
 import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from functools import lru_cache
@@ -59,6 +61,8 @@ PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/se
                 'ID_oc%2CNumero%2CEstadoAgrupado%2CNatureza%2CConcelho%2CRegiao%2C'
                 'Operacionais%2CMeiosTerrestres%2CMeiosAereos%2CDataDosDados&'
                 'returnGeometry=true&outSR=4326&f=json')
+THAILAND_DDPM_WFS = 'https://wgeo.disaster.go.th/geoserver/wfs'
+THAILAND_DDPM_SOURCE = 'https://ddc.disaster.go.th/'
 _ATOM = '{http://www.w3.org/2005/Atom}'
 _CAP = '{urn:oasis:names:tc:emergency:cap:1.2}'
 _LOCK = threading.Lock()
@@ -73,14 +77,14 @@ _ZARAGOZA_STREETS_LOCK = threading.Lock()
 _JTSK_TO_WGS84 = Transformer.from_crs('EPSG:5514', 'EPSG:4326', always_xy=True)
 
 
-def _get(url):
+def _get(url, context=None):
     request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public emergency feed reader)', 'Accept': 'application/json, application/atom+xml, application/xml'})
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=15, context=context) as response:
         return response.read(8 * 1024 * 1024 + 1)
 
 
-def _json(url):
-    body = _get(url)
+def _json(url, context=None):
+    body = _get(url, context=context)
     if len(body) > 8 * 1024 * 1024:
         raise ValueError('Emergency feed exceeded 8 MB')
     return json.loads(body)
@@ -131,6 +135,62 @@ def _item(key, lon, lat, title, detail, source, source_url, observed, category='
     return {'id': key, 'lon': float(lon), 'lat': float(lat), 'title': _clean(title, 140),
             'detail': _clean(detail), 'source': source, 'sourceUrl': source_url,
             'observed': observed, 'category': category}
+
+
+def parse_thailand_ddpm(payload, now=None):
+    """Recent, still-open disaster reports from Thailand's public DDPM map."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    features = payload.get('features') if isinstance(payload, dict) else None
+    if not isinstance(features, list) or len(features) >= 1000:
+        raise ValueError('Thailand DDPM disaster feed is invalid')
+    output = []
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        props = feature.get('properties') or {}
+        if str(props.get('area_status')) != '1' or props.get('disaster_end_date'):
+            continue
+        identifier = props.get('area_id')
+        if not isinstance(identifier, int) or identifier <= 0:
+            continue
+        point = _first_point(feature.get('geometry'))
+        if not point or not (97 <= float(point[0]) <= 106 and 5 <= float(point[1]) <= 21):
+            continue
+        updated = _iso(props.get('last_upd_date'))
+        started = _iso(props.get('disaster_start_date'))
+        if not updated or not started:
+            continue
+        updated_at = dt.datetime.fromisoformat(updated.replace('Z', '+00:00'))
+        started_at = dt.datetime.fromisoformat(started.replace('Z', '+00:00'))
+        if not (dt.timedelta(minutes=-5) <= now - updated_at <= dt.timedelta(days=3) and
+                dt.timedelta(minutes=-5) <= now - started_at <= dt.timedelta(days=30)):
+            continue
+        kind = _clean(props.get('disaster_type_name'), 80)
+        province = _clean(props.get('province_name'), 80)
+        district = _clean(props.get('amphur_name'), 80)
+        if not kind or not province:
+            continue
+        category = 'fire' if 'อัคคีภัย' in kind or 'ไฟป่า' in kind else 'warning'
+        location = ', '.join(part for part in (district, province) if part)
+        output.append(_item(f'th:ddpm:{identifier}', *point, f'{kind} · {province}',
+                            f'Open disaster report near {location}. Reported location; verify with DDPM.',
+                            'Thailand DDPM', THAILAND_DDPM_SOURCE, updated, category))
+    return output
+
+
+def _thailand_ddpm():
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=3)).strftime('%Y-%m-%dT%H:%M:%S')
+    query = urllib.parse.urlencode({
+        'service': 'WFS', 'version': '1.1.0', 'request': 'GetFeature',
+        'typeName': 'ddpm:gis_disaster_poi', 'outputFormat': 'application/json',
+        'srsName': 'EPSG:4326', 'maxFeatures': 1000,
+        'CQL_FILTER': f"area_status = 1 AND last_upd_date >= '{cutoff}'",
+    })
+    # DDPM currently sends the leaf certificate without this public intermediate.
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=str(Path(__file__).with_name('certs') /
+                                             'globalsign-rsa-ov-ssl-ca-2018.pem'))
+    return parse_thailand_ddpm(_json(f'{THAILAND_DDPM_WFS}?{query}', context=context))
 
 
 def parse_poland_rso(payload, now=None):
@@ -1244,6 +1304,7 @@ _LOADERS = {
     'cz_usti_fire': _usti_emergencies,
     'nl_p2000': _netherlands_p2000,
     'lu_alert': _luxembourg_alerts,
+    'th_ddpm': _thailand_ddpm,
 }
 
 
