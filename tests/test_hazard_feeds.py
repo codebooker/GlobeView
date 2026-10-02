@@ -160,6 +160,40 @@ class HazardFeedTests(unittest.TestCase):
         self.assertEqual(items[0]['geometry']['coordinates'][0][0][0], [174, -41])
         self.assertEqual(items[0]['country'], 'New Zealand')
 
+    def test_sri_lanka_cap_maps_named_districts_and_published_polygons(self):
+        future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=3)).isoformat()
+        past = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)).isoformat()
+        first = 'https://was.meteo.gov.lk/cap/en/12345678-1234-1234-1234-123456789abc'
+        second = 'https://was.meteo.gov.lk/cap/en/12345678-1234-1234-1234-123456789abd'
+        feed = ET.fromstring(f'''<rss><channel><item><link>{first}</link></item>
+          <item><link>{second}</link></item><item><link>https://other.example/cap/en/12345678-1234-1234-1234-123456789abc</link></item>
+        </channel></rss>''')
+        district_cap = ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+          <identifier>district-alert</identifier><status>Actual</status><msgType>Alert</msgType><scope>Public</scope>
+          <sent>2026-10-02T12:00:00+05:30</sent><info><language>en-LK</language>
+          <headline>Heavy rain</headline><severity>Severe</severity><expires>{future}</expires>
+          <area><areaDesc>Ampara and Batticaloa districts</areaDesc></area></info>
+          <info><language>en-LK</language><expires>{past}</expires><area><areaDesc>Colombo</areaDesc></area></info>
+        </alert>''')
+        polygon_cap = ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+          <identifier>polygon-alert</identifier><status>Actual</status><msgType>Update</msgType>
+          <info><language>en</language><headline>Coastal wind</headline><expires>{future}</expires>
+          <area><areaDesc>East coast</areaDesc><polygon>7.0,81.0 7.0,81.5 8.0,81.5 7.0,81.0</polygon></area></info>
+        </alert>''')
+        with patch.object(hazard_feeds, '_get_xml', side_effect=[feed, district_cap, polygon_cap]) as get_xml:
+            items = hazard_feeds._sri_lanka_alerts()
+        self.assertEqual(len(items), 3)
+        self.assertEqual({item['area'] for item in items if item['locationKind'] != 'polygon'},
+                         {'Ampara District', 'Batticaloa District'})
+        self.assertEqual(items[-1]['geometry']['coordinates'][0][0][0], [81.0, 7.0])
+        self.assertEqual(items[-1]['sourceUrl'], second)
+        self.assertEqual(get_xml.call_count, 3)
+
+    def test_sri_lanka_empty_public_feed_is_available_without_markers(self):
+        feed = ET.fromstring('<rss><channel><title>Weather Advisory CAP Feed</title></channel></rss>')
+        with patch.object(hazard_feeds, '_get_xml', return_value=feed):
+            self.assertEqual(hazard_feeds._sri_lanka_alerts(), [])
+
     def test_world_alerts_keep_available_country_when_other_feed_fails(self):
         with patch.object(hazard_feeds, '_canada_alerts', return_value=[{'id': 'ca:1'}]), patch.object(
             hazard_feeds, '_new_zealand_alerts', side_effect=RuntimeError('offline')
@@ -169,6 +203,7 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_azores_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_pagasa_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_sachet_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_sri_lanka_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])

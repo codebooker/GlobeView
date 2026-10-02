@@ -1,0 +1,107 @@
+{
+  "source": "geoBoundaries gbOpen LKA ADM2; OpenStreetMap, Wambacher",
+  "license": "ODbL 1.0",
+  "sourceUrl": "https://www.geoboundaries.org/api/current/gbOpen/LKA/ADM2/",
+  "districts": {
+    "Ampara": [
+      81.68498,
+      7.12354
+    ],
+    "Anuradhapura": [
+      80.44032,
+      8.36766
+    ],
+    "Badulla": [
+      81.09016,
+      7.08234
+    ],
+    "Batticaloa": [
+      81.40968,
+      7.83444
+    ],
+    "Colombo": [
+      80.02934,
+      6.84581
+    ],
+    "Galle": [
+      80.23065,
+      6.20394
+    ],
+    "Gampaha": [
+      80.0362,
+      7.11866
+    ],
+    "Hambantota": [
+      81.17843,
+      6.27615
+    ],
+    "Jaffna": [
+      80.23148,
+      9.64688
+    ],
+    "Kalutara": [
+      80.1342,
+      6.57743
+    ],
+    "Kandy": [
+      80.64095,
+      7.21473
+    ],
+    "Kegalle": [
+      80.32124,
+      7.11268
+    ],
+    "Kilinochchi": [
+      80.46372,
+      9.45005
+    ],
+    "Kurunegala": [
+      80.2573,
+      7.72798
+    ],
+    "Mannar": [
+      80.16348,
+      8.88286
+    ],
+    "Matale": [
+      80.66071,
+      7.69834
+    ],
+    "Matara": [
+      80.52131,
+      6.16071
+    ],
+    "Monaragala": [
+      81.37678,
+      6.87677
+    ],
+    "Mullaitivu": [
+      80.52483,
+      9.19116
+    ],
+    "Nuwara Eliya": [
+      80.75699,
+      7.01133
+    ],
+    "Polonnaruwa": [
+      81.04844,
+      7.99707
+    ],
+    "Puttalam": [
+      79.95279,
+      7.91716
+    ],
+    "Ratnapura": [
+      80.58933,
+      6.58064
+    ],
+    "Trincomalee": [
+      81.0609,
+      8.57018
+    ],
+    "Vavuniya": [
+      80.48814,
+      8.8353
+    ]
+  }
+}
