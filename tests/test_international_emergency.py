@@ -7,6 +7,39 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_zaragoza_fire_maps_only_recent_unique_street_reports(self):
+        now = dt.datetime(2026, 10, 2, 15, tzinfo=dt.timezone.utc)
+        open_rows = [
+            {'fecha': '2026-10-02T16:30:00', 'tipoSiniestro': 'Incendio en vivienda',
+             'direccion': 'CANALETTO (Zaragoza)'},
+            {'fecha': '2026-10-02T16:20:00', 'tipoSiniestro': 'Prácticas, pruebas',
+             'direccion': 'CANALETTO (Zaragoza)'},
+            {'fecha': '2026-10-02T16:10:00', 'tipoSiniestro': 'Socorro a víctimas',
+             'direccion': 'VALENCIA (Zaragoza)'},
+        ]
+        closed_rows = [
+            {'fecha': '2026-10-02T14:00:00', 'tipoSiniestro': 'Accidente de tráfico',
+             'direccion': 'SERVET, MIGUEL (Zaragoza)'},
+            {'fecha': '2026-10-01T23:00:00', 'tipoSiniestro': 'Socorro a víctimas',
+             'direccion': 'CANALETTO (Zaragoza)'},
+        ]
+        streets = {
+            'CANALETTO': [(-0.87, 41.62, 'CALLE CANALETTO')],
+            'SERVET MIGUEL': [(-0.86, 41.64, 'CALLE MIGUEL SERVET')],
+            'VALENCIA': [(-0.88, 41.65, 'CALLE VALENCIA'), (-0.89, 41.66, 'AVENIDA VALENCIA')],
+        }
+        items = feeds.parse_zaragoza_fire({'result': open_rows, 'totalCount': 3},
+                                           {'result': closed_rows, 'totalCount': 2}, streets, now)
+        self.assertEqual(len(items), 2)
+        self.assertEqual([item['category'] for item in items], ['fire', 'traffic'])
+        self.assertEqual(items[0]['observed'], '2026-10-02T14:30:00Z')
+        self.assertIn('Approximate street center', items[0]['detail'])
+        self.assertIn('Closed today', items[1]['detail'])
+        self.assertEqual((items[1]['lon'], items[1]['lat']), (-0.86, 41.64))
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds.parse_zaragoza_fire({'result': open_rows, 'totalCount': 4},
+                                      {'result': [], 'totalCount': 0}, streets, now)
+
     def test_luxembourg_alerts_apply_cancellations_and_skip_food_recalls(self):
         now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc)
         namespace = 'urn:oasis:names:tc:emergency:cap:1.2:profile:cap-lu:1.0'
