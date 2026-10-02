@@ -988,7 +988,7 @@ SECURITY_HEADERS = {
         "default-src 'self'; "
         "script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://unpkg.com; "
-        "img-src 'self' data: blob: https://fl511.com https://511ga.org https://511wi.gov https://az511.gov https://511.idaho.gov https://udottraffic.utah.gov https://api.algotraffic.com https://www.mdottraffic.com https://*.mdottraffic.com https://drivenc.gov https://www.drivenc.gov https://snapshot.navigator.dot.ga.gov https://tiles.openfreemap.org "
+        "img-src 'self' data: blob: https://fl511.com https://511ga.org https://511wi.gov https://az511.gov https://511.idaho.gov https://udottraffic.utah.gov https://api.algotraffic.com https://www.mdottraffic.com https://*.mdottraffic.com https://drivenc.gov https://www.drivenc.gov https://snapshot.navigator.dot.ga.gov https://dot511.nebraska.gov https://cctv.cdn.goakamai.org https://tiles.openfreemap.org "
         "https://mapservices.weather.noaa.gov https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://tiles.versatiles.org "
         "https://*.arcgisonline.com https://tile.openweathermap.org https://embed.skylinewebcams.com https://www.ipcamlive.com https://*.ipcamlive.com https://kamera.atlas.vegvesen.no https://www.cita.lu https://weathercam.digitraffic.fi https://etraffic.dgt.es https://informo.madrid.es https://www.vegagerdin.is; "
         "connect-src 'self' https://api.rainviewer.com https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://marine-api.open-meteo.com https://tiles.openfreemap.org https://tiles.versatiles.org https://*.wowza.com https://*.streamlock.net https://widevine-dash.ezdrm.com wss://cctv.trafficview.org:8420; "
@@ -1208,7 +1208,7 @@ VDOT_CACHE_TTL = 60
 VDOT_TRAFFIC_CACHE = {}
 VDOT_TRAFFIC_CACHE_LOCK = threading.Lock()
 VDOT_TRAFFIC_URLS = {
-    'Cameras': 'https://511.vdot.virginia.gov/services/map/array/cameras',
+    'Cameras': 'https://511.vdot.virginia.gov/services/511/map/array/cameras',
     'MessageSigns': 'https://data.511-atis-ttrip-prod.iteriscloud.com/datasets/dms/dms_active.geojson',
     'IncidentsMinor': 'https://data.511-atis-ttrip-prod.iteriscloud.com/datasets/incidentUnfiltered/minor_incidents.geojson',
     'IncidentsMajor': 'https://data.511-atis-ttrip-prod.iteriscloud.com/datasets/incidentUnfiltered/major_incidents.geojson',
@@ -3317,6 +3317,7 @@ def goakamai_camera_detail(site_id):
             'video_url': None,
             'video_enabled': False,
             'snapshot_url': f'/camera-snapshot/HI/{target}' if camera['snapshot_url'] else None,
+            'snapshot_fallback_url': camera['snapshot_url'] or None,
             'upstream_snapshot_url': camera['snapshot_url'] or None,
         }
     raise ValueError(f'GoAkamai camera {site_id} not found')
@@ -3334,6 +3335,7 @@ def goakamai_layer_payload(layer):
                 'videoEnabled': False,
                 'videoId': camera['id'],
                 'snapshotUrl': f'/camera-snapshot/HI/{camera["id"]}' if camera['snapshot_url'] else None,
+                'snapshotFallbackUrl': camera['snapshot_url'] or None,
                 'snapshotFromVideo': False,
             },
         } for camera in goakamai_camera_records()]}
@@ -4914,7 +4916,8 @@ def cars511_layer_payload(state_code, layer):
             'expando': {
                 'videoEnabled': False,
                 'videoId': camera['id'],
-                'snapshotUrl': f'/camera-snapshot/{state_code}/{camera["id"]}',
+                'snapshotUrl': camera['snapshot_url'] if state_code == 'NE'
+                else f'/camera-snapshot/{state_code}/{camera["id"]}',
             },
         } for camera in fetch_cars511_cameras(state_code)]}
     if layer == 'MessageSigns':
@@ -4954,7 +4957,8 @@ def cars511_camera_detail(state_code, site_id):
             'video_id': target,
             'video_url': None,
             'video_enabled': False,
-            'snapshot_url': f'/camera-snapshot/{state_code}/{target}',
+            'snapshot_url': camera['snapshot_url'] if state_code == 'NE'
+            else f'/camera-snapshot/{state_code}/{target}',
             'upstream_snapshot_url': camera['snapshot_url'],
         }
     raise ValueError(f'{state_code} 511 camera {site_id} not found')
@@ -10384,8 +10388,7 @@ def drivetexas_stream_url(value):
 def fetch_drivetexas_cameras():
     def load():
         rows = drivetexas_query('appgeo/cameraPoint', [
-            'id', 'guid', 'route', 'jurisdiction', 'description', 'name',
-            'direction', 'active', 'problemstream', 'lastUpdated', 'httpsurl',
+            'id', 'description', 'name', 'active', 'problemstream', 'lastUpdated', 'httpsurl',
             'imageurl', 'prerollurl', 'XY',
         ])
         cameras = []
@@ -19676,8 +19679,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             content_type = 'image/jpeg'
         elif content.startswith(b'RIFF') and content[8:12] == b'WEBP':
             content_type = 'image/webp'
-        if content_type not in {'image/jpeg', 'image/png', 'image/webp'}:
-            content_type = 'image/jpeg'
+        elif content.startswith((b'GIF87a', b'GIF89a')):
+            content_type = 'image/gif'
+        else:
+            raise FileNotFoundError('Camera source returned no image')
         return content, content_type
 
     def _handle_camera_snapshot(self, parsed):
