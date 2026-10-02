@@ -450,6 +450,93 @@ def _new_zealand_alerts():
     return items
 
 
+_SRI_LANKA_CAP_FEED = 'https://was.meteo.gov.lk/cap/en/rss.xml'
+_SRI_LANKA_CAP_URL = re.compile(
+    r'https://was\.meteo\.gov\.lk/cap/(?:en/)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}'
+)
+
+
+@lru_cache(maxsize=1)
+def _sri_lanka_district_points():
+    path = Path(__file__).with_name('sri-lanka-district-points.json')
+    return json.loads(path.read_text())['districts']
+
+
+def _sri_lanka_alerts():
+    """Map public CAP polygons or approximate points for named districts."""
+    feed = _get_xml(_SRI_LANKA_CAP_FEED, max_bytes=500_000)
+    now = dt.datetime.now(_UTC)
+    districts = _sri_lanka_district_points()
+    items = []
+    seen = set()
+    failed = 0
+    for entry in feed.findall('./channel/item')[:200]:
+        url = (entry.findtext('link') or '').strip()
+        if not _SRI_LANKA_CAP_URL.fullmatch(url):
+            continue
+        try:
+            cap = _get_xml(url, max_bytes=300_000)
+        except Exception:
+            failed += 1
+            continue
+        if (cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual'
+                or cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')
+                or cap.findtext('cap:scope', namespaces=_CAP_NS) not in (None, 'Public')):
+            continue
+        identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or url.rsplit('/', 1)[-1]
+        sent = cap.findtext('cap:sent', namespaces=_CAP_NS)
+        for index, info in enumerate(cap.findall('cap:info', _CAP_NS)):
+            language = info.findtext('cap:language', namespaces=_CAP_NS) or 'en'
+            if not language.lower().startswith('en') or not _future_timestamp(info.findtext('cap:expires', namespaces=_CAP_NS), now):
+                continue
+            areas = info.findall('cap:area', _CAP_NS)
+            polygons = []
+            area_text = []
+            for area in areas:
+                description = (area.findtext('cap:areaDesc', namespaces=_CAP_NS) or '').strip()
+                if description:
+                    area_text.append(description)
+                for polygon in area.findall('cap:polygon', _CAP_NS):
+                    ring = _cap_polygon(polygon.text)
+                    if ring:
+                        polygons.append([ring])
+            base = {
+                'title': info.findtext('cap:headline', namespaces=_CAP_NS) or entry.findtext('title') or 'Weather alert',
+                'country': 'Sri Lanka', 'source': 'Sri Lanka Department of Meteorology',
+                'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+                'advice': ' '.join((info.findtext('cap:instruction', namespaces=_CAP_NS)
+                                    or info.findtext('cap:description', namespaces=_CAP_NS) or '').split())[:480],
+                'observed': sent, 'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
+                'sourceUrl': url,
+            }
+            if polygons:
+                geometry = {'type': 'MultiPolygon', 'coordinates': polygons}
+                point = _polygon_point(geometry)
+                if point and 78 <= point[0] <= 83 and 5 <= point[1] <= 11:
+                    key = f'lk:{identifier}:{index}'
+                    if key not in seen:
+                        seen.add(key)
+                        items.append({**base, 'id': key, 'lon': round(point[0], 5), 'lat': round(point[1], 5),
+                                      'geometry': geometry, 'locationKind': 'polygon',
+                                      'area': '; '.join(area_text)[:250]})
+                continue
+            descriptions = ' '.join(area_text)
+            for district, point in districts.items():
+                if not re.search(r'(?<![A-Za-z])' + re.escape(district) + r'(?: District)?(?![A-Za-z])',
+                                 descriptions, re.I):
+                    continue
+                key = f'lk:{identifier}:{index}:{district.lower().replace(" ", "-")}'
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append({**base, 'id': key, 'lon': point[0], 'lat': point[1],
+                              'locationKind': 'published area representative point',
+                              'area': district + ' District'})
+    if failed and not items:
+        raise RuntimeError('Sri Lanka CAP notices are unavailable')
+    return items
+
+
 @lru_cache(maxsize=512)
 def _norway_cap_alert(identifier):
     if not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', identifier):
@@ -916,7 +1003,8 @@ def _world_alerts():
     loaders = [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
                ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
                ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
-               ('Philippines', _pagasa_alerts), ('India', _sachet_alerts)]
+               ('Philippines', _pagasa_alerts), ('India', _sachet_alerts),
+               ('Sri Lanka', _sri_lanka_alerts)]
     # Each provider is independent; a slow national service should not delay
     # every other country's current alerts.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:
