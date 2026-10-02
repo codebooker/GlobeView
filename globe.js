@@ -788,9 +788,10 @@ import { createCyberTrails } from './cyber-trails.js';
       ? 'Aircraft: <a href="https://opensky-network.org/">OpenSky</a> / <a href="https://www.adsb.lol/">ADSB.lol</a>'
       : type === 'vessels' ? 'Vessels: <a href="https://aisstream.io/">AISStream</a>'
       : type === 'webcams' ? 'Webcam catalog: <a href="https://github.com/simplifaisoul/osiris">OSIRIS</a> / camera operators'
-      : type === 'cameras' ? 'Singapore traffic images: <a href="https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view">Land Transport Authority via data.gov.sg</a> (<a href="https://data.gov.sg/open-data-licence">Singapore Open Data Licence</a>)'
+      : type === 'cameras' ? 'Traffic images: <a href="https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view">Singapore LTA</a> / <a href="https://data.gov.tw/en/datasets/29817">Taiwan Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Taiwan Open Government Data License 1.0</a>)'
       : type === 'construction' ? `Taipei roadworks: Public Works Department, Taipei City Government ${new Date().getUTCFullYear()} <a href="https://data.gov.tw/en/datasets/145614">Taipei City Today's Construction Information</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)`
-      : type === 'signs' ? 'Taipei live road signs: <a href="https://data.gov.tw/en/datasets/129029">Department of Transportation Engineering and Management, Taipei City</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
+      : type === 'signs' ? 'Taiwan road signs: <a href="https://data.gov.tw/en/datasets/129029">Taipei City</a> / <a href="https://data.gov.tw/en/datasets/29817">Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
+      : type === 'sensors' ? 'Road detectors: <a href="https://data.gov.tw/en/datasets/29817">Taiwan Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
       : type === 'lpr' ? 'Plate-reader locations: <a href="https://deflock.me/">DeFlock / OpenStreetMap</a> / <a href="https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html">Dutch Police</a> / <a href="https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13">Via Lietuva</a> / <a href="https://dati.comune.milano.it/dataset/ds959-varchi-areab">Comune di Milano Area B</a> / <a href="https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_">Area C</a> / <a href="https://www.data.gouv.fr/datasets/autoroutes-et-peages-en-flux-libre">Maxime Lopes · French toll gantries</a>'
       : type === 'cyclones' ? 'Cyclones: <a href="https://eonet.gsfc.nasa.gov/">NASA EONET</a>'
       : type === 'earthquakes' ? 'Earthquakes: <a href="https://earthquake.usgs.gov/">USGS</a>'
@@ -1469,7 +1470,8 @@ import { createCyberTrails } from './cyber-trails.js';
       { bounds: { minLon: 31.9, maxLon: 34.8, minLat: 34.4, maxLat: 35.8 } },
       { bounds: { minLon: 113.8, maxLon: 114.5, minLat: 22.1, maxLat: 22.6 } }, // Hong Kong
       { bounds: { minLon: 103.5, maxLon: 104.1, minLat: 1.1, maxLat: 1.6 } }, // Singapore
-      { bounds: { minLon: 121.3, maxLon: 121.8, minLat: 24.8, maxLat: 25.4 } } // Taipei
+      { bounds: { minLon: 121.3, maxLon: 121.8, minLat: 24.8, maxLat: 25.4 } }, // Taipei
+      { bounds: { minLon: 119, maxLon: 123, minLat: 21, maxLat: 26 } } // Taiwan highways
     ].some(region => regionVisible(region, bounds));
     const internationalPromise = internationalVisible
       ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
@@ -2235,7 +2237,8 @@ import { createCyberTrails } from './cyber-trails.js';
         { bounds: { minLon: 3, maxLon: 7.4, minLat: 50.6, maxLat: 53.8 } },
         { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } },
         { bounds: { minLon: -25, maxLon: -13, minLat: 63, maxLat: 67.5 } },
-        { bounds: { minLon: 14, maxLon: 24.3, minLat: 48.8, maxLat: 55.2 } }
+        { bounds: { minLon: 14, maxLon: 24.3, minLat: 48.8, maxLat: 55.2 } },
+        { bounds: { minLon: 119, maxLon: 123, minLat: 21, maxLat: 26 } } // Taiwan highways
       ].some(region => regionVisible(region, currentBounds()));
       const northAmericaSensorsVisible = type !== 'sensors' || regionVisible({ bounds: {
         minLon: -170, maxLon: -50, minLat: 15, maxLat: 72 } }, currentBounds());
