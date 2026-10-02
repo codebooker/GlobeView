@@ -1,6 +1,7 @@
 import datetime as dt
 import io
 import unittest
+import urllib.error
 import zipfile
 import xml.etree.ElementTree as ET
 from unittest.mock import patch
@@ -167,10 +168,58 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_germany_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_azores_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_pagasa_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_sachet_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_sachet_cap_filters_expired_and_superseded_alerts_and_maps_area(self):
+        now = dt.datetime(2026, 10, 2, 20, tzinfo=dt.timezone.utc)
+        base = hazard_feeds._SACHET_PATH
+        def cap(rss_id, identifier, expires, references=''):
+            return ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+              <identifier>{identifier}</identifier><status>Actual</status><msgType>Update</msgType>
+              <scope>Public</scope><sent>2026-10-02T19:00:00Z</sent><references>{references}</references>
+              <info><language>en-IN</language><category>Met</category><event>Flood</event>
+                <expires>{expires}</expires><headline>River flood warning</headline>
+                <severity>Severe</severity><area><areaDesc>Test district</areaDesc></area>
+                <parameter><valueName>Polygon URL</valueName>
+                  <value>{base}FetchPolygonXMLFile?identifier={rss_id}</value></parameter>
+              </info></alert>''')
+        old = cap('1790970564204007', 'IN-old', '2026-10-03T00:00:00Z')
+        current = cap('1790970564204008', 'IN-new', '2026-10-03T00:00:00Z',
+                      'agency,IN-old,2026-10-02T18:00:00Z')
+        expired = cap('1790970564204009', 'IN-expired', '2026-10-02T19:00:00Z')
+        candidates = hazard_feeds._parse_sachet_caps([
+            ('1790970564204007', old), ('1790970564204008', current),
+            ('1790970564204009', expired)], now)
+        self.assertEqual([item['id'] for item in candidates], ['in:sachet:IN-new'])
+        area = ET.fromstring('''<alert><polygon>10,75 11,75 11,76 10,76 10,75</polygon>
+          <polygon>13,79 14,79 14,81 13,81 13,79</polygon></alert>''')
+        self.assertEqual(hazard_feeds._sachet_polygon_point(area), [80, 13.5])
+
+    def test_sachet_cap_revalidates_with_etag_and_uses_cached_xml_for_304(self):
+        identifier = '1790970564204007'
+        body = b'<alert><identifier>cached</identifier></alert>'
+        class Response:
+            headers = {'ETag': '"version-1"'}
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+            def read(self, _): return body
+        requests = []
+        def urlopen(request, timeout):
+            requests.append(request)
+            if len(requests) == 1:
+                return Response()
+            raise urllib.error.HTTPError(request.full_url, 304, 'Not Modified', {}, None)
+        with patch.dict(hazard_feeds._SACHET_XML_CACHE, {}, clear=True), \
+                patch.object(hazard_feeds.urllib.request, 'urlopen', side_effect=urlopen):
+            first = hazard_feeds._sachet_xml(identifier)
+            hazard_feeds._SACHET_XML_CACHE[(identifier, False)]['checked'] = -1000
+            second = hazard_feeds._sachet_xml(identifier)
+        self.assertEqual(first.findtext('identifier'), second.findtext('identifier'))
+        self.assertEqual(requests[1].get_header('If-none-match'), '"version-1"')
 
     def test_pagasa_cap_updates_clear_prior_warning_and_keep_current_polygon(self):
         now = dt.datetime(2026, 10, 2, 12, tzinfo=dt.timezone.utc)
