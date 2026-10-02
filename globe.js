@@ -790,6 +790,7 @@ import { createCyberTrails } from './cyber-trails.js';
       : type === 'webcams' ? 'Webcam catalog: <a href="https://github.com/simplifaisoul/osiris">OSIRIS</a> / camera operators'
       : type === 'cameras' ? 'Singapore traffic images: <a href="https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view">Land Transport Authority via data.gov.sg</a> (<a href="https://data.gov.sg/open-data-licence">Singapore Open Data Licence</a>)'
       : type === 'construction' ? `Taipei roadworks: Public Works Department, Taipei City Government ${new Date().getUTCFullYear()} <a href="https://data.gov.tw/en/datasets/145614">Taipei City Today's Construction Information</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)`
+      : type === 'signs' ? 'Taipei live road signs: <a href="https://data.gov.tw/en/datasets/129029">Department of Transportation Engineering and Management, Taipei City</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
       : type === 'lpr' ? 'Plate-reader locations: <a href="https://deflock.me/">DeFlock / OpenStreetMap</a> / <a href="https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html">Dutch Police</a> / <a href="https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13">Via Lietuva</a> / <a href="https://dati.comune.milano.it/dataset/ds959-varchi-areab">Comune di Milano Area B</a> / <a href="https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_">Area C</a> / <a href="https://www.data.gouv.fr/datasets/autoroutes-et-peages-en-flux-libre">Maxime Lopes · French toll gantries</a>'
       : type === 'cyclones' ? 'Cyclones: <a href="https://eonet.gsfc.nasa.gov/">NASA EONET</a>'
       : type === 'earthquakes' ? 'Earthquakes: <a href="https://earthquake.usgs.gov/">USGS</a>'
@@ -1530,7 +1531,7 @@ import { createCyberTrails } from './cyber-trails.js';
         cameraViews: type === 'cameras' && Array.isArray(p.camera_views) ? p.camera_views : [],
         snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0
       });
-      features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && /warning/i.test(p.title || '') }));
+      features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && (p.alert === true || /warning/i.test(p.title || '')) }));
     }
     if (international?.sourceErrors?.length) console.warn('Some international road feeds are unavailable:', international.sourceErrors);
     if ((failures || (internationalVisible && !international)) && !features.length) {
