@@ -1,0 +1,71 @@
+{
+  "source": "geoBoundaries gbOpen MYS ADM1; OpenStreetMap, Wambacher",
+  "license": "ODbL 1.0",
+  "sourceUrl": "https://www.geoboundaries.org/api/current/gbOpen/MYS/ADM1/",
+  "states": {
+    "Johor": [
+      103.3011,
+      2.04779
+    ],
+    "Kedah": [
+      100.67816,
+      5.81037
+    ],
+    "Kelantan": [
+      102.06773,
+      5.40334
+    ],
+    "Kuala Lumpur": [
+      101.68245,
+      3.13948
+    ],
+    "Labuan": [
+      115.21905,
+      5.31733
+    ],
+    "Malacca": [
+      102.29173,
+      2.29976
+    ],
+    "Negeri Sembilan": [
+      102.22497,
+      2.84035
+    ],
+    "Pahang": [
+      102.59084,
+      3.62534
+    ],
+    "Penang": [
+      100.45582,
+      5.35572
+    ],
+    "Perak": [
+      100.98364,
+      4.79971
+    ],
+    "Perlis": [
+      100.26672,
+      6.49018
+    ],
+    "Putrajaya": [
+      101.70033,
+      2.9301
+    ],
+    "Sabah": [
+      117.21772,
+      5.57668
+    ],
+    "Sarawak": [
+      113.65953,
+      2.92542
+    ],
+    "Selangor": [
+      101.4738,
+      3.23253
+    ],
+    "Terengganu": [
+      102.97956,
+      4.89339
+    ]
+  }
+}

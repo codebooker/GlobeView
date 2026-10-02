@@ -247,10 +247,34 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_sachet_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_sri_lanka_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_maldives_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_malaysia_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
         self.assertEqual(result['unavailable'], ['New Zealand'])
+
+    def test_malaysia_warning_maps_only_active_land_states(self):
+        now = dt.datetime(2026, 10, 2, 20, tzinfo=dt.timezone.utc)
+        def warning(title, text, start='2026-10-03T03:00:00', end='2026-10-03T06:00:00'):
+            return {'warning_issue': {'issued': '2026-10-03T02:00:00', 'title_en': title},
+                    'valid_from': start, 'valid_to': end, 'text_en': text, 'instruction_en': 'Stay safe.'}
+        land = warning('Thunderstorms Warning',
+                       'Thunderstorms are expected over the states of Selangor (Klang) • N. Sembilan '
+                       '(Port Dickson) • W.P. Putrajaya until 6 AM.')
+        marine = warning('Strong Winds', 'Winds expected over the waters of Selangor until 9 AM.',
+                         end='2026-10-03T09:00:00')
+        stale = warning('Old Warning', 'Rain expected over the states of Kedah until 5 AM.',
+                        end='2026-10-03T03:00:00')
+        points = {'Selangor': [101.47, 3.23], 'Negeri Sembilan': [102.22, 2.84],
+                  'Putrajaya': [101.70, 2.93], 'Kedah': [100.67, 5.81]}
+        with patch.object(hazard_feeds, '_get_json', return_value=[land, land, marine, stale]), \
+                patch.object(hazard_feeds, '_malaysia_state_points', return_value=points):
+            items = hazard_feeds._malaysia_alerts(now)
+        self.assertEqual({item['area'].split(' ·')[0] for item in items},
+                         {'Selangor', 'Negeri Sembilan', 'Putrajaya'})
+        self.assertEqual(len(items), 3)
+        self.assertTrue(all(item['ends'] == '2026-10-02T22:00:00+00:00' for item in items))
+        self.assertTrue(all(item['locationKind'] == 'published area representative point' for item in items))
 
     def test_sachet_cap_filters_expired_and_superseded_alerts_and_maps_area(self):
         now = dt.datetime(2026, 10, 2, 20, tzinfo=dt.timezone.utc)
