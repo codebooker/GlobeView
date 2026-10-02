@@ -7890,7 +7890,9 @@ def _parse_taipei_cms_live(root, locations, now=None, min_rows=100):
         sign_id = (row.findtext('{*}CMSID') or '').strip()
         if sign_id in seen or sign_id not in locations:
             continue
-        if row.findtext('{*}Status') != '1' or row.findtext('{*}MessageStatus') != '1':
+        # Taiwan's CMS standard defines 0 as a healthy device; 1 means a
+        # communication fault and 3 means a device fault.
+        if row.findtext('{*}Status') != '0' or row.findtext('{*}MessageStatus') != '1':
             continue
         collected_at = row.findtext('{*}DataCollectTime') or ''
         collected = _timestamp(collected_at)
