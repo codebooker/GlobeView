@@ -38,8 +38,10 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check globe.js
+          node --check geo-lines.mjs
           node --check trip.js
           node --check drawings.js
+          node --test tests/test_geo_lines.mjs
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
