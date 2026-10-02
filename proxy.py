@@ -19488,7 +19488,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         try:
             if target.endswith('.html'):
                 cache_control = 'no-cache'
-            elif target.endswith('.js'):
+            elif target.endswith(('.js', '.mjs')):
                 version = urllib.parse.parse_qs(parsed.query).get('v', [''])[0]
                 current_version = str(int(os.path.getmtime(file_path(target))))
                 cache_control = ('public, max-age=31536000, immutable' if version == current_version

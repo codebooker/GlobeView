@@ -22,3 +22,10 @@ export function splitLineAtAntimeridian(points) {
   if (segment.length > 1) segments.push(segment);
   return segments;
 }
+
+// Keep a storm's forecast bounds together when tracks cross the date line.
+export function boundsAroundLongitude(points, anchor) {
+  const lons = points.map(point => anchor + ((((point[0] - anchor) + 540) % 360) - 180));
+  const lats = points.map(point => point[1]);
+  return [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]];
+}
