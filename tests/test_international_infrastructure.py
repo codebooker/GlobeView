@@ -27,6 +27,28 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_taipei_roadworks_filter_current_traffic_effects_and_private_fields(self):
+        now = dt.datetime(2026, 10, 3, 1, tzinfo=dt.timezone(dt.timedelta(hours=8)))
+        sample = {'type': 'Feature', 'geometry': {'type': 'Point',
+                   'coordinates': [309050.617, 2770535.957]}, 'properties': {
+                       'Ac_no': '11502557-1', 'sno': '3', 'IsBlock': '是',
+                       'Cb_Da': '115/10/02', 'Ce_Da': '115/10/04',
+                       'AppMode': '5', 'Addr': '松山路', 'NPurp': 'Road repair',
+                       'Tc_Tl': 'private contact number'}}
+        payload = {'type': 'FeatureCollection', 'features': [sample] * 100 + [
+            {**sample, 'properties': {**sample['properties'], 'sno': '4', 'IsBlock': '否'}},
+            {**sample, 'properties': {**sample['properties'], 'sno': '5', 'Ce_Da': '115/10/02'}},
+        ]}
+        results = feeds._parse_taipei_roadworks(payload, now, '2026-10-02T17:50:00+00:00')
+        self.assertEqual(len(results), 1)
+        point = results[0]['geometry']['coordinates']
+        self.assertAlmostEqual(point[0], 121.5852, places=3)
+        self.assertAlmostEqual(point[1], 25.0418, places=3)
+        self.assertNotIn('private contact number', str(results))
+        self.assertEqual(results[0]['properties']['updated_at'], '2026-10-02T17:50:00+00:00')
+        with self.assertRaises(ValueError):
+            feeds._parse_taipei_roadworks({'type': 'FeatureCollection', 'features': []}, now)
+
     def test_singapore_cameras_require_recent_images_from_official_origin(self):
         now = dt.datetime(2026, 10, 2, 17, 33, tzinfo=dt.timezone.utc).timestamp()
         image = ('https://images.data.gov.sg/api/traffic-images/2026/10/'
