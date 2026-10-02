@@ -7,6 +7,30 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_thailand_ddpm_only_maps_recent_open_located_reports(self):
+        now = dt.datetime(2026, 10, 2, 19, tzinfo=dt.timezone.utc)
+        base = {'area_id': 131466, 'area_status': '1', 'disaster_end_date': None,
+                'disaster_start_date': '2026-09-26T17:00:00Z',
+                'last_upd_date': '2026-10-01T17:00:00Z',
+                'disaster_type_name': 'อุทกภัย', 'province_name': 'ตาก',
+                'amphur_name': 'เมืองตาก'}
+
+        def feature(props, lon=99.037555, lat=16.926941):
+            return {'type': 'Feature', 'geometry': {'type': 'Point',
+                    'coordinates': [lon, lat]}, 'properties': props}
+
+        payload = {'features': [feature(base),
+            feature({**base, 'area_id': 2, 'last_upd_date': '2023-10-01T17:00:00Z'}),
+            feature({**base, 'area_id': 3, 'area_status': '0'}),
+            feature({**base, 'area_id': 4, 'disaster_end_date': '2026-10-01T17:00:00Z'}),
+            feature({**base, 'area_id': 5}, 0, 0),
+            feature({**base, 'area_id': 6, 'disaster_start_date': '2023-10-01T17:00:00Z'})]}
+        rows = feeds.parse_thailand_ddpm(payload, now)
+        self.assertEqual([row['id'] for row in rows], ['th:ddpm:131466'])
+        self.assertEqual(rows[0]['category'], 'warning')
+        self.assertIn('ตาก', rows[0]['title'])
+        self.assertEqual(rows[0]['sourceUrl'], feeds.THAILAND_DDPM_SOURCE)
+
     def test_zaragoza_fire_maps_only_recent_unique_street_reports(self):
         now = dt.datetime(2026, 10, 2, 15, tzinfo=dt.timezone.utc)
         open_rows = [
