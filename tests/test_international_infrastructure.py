@@ -27,6 +27,42 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_hong_kong_sensors_join_valid_current_lanes_to_locations(self):
+        now = dt.datetime(2026, 10, 2, 17, 5, 40, tzinfo=dt.timezone.utc).timestamp()
+        locations = feeds._parse_hong_kong_sensor_locations([
+            {'AID_ID_Number': f'AID{number:05d}', 'Latitude': '22.3',
+             'Longitude': '114.15', 'Road_EN': 'Test Road'} for number in range(101)
+        ] + [{'AID_ID_Number': 'TDS10002', 'Latitude': '22.32',
+              'Longitude': '114.16', 'Road_EN': 'Second Road'}])
+        xml = '''<raw_speed_volume_list><date>2026-10-03</date><periods>
+          <period><period_to>01:04:30</period_to><detectors/></period>
+          <period><period_to>01:05:00</period_to><detectors>
+            <detector><detector_id>AID00001</detector_id><lanes>
+              <lane><speed>40</speed><occupancy>20</occupancy><volume>2</volume><valid>Y</valid></lane>
+              <lane><speed>70</speed><occupancy>10</occupancy><volume>1</volume><valid>Y</valid></lane>
+              <lane><speed>100</speed><occupancy>0</occupancy><volume>9</volume><valid>N</valid></lane>
+            </lanes></detector>
+            <detector><detector_id>AID99999</detector_id><lanes>
+              <lane><speed>50</speed><occupancy>5</occupancy><volume>1</volume><valid>Y</valid></lane>
+            </lanes></detector>
+            <detector><detector_id>TDS10002</detector_id><lanes>
+              <lane><speed>35</speed><occupancy>15</occupancy><volume>2</volume><valid>Y</valid></lane>
+            </lanes></detector>
+          </detectors></period></periods></raw_speed_volume_list>'''
+        rows = feeds._parse_hong_kong_sensors(ET.fromstring(xml), locations, now)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]['properties']['key'], 'hk:td:sensor:AID00001')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [114.15, 22.3])
+        self.assertIn('3 vehicles / 30 sec · 50 km/h average', rows[0]['properties']['detail'])
+        self.assertEqual(rows[0]['properties']['updated_at'], '2026-10-03T01:05:00+08:00')
+        self.assertEqual(rows[1]['properties']['key'], 'hk:td:sensor:TDS10002')
+        with patch.object(feeds, '_snapshot', return_value={
+                'sources': {'hk': rows}, 'errors': [], 'loading': False}), \
+                patch.object(feeds.time, 'time', return_value=now + 900):
+            self.assertEqual(feeds.road_snapshot('sensors', (114, 22.2, 114.3, 22.4))['features'], [])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_hong_kong_sensors(ET.fromstring(xml), locations, now + 900)
+
     def test_hong_kong_roadworks_require_current_local_window_and_location(self):
         now = dt.datetime(2026, 10, 2, 16, 50, tzinfo=dt.timezone.utc).timestamp()
 
