@@ -58,10 +58,10 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(rows[1]['properties']['key'], 'hk:td:sensor:TDS10002')
         with patch.object(feeds, '_snapshot', return_value={
                 'sources': {'hk': rows}, 'errors': [], 'loading': False}), \
-                patch.object(feeds.time, 'time', return_value=now + 900):
+                patch.object(feeds.time, 'time', return_value=now + 1800):
             self.assertEqual(feeds.road_snapshot('sensors', (114, 22.2, 114.3, 22.4))['features'], [])
         with self.assertRaisesRegex(ValueError, 'stale'):
-            feeds._parse_hong_kong_sensors(ET.fromstring(xml), locations, now + 900)
+            feeds._parse_hong_kong_sensors(ET.fromstring(xml), locations, now + 1800)
 
     def test_hong_kong_roadworks_require_current_local_window_and_location(self):
         now = dt.datetime(2026, 10, 2, 16, 50, tzinfo=dt.timezone.utc).timestamp()

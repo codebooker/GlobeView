@@ -40,6 +40,7 @@ HONG_KONG_SENSORS_URL = 'https://resource.data.one.gov.hk/td/traffic-detectors/r
 HONG_KONG_SENSOR_LOCATIONS_URL = ('https://static.data.gov.hk/td/traffic-data-strategic-major-roads/'
                                   'info/traffic_speed_volume_occ_info.csv')
 HONG_KONG_SENSORS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-sm_4-traffic-data-strategic-major-roads'
+HONG_KONG_SENSOR_MAX_AGE = 20 * 60
 DUBLIN_CLOSURES_URL = ('https://www.dublincity.ie/travel-and-transport/'
                        'read-latest-traffic-news/current-road-closures')
 COPENHAGEN_WORKS_BASE = 'https://wfs-kbhkort.kk.dk/k101/ows'
@@ -7607,8 +7608,9 @@ def _parse_hong_kong_sensors(root, locations, now=None):
                                             tzinfo=ZoneInfo('Asia/Hong_Kong'))
     except (TypeError, ValueError) as exc:
         raise ValueError('Hong Kong traffic-detector timestamp is invalid') from exc
-    if not -120 <= now - measured.timestamp() <= 10 * 60:
-        raise ValueError('Hong Kong traffic-detector publication is stale')
+    age = now - measured.timestamp()
+    if not -120 <= age <= HONG_KONG_SENSOR_MAX_AGE:
+        raise ValueError(f'Hong Kong traffic-detector publication is stale ({age / 60:.0f} min old)')
     features = []
     seen = set()
     for detector in selected.findall('./detectors/detector'):
@@ -7951,7 +7953,7 @@ def road_snapshot(layer, bbox=None):
         now = time.time()
         features = [item for item in features if not item['properties']['key'].startswith('hk:td:sensor:')
                     or ((stamp := _timestamp(item['properties'].get('updated_at'))) is not None
-                        and -120 <= now - stamp <= 10 * 60)]
+                        and -120 <= now - stamp <= HONG_KONG_SENSOR_MAX_AGE)]
     if layer == 'cameras':
         hong_kong = [item for item in features if item['properties']['key'].startswith('hk:td:camera:')]
         if len(hong_kong) > 80:
