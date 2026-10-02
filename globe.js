@@ -1466,7 +1466,10 @@ import { createCyberTrails } from './cyber-trails.js';
       { bounds: { minLon: 20.8, maxLon: 26.9, minLat: 53.8, maxLat: 56.5 } },
       { bounds: { minLon: 10, maxLon: 13, minLat: 46, maxLat: 48 } },
       { bounds: { minLon: -19, maxLon: 5, minLat: 27, maxLat: 45 } },
-      { bounds: { minLon: 31.9, maxLon: 34.8, minLat: 34.4, maxLat: 35.8 } }
+      { bounds: { minLon: 31.9, maxLon: 34.8, minLat: 34.4, maxLat: 35.8 } },
+      { bounds: { minLon: 113.8, maxLon: 114.5, minLat: 22.1, maxLat: 22.6 } }, // Hong Kong
+      { bounds: { minLon: 103.5, maxLon: 104.1, minLat: 1.1, maxLat: 1.6 } }, // Singapore
+      { bounds: { minLon: 121.3, maxLon: 121.8, minLat: 24.8, maxLat: 25.4 } } // Taipei
     ].some(region => regionVisible(region, bounds));
     const internationalPromise = internationalVisible
       ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
