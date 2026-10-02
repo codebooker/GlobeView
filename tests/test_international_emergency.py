@@ -7,6 +7,31 @@ import international_emergency as feeds
 
 
 class InternationalEmergencyTests(unittest.TestCase):
+    def test_nepal_bipad_maps_only_recent_approved_located_reports(self):
+        now = dt.datetime(2026, 10, 2, 21, tzinfo=dt.timezone.utc)
+        base = {'id': 95439, 'title': 'Fire at Jitpur Simara', 'verified': True, 'approved': True,
+                'point': {'type': 'Point', 'coordinates': [85.06984, 27.10642]},
+                'incidentOn': '2026-10-01T00:00:00+05:45',
+                'reportedOn': '2026-10-02T09:50:25+05:45'}
+        def row(**changes):
+            return {**base, **changes}
+        payload = {'results': [row(), row(id=95440, title='Snake Bite at Ward 6'),
+                               row(id=95441, approved=False),
+                               row(id=95442, point={'type': 'Point', 'coordinates': [0, 0]}),
+                               row(id=95443, reportedOn='2026-09-25T09:00:00+05:45'),
+                               row(id=95444, incidentOn='2026-09-01T00:00:00+05:45')]}
+        rows = feeds.parse_nepal_bipad(payload, now)
+        self.assertEqual([item['id'] for item in rows], ['np:bipad:95439', 'np:bipad:95440'])
+        self.assertEqual([item['category'] for item in rows], ['fire', 'medical'])
+        self.assertEqual(rows[0]['sourceUrl'], 'https://bipadportal.gov.np/incidents/95439/')
+        self.assertIn('approximate', rows[0]['detail'])
+
+    def test_nepal_bipad_requests_recent_reports_in_newest_first_order(self):
+        with patch.object(feeds, '_json', return_value={'results': []}) as get:
+            self.assertEqual(feeds._nepal_bipad(), [])
+        self.assertIn('ordering=-reported_on', get.call_args.args[0])
+        self.assertIn('reported_on__gt=', get.call_args.args[0])
+
     def test_indonesia_bnpb_uses_approximate_official_regency_point(self):
         now = dt.datetime(2026, 10, 2, 12, tzinfo=dt.timezone.utc)
         def row(code, day, kind, regency='Parigi Moutong', province='Sulawesi Tengah'):
