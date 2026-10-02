@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.request
 import urllib.parse
+import urllib.error
 import zipfile
 import xml.etree.ElementTree as ET
 from functools import lru_cache
@@ -750,21 +751,184 @@ def _pagasa_alerts():
     return _parse_pagasa_caps(caps, now)
 
 
+_SACHET_FEED = 'https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml'
+_SACHET_PATH = 'https://sachet.ndma.gov.in/cap_public_website/'
+_SACHET_XML_CACHE = {}
+_SACHET_RESULT_CACHE = {'expires': 0, 'items': []}
+_SACHET_LOCK = threading.Lock()
+
+
+def _sachet_xml(identifier, polygon=False):
+    """Fetch official CAP XML with the ETag/304 behavior required by NDMA."""
+    if not re.fullmatch(r'\d{10,20}', identifier):
+        raise ValueError('Invalid SACHET identifier')
+    key = (identifier, polygon)
+    now = time.monotonic()
+    with _SACHET_LOCK:
+        cached = _SACHET_XML_CACHE.get(key)
+    if cached and now - cached['checked'] < (3600 if polygon else 600):
+        return ET.fromstring(cached['body'])
+    endpoint = 'FetchPolygonXMLFile' if polygon else 'FetchXMLFile'
+    request = urllib.request.Request(_SACHET_PATH + endpoint + '?identifier=' + identifier,
+                                     headers={'User-Agent': 'GlobeView/1.0 (public alert map)',
+                                              'Accept': 'application/xml',
+                                              **({'If-None-Match': cached['etag']} if cached else {})})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            etag = response.headers.get('ETag')
+            body = response.read((2_000_000 if polygon else 100_000) + 1)
+    except urllib.error.HTTPError as error:
+        if error.code != 304 or not cached:
+            raise
+        with _SACHET_LOCK:
+            cached['checked'] = now
+        return ET.fromstring(cached['body'])
+    if not etag or len(body) > (2_000_000 if polygon else 100_000) or b'<!DOCTYPE' in body.upper():
+        raise ValueError('Invalid SACHET XML response')
+    root = ET.fromstring(body)
+    with _SACHET_LOCK:
+        _SACHET_XML_CACHE[key] = {'etag': etag, 'body': body, 'checked': now}
+        while (len(_SACHET_XML_CACHE) > 300 or
+               sum(len(entry['body']) for entry in _SACHET_XML_CACHE.values()) > 50_000_000):
+            oldest = min(_SACHET_XML_CACHE, key=lambda item: _SACHET_XML_CACHE[item]['checked'])
+            del _SACHET_XML_CACHE[oldest]
+    return root
+
+
+def _sachet_polygon_point(root):
+    """Use the center of the largest published area as an approximate marker."""
+    best = None
+    for polygon in root.iter():
+        if polygon.tag.rsplit('}', 1)[-1] != 'polygon':
+            continue
+        lons, lats = [], []
+        for pair in (polygon.text or '').split():
+            try:
+                lat, lon = map(float, pair.split(','))
+            except ValueError:
+                lons = []
+                break
+            if not (math.isfinite(lat) and math.isfinite(lon) and 6 <= lat <= 38 and 68 <= lon <= 98):
+                lons = []
+                break
+            lons.append(lon)
+            lats.append(lat)
+        if len(lons) < 3:
+            continue
+        west, east, south, north = min(lons), max(lons), min(lats), max(lats)
+        candidate = ((east - west) * (north - south), [(west + east) / 2, (south + north) / 2])
+        if best is None or candidate[0] > best[0]:
+            best = candidate
+    return best[1] if best else None
+
+
+def _parse_sachet_caps(caps, now):
+    referenced = set()
+    for _, cap in caps:
+        for entry in (cap.findtext('cap:references', namespaces=_CAP_NS) or '').split():
+            parts = entry.split(',')
+            if len(parts) >= 2:
+                referenced.add(parts[1])
+    candidates = []
+    for rss_id, cap in caps:
+        identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or ''
+        if (identifier in referenced or cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual' or
+                cap.findtext('cap:scope', namespaces=_CAP_NS) != 'Public' or
+                cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')):
+            continue
+        infos = cap.findall('cap:info', _CAP_NS)
+        info = next((value for value in infos if (value.findtext('cap:language', namespaces=_CAP_NS) or '').lower().startswith('en')), None)
+        if info is None or info.findtext('cap:category', namespaces=_CAP_NS) != 'Met':
+            continue
+        expires = info.findtext('cap:expires', namespaces=_CAP_NS)
+        if not _future_timestamp(expires, now) or info.findtext('cap:responseType', namespaces=_CAP_NS) == 'AllClear':
+            continue
+        polygon_url = next((value.findtext('cap:value', namespaces=_CAP_NS) for value in info.findall('cap:parameter', _CAP_NS)
+                            if value.findtext('cap:valueName', namespaces=_CAP_NS) == 'Polygon URL'), None)
+        if polygon_url != _SACHET_PATH + 'FetchPolygonXMLFile?identifier=' + rss_id:
+            continue
+        area = '; '.join(filter(None, (value.findtext('cap:areaDesc', namespaces=_CAP_NS)
+                                       for value in info.findall('cap:area', _CAP_NS))))
+        candidates.append({
+            'id': 'in:sachet:' + identifier, 'polygonId': rss_id,
+            'title': (info.findtext('cap:headline', namespaces=_CAP_NS) or
+                      info.findtext('cap:event', namespaces=_CAP_NS) or 'Public alert')[:180],
+            'country': 'India', 'source': 'NDMA SACHET',
+            'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+            'area': area[:250],
+            'advice': ' '.join((info.findtext('cap:instruction', namespaces=_CAP_NS) or
+                                info.findtext('cap:description', namespaces=_CAP_NS) or '').split())[:300],
+            'observed': cap.findtext('cap:sent', namespaces=_CAP_NS), 'ends': expires,
+            'sourceUrl': _SACHET_PATH + 'FetchXMLFile?identifier=' + rss_id,
+        })
+    return candidates
+
+
+def _sachet_alerts():
+    now = time.monotonic()
+    with _SACHET_LOCK:
+        if now < _SACHET_RESULT_CACHE['expires']:
+            return [item for item in _SACHET_RESULT_CACHE['items']
+                    if _future_timestamp(item['ends'], dt.datetime.now(_UTC))]
+    feed = _get_xml(_SACHET_FEED, max_bytes=750_000)
+    entries = feed.findall('./channel/item')
+    if len(entries) > 250:
+        raise ValueError('SACHET RSS exceeds supported size')
+    identifiers = list(dict.fromkeys(entry.findtext('guid') or '' for entry in entries
+                                     if re.fullmatch(r'\d{10,20}', entry.findtext('guid') or '')))
+    caps, failed = [], 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(_sachet_xml, identifier): identifier for identifier in identifiers}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                caps.append((futures[future], future.result()))
+            except Exception:
+                failed += 1
+    if failed and not caps:
+        raise RuntimeError('SACHET CAP notices are unavailable')
+    candidates = _parse_sachet_caps(caps, dt.datetime.now(_UTC))
+    items = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(_sachet_xml, item['polygonId'], True): item for item in candidates}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                point = _sachet_polygon_point(future.result())
+            except Exception:
+                point = None
+            if not point:
+                continue
+            item = futures[future].copy()
+            del item['polygonId']
+            item.update({'lon': round(point[0], 5), 'lat': round(point[1], 5),
+                         'locationKind': 'published area representative point'})
+            items.append(item)
+    if candidates and not items:
+        raise RuntimeError('SACHET alert areas are unavailable')
+    items.sort(key=lambda item: item['observed'] or '', reverse=True)
+    with _SACHET_LOCK:
+        _SACHET_RESULT_CACHE.update({'items': items, 'expires': time.monotonic() + 600})
+    return items
+
+
 def _world_alerts():
     items = []
     unavailable = []
     loaders = [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
                ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
                ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
-               ('Philippines', _pagasa_alerts)]
-    for country, loader in loaders:
-        try:
-            items.extend(loader())
-        except Exception:
-            unavailable.append(country)
+               ('Philippines', _pagasa_alerts), ('India', _sachet_alerts)]
+    # Each provider is independent; a slow national service should not delay
+    # every other country's current alerts.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:
+        futures = [executor.submit(loader) for _, loader in loaders]
+        for (country, _), future in zip(loaders, futures):
+            try:
+                items.extend(future.result())
+            except Exception:
+                unavailable.append(country)
     if len(unavailable) == len(loaders):
         raise RuntimeError('International weather alert feeds are unavailable')
-    return {'source': 'National meteorological services', 'items': items,
+    return {'source': 'National weather and disaster alert services', 'items': items,
             'countries': [country for country, _ in loaders], 'unavailable': unavailable}
 
 
