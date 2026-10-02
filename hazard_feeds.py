@@ -537,6 +537,94 @@ def _sri_lanka_alerts():
     return items
 
 
+_MALDIVES_CAP_FEED = 'https://cap.meteorology.gov.mv/rss/alerts/'
+_MALDIVES_CAP_URL = re.compile(r'https://cap\.meteorology\.gov\.mv/rss/alerts/\d{1,8}')
+
+
+@lru_cache(maxsize=256)
+def _maldives_cap_alert(url):
+    if not _MALDIVES_CAP_URL.fullmatch(url):
+        raise ValueError('Unexpected Maldives CAP URL')
+    return _get_xml(url, max_bytes=300_000)
+
+
+def _maldives_alerts():
+    feed = _get_xml(_MALDIVES_CAP_FEED, max_bytes=500_000)
+    now = dt.datetime.now(_UTC)
+    caps = []
+    failed = 0
+    for entry in feed.findall('./channel/item')[:100]:
+        url = (entry.findtext('link') or '').strip()
+        if not _MALDIVES_CAP_URL.fullmatch(url):
+            continue
+        try:
+            published = email.utils.parsedate_to_datetime(entry.findtext('pubDate') or '')
+            if not dt.timedelta(minutes=-5) <= now - published <= dt.timedelta(days=2):
+                continue
+            caps.append((url, _maldives_cap_alert(url)))
+        except (TypeError, ValueError):
+            continue
+        except Exception:
+            failed += 1
+    if failed and not caps:
+        raise RuntimeError('Maldives CAP notices are unavailable')
+    referenced = set()
+    for _, cap in caps:
+        for reference in (cap.findtext('cap:references', namespaces=_CAP_NS) or '').split():
+            parts = reference.split(',')
+            if len(parts) == 3:
+                referenced.add(parts[1])
+    items = []
+    for url, cap in caps:
+        identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or ''
+        if not identifier or len(identifier) > 160 or identifier in referenced:
+            continue
+        if (cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual'
+                or cap.findtext('cap:scope', namespaces=_CAP_NS) != 'Public'
+                or cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')):
+            continue
+        sent = cap.findtext('cap:sent', namespaces=_CAP_NS)
+        try:
+            sent_at = dt.datetime.fromisoformat(sent.replace('Z', '+00:00'))
+            if not dt.timedelta(minutes=-5) <= now - sent_at <= dt.timedelta(days=2):
+                continue
+        except (AttributeError, TypeError, ValueError):
+            continue
+        for index, info in enumerate(cap.findall('cap:info', _CAP_NS)):
+            if not _future_timestamp(info.findtext('cap:expires', namespaces=_CAP_NS), now):
+                continue
+            polygons = []
+            names = []
+            for area in info.findall('cap:area', _CAP_NS):
+                description = area.findtext('cap:areaDesc', namespaces=_CAP_NS)
+                if description:
+                    names.append(description)
+                for polygon in area.findall('cap:polygon', _CAP_NS):
+                    ring = _cap_polygon(polygon.text)
+                    if ring and all(71 <= lon <= 75 and -2 <= lat <= 9 for lon, lat in ring):
+                        polygons.append([ring])
+            if not polygons or len(polygons) > 30 or sum(len(polygon[0]) for polygon in polygons) > 20_000:
+                continue
+            geometry = {'type': 'MultiPolygon', 'coordinates': polygons}
+            point = _polygon_point(geometry)
+            if not point:
+                continue
+            advice = info.findtext('cap:instruction', namespaces=_CAP_NS) or info.findtext('cap:description', namespaces=_CAP_NS) or ''
+            items.append({
+                'id': f'mv:{url.rsplit("/", 1)[-1]}:{index}',
+                'title': info.findtext('cap:headline', namespaces=_CAP_NS) or
+                         info.findtext('cap:event', namespaces=_CAP_NS) or 'Weather alert',
+                'lon': round(point[0], 5), 'lat': round(point[1], 5),
+                'geometry': geometry, 'locationKind': 'polygon',
+                'country': 'Maldives', 'source': 'Maldives Meteorological Service',
+                'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+                'area': '; '.join(names)[:250], 'advice': ' '.join(advice.split())[:480],
+                'observed': sent, 'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
+                'sourceUrl': url,
+            })
+    return items
+
+
 @lru_cache(maxsize=512)
 def _norway_cap_alert(identifier):
     if not re.fullmatch(r'[A-Za-z0-9._-]{1,120}', identifier):
@@ -1004,7 +1092,7 @@ def _world_alerts():
                ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
                ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
                ('Philippines', _pagasa_alerts), ('India', _sachet_alerts),
-               ('Sri Lanka', _sri_lanka_alerts)]
+               ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts)]
     # Each provider is independent; a slow national service should not delay
     # every other country's current alerts.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:

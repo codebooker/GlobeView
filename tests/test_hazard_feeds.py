@@ -1,4 +1,5 @@
 import datetime as dt
+import email.utils
 import io
 import unittest
 import urllib.error
@@ -194,6 +195,47 @@ class HazardFeedTests(unittest.TestCase):
         with patch.object(hazard_feeds, '_get_xml', return_value=feed):
             self.assertEqual(hazard_feeds._sri_lanka_alerts(), [])
 
+    def test_maldives_cap_maps_current_polygon_and_rejects_superseded_alert(self):
+        now = dt.datetime.now(dt.timezone.utc)
+        published = email.utils.format_datetime(now - dt.timedelta(minutes=15))
+        future = (now + dt.timedelta(hours=3)).isoformat()
+        feed = ET.fromstring(f'''<rss><channel>
+          <item><link>https://cap.meteorology.gov.mv/rss/alerts/42</link><pubDate>{published}</pubDate></item>
+          <item><link>https://cap.meteorology.gov.mv/rss/alerts/43</link><pubDate>{published}</pubDate></item>
+          <item><link>https://other.example/rss/alerts/44</link><pubDate>{published}</pubDate></item>
+        </channel></rss>''')
+        old_cap = ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+          <identifier>old</identifier><sent>{now.isoformat()}</sent><status>Actual</status>
+          <msgType>Alert</msgType><scope>Public</scope><info><expires>{future}</expires>
+          <area><polygon>7.0,72.5 7.0,73.5 6.0,73.5 7.0,72.5</polygon></area></info>
+        </alert>''')
+        current_cap = ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+          <identifier>new</identifier><sent>{now.isoformat()}</sent><status>Actual</status>
+          <msgType>Update</msgType><scope>Public</scope><references>sender,old,{now.isoformat()}</references>
+          <info><language>en</language><headline>Alert white</headline><severity>Minor</severity>
+          <expires>{future}</expires><area><areaDesc>Northern atolls</areaDesc>
+          <polygon>7.0,72.5 7.0,73.5 6.0,73.5 7.0,72.5</polygon></area></info>
+        </alert>''')
+        with patch.object(hazard_feeds, '_get_xml', return_value=feed), patch.object(
+            hazard_feeds, '_maldives_cap_alert', side_effect=[old_cap, current_cap]
+        ) as cap_fetch:
+            items = hazard_feeds._maldives_alerts()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['id'], 'mv:43:0')
+        self.assertEqual(items[0]['geometry']['coordinates'][0][0][0], [72.5, 7.0])
+        self.assertEqual(items[0]['country'], 'Maldives')
+        self.assertEqual(cap_fetch.call_count, 2)
+
+    def test_maldives_historical_rss_is_available_without_current_markers(self):
+        old = email.utils.format_datetime(dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7))
+        feed = ET.fromstring(f'''<rss><channel><item><link>https://cap.meteorology.gov.mv/rss/alerts/3244</link>
+          <pubDate>{old}</pubDate></item></channel></rss>''')
+        with patch.object(hazard_feeds, '_get_xml', return_value=feed), patch.object(
+            hazard_feeds, '_maldives_cap_alert'
+        ) as cap_fetch:
+            self.assertEqual(hazard_feeds._maldives_alerts(), [])
+        cap_fetch.assert_not_called()
+
     def test_world_alerts_keep_available_country_when_other_feed_fails(self):
         with patch.object(hazard_feeds, '_canada_alerts', return_value=[{'id': 'ca:1'}]), patch.object(
             hazard_feeds, '_new_zealand_alerts', side_effect=RuntimeError('offline')
@@ -204,6 +246,7 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_pagasa_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_sachet_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_sri_lanka_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_maldives_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
