@@ -3,6 +3,7 @@
 import concurrent.futures
 import datetime as dt
 import email.utils
+import hashlib
 import html
 from html.parser import HTMLParser
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 import re
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -30,6 +32,12 @@ UPPER_AUSTRIA_SOURCE = 'https://einsaetze.ooelfv.at/einsatz/aktuell'
 ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
 PORTUGAL_SOURCE = 'https://dados.gov.pt/en/datasets/prociv-ocorrencias-em-aberto'
 CATALONIA_FIRE_SOURCE = 'https://interior.gencat.cat/ca/arees_dactuacio/bombers/actuacions-de-bombers/'
+ZARAGOZA_FIRE_SOURCE = 'https://www.zaragoza.es/sede/portal/bomberos/servicios/servicio/bomberos/?tipo=10'
+ZARAGOZA_FIRE_URL = 'https://www.zaragoza.es/sede/servicio/bomberos.json?tipo={kind}&rows=500'
+ZARAGOZA_STREETS_URL = ('https://idezar-sig.zaragoza.es/servicios/geoserver/urbanismo/wfs?'
+                        'service=WFS&version=2.0.0&request=GetFeature&typeName=urbanismo:Vias&'
+                        'outputFormat=application/json&srsName=EPSG:4326&'
+                        'propertyName=nombre,nombre_publico,tipo_via,geom')
 CATALONIA_FIRE_URL = ('https://services7.arcgis.com/ZCqVt1fRXwwK6GF4/arcgis/rest/services/'
                       'ACTUACIONS_URGENTS_online_PRO_AMB_FASE_VIEW/FeatureServer/0/query?'
                       'where=1%3D1&outFields=GlobalID%2CESRI_OID%2CTAL_DESC_ALARMA2%2C'
@@ -60,6 +68,8 @@ _SWEDEN_POLICE_LOCK = threading.Lock()
 _SWEDEN_POLICE_CACHE = {'until': 0, 'items': None}
 _P2000_HTTP_CACHE = {'etag': None, 'payload': None}
 _P2000_HTTP_LOCK = threading.Lock()
+_ZARAGOZA_STREETS_CACHE = {'until': 0, 'lookup': None}
+_ZARAGOZA_STREETS_LOCK = threading.Lock()
 _JTSK_TO_WGS84 = Transformer.from_crs('EPSG:5514', 'EPSG:4326', always_xy=True)
 
 
@@ -660,6 +670,93 @@ def parse_catalonia_fires(payload, now=None):
     return output
 
 
+def _zaragoza_street_key(value):
+    plain = unicodedata.normalize('NFKD', str(value or '')).encode('ascii', 'ignore').decode().upper()
+    return ' '.join(re.sub(r'[^A-Z0-9]+', ' ', plain).split())
+
+
+def _zaragoza_streets():
+    with _ZARAGOZA_STREETS_LOCK:
+        if _ZARAGOZA_STREETS_CACHE['lookup'] is not None and time.time() < _ZARAGOZA_STREETS_CACHE['until']:
+            return _ZARAGOZA_STREETS_CACHE['lookup']
+        data = _json(ZARAGOZA_STREETS_URL)
+        features = data.get('features') if isinstance(data, dict) else None
+        if not isinstance(features, list) or len(features) < 2500 or len(features) > 5000 or data.get('numberMatched') != len(features):
+            raise ValueError('Zaragoza street catalog is incomplete')
+        lookup = {}
+        for feature in features:
+            props = feature.get('properties') or {}
+            key = _zaragoza_street_key(props.get('nombre'))
+            if not key or props.get('tipo_via') in {'PG', 'EB'}:
+                continue
+            geometry = feature.get('geometry') or {}
+            lines = geometry.get('coordinates') if geometry.get('type') == 'MultiLineString' else None
+            if not isinstance(lines, list):
+                continue
+            points = [point for line in lines if isinstance(line, list) for point in line
+                      if isinstance(point, list) and len(point) >= 2 and _valid(point[0], point[1])]
+            if not points:
+                continue
+            west, east = min(point[0] for point in points), max(point[0] for point in points)
+            south, north = min(point[1] for point in points), max(point[1] for point in points)
+            # Long roads cannot be represented honestly by an approximate street point.
+            if ((east - west) * 83) ** 2 + ((north - south) * 111) ** 2 > 3 ** 2:
+                continue
+            middle = ((west + east) / 2, (south + north) / 2)
+            point = min(points, key=lambda p: ((p[0] - middle[0]) * 83) ** 2 +
+                        ((p[1] - middle[1]) * 111) ** 2)
+            lookup.setdefault(key, []).append((point[0], point[1],
+                                               _clean(props.get('nombre_publico'), 100)))
+        _ZARAGOZA_STREETS_CACHE.update(lookup=lookup, until=time.time() + 86400)
+        return lookup
+
+
+def parse_zaragoza_fire(open_payload, closed_payload, streets, now=None):
+    """Same-day fire-service reports at approximate, unambiguous street centers."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    output = []
+    for status, payload, max_age in (('Ongoing', open_payload, 24), ('Closed today', closed_payload, 12)):
+        rows = payload.get('result') if isinstance(payload, dict) else None
+        if not isinstance(rows, list) or len(rows) > 500 or payload.get('totalCount') != len(rows):
+            raise ValueError('Zaragoza fire report is incomplete')
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            kind = _clean(row.get('tipoSiniestro'), 100)
+            address = _clean(row.get('direccion'), 120)
+            if not kind or not address or _zaragoza_street_key(kind).startswith(('PRACTICAS', 'INSPECCION', 'EVALUACION')):
+                continue
+            observed = _iso(row.get('fecha'), 'Europe/Madrid')
+            if not observed:
+                continue
+            stamp = dt.datetime.fromisoformat(observed.replace('Z', '+00:00'))
+            if not dt.timedelta(minutes=-5) <= now - stamp <= dt.timedelta(hours=max_age):
+                continue
+            # The dispatch feed gives a street name, never an incident coordinate.
+            street_name = re.sub(r'\s*\([^)]*\).*$', '', address).strip()
+            candidates = streets.get(_zaragoza_street_key(street_name), [])
+            if len(candidates) != 1:
+                continue
+            lon, lat, public_name = candidates[0]
+            incident_key = hashlib.sha256(f'{observed}|{kind}|{address}'.encode()).hexdigest()[:20]
+            category = 'fire' if 'INCENDIO' in _zaragoza_street_key(kind) else (
+                'traffic' if 'TRAFICO' in _zaragoza_street_key(kind) else 'warning')
+            output.append(_item(f'es:zaragoza:fire:{incident_key}', lon, lat,
+                                f'{kind} · Zaragoza',
+                                f'{status} · {public_name} · Approximate street center; incident location not published',
+                                'Ayuntamiento de Zaragoza · Fire Service', ZARAGOZA_FIRE_SOURCE,
+                                observed, category))
+    return output
+
+
+def _zaragoza_fire():
+    open_payload = _json(ZARAGOZA_FIRE_URL.format(kind=10))
+    closed_payload = _json(ZARAGOZA_FIRE_URL.format(kind=20))
+    if not open_payload.get('result') and not closed_payload.get('result'):
+        return []
+    return parse_zaragoza_fire(open_payload, closed_payload, _zaragoza_streets())
+
+
 @lru_cache(maxsize=1)
 def _sweden_areas():
     path = Path(__file__).with_name('sweden-administrative-points.json')
@@ -1139,6 +1236,7 @@ _LOADERS = {
     'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
     'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
     'es_catalonia_fire': lambda: parse_catalonia_fires(_json(CATALONIA_FIRE_URL)),
+    'es_zaragoza_fire': _zaragoza_fire,
     'sweden_vma': lambda: parse_sweden_vma(_json(SWEDEN_VMA_URL)),
     'sweden_police': _sweden_police,
     'norway_police': lambda: parse_norway_police(_json(NORWAY_POLICE_URL)),
