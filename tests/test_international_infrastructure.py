@@ -27,6 +27,27 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_singapore_cameras_require_recent_images_from_official_origin(self):
+        now = dt.datetime(2026, 10, 2, 17, 33, tzinfo=dt.timezone.utc).timestamp()
+        image = ('https://images.data.gov.sg/api/traffic-images/2026/10/'
+                 '1cc29f1f-fa61-41cc-bdc5-c5939fc99b62.jpg')
+        camera = {'camera_id': '2701', 'timestamp': '2026-10-03T01:30:25+08:00',
+                  'image': image, 'location': {'latitude': 1.447, 'longitude': 103.772}}
+        payload = {'items': [{'timestamp': '2026-10-03T01:33:00+08:00',
+                              'cameras': [camera, {**camera, 'camera_id': '2702',
+                                                   'image': 'https://example.org/camera.jpg'}]}]}
+        rows = feeds._parse_singapore_cameras(payload, now)
+        self.assertEqual(list(rows), ['2701'])
+        self.assertEqual(rows['2701'][0], [103.772, 1.447])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_singapore_cameras(payload, now + 1800)
+        with self.assertRaises(ValueError):
+            feeds._singapore_camera_image_url('https://images.data.gov.sg.example.org/camera.jpg')
+        with patch.object(feeds, '_singapore_camera_catalog', return_value=rows), \
+                patch.object(feeds, '_singapore_image_usable', return_value=True):
+            markers = feeds._singapore_cameras()
+        self.assertEqual(markers[0]['properties']['snapshot_url'], '/singapore-camera/2701')
+
     def test_hong_kong_sensors_join_valid_current_lanes_to_locations(self):
         now = dt.datetime(2026, 10, 2, 17, 5, 40, tzinfo=dt.timezone.utc).timestamp()
         locations = feeds._parse_hong_kong_sensor_locations([
