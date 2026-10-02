@@ -50,7 +50,10 @@ class HazardFeedTests(unittest.TestCase):
     def test_cyclones_use_latest_observed_position_and_track(self):
         recent = dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
         payload = {'events': [{
-            'id': 'storm-1', 'title': 'Typhoon Example', 'sources': [{'url': 'https://example.org/storm'}],
+            'id': 'storm-1', 'title': 'Typhoon Example', 'sources': [
+                {'id': 'EO', 'url': 'https://science.nasa.gov/example'},
+                {'id': 'JTWC', 'url': 'https://www.metoc.navy.mil/jtwc/products/wp2526.tcw'},
+            ],
             'geometry': [
                 {'type': 'Point', 'coordinates': [130, 10], 'date': '2026-01-01T00:00:00Z'},
                 {'type': 'Point', 'coordinates': [131, 11], 'date': recent, 'magnitudeValue': 65, 'magnitudeUnit': 'kts'},
@@ -62,6 +65,7 @@ class HazardFeedTests(unittest.TestCase):
         self.assertEqual((items[0]['lon'], items[0]['lat']), (131, 11))
         self.assertEqual(items[0]['windKt'], 65)
         self.assertEqual(items[0]['track'], [(130, 10), (131, 11)])
+        self.assertEqual(items[0]['sourceUrl'], 'https://www.metoc.navy.mil/jtwc/products/wp2526.tcw')
 
     def test_earthquakes_reject_invalid_coordinates(self):
         payload = {'features': [

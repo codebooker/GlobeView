@@ -89,7 +89,10 @@ def _cyclones():
         if observed < cutoff:
             continue
         lon, lat = _point(latest['coordinates'])
-        source = next((s.get('url') for s in event.get('sources', []) if s.get('url')), event.get('link'))
+        sources = [s for s in event.get('sources', []) if isinstance(s, dict) and s.get('url')]
+        source = next((s['url'] for agency in ('JTWC', 'NOAA_NHC') for s in sources
+                       if s.get('id') == agency), None)
+        source = source or next((s['url'] for s in sources), event.get('link'))
         items.append({
             'id': str(event.get('id') or title), 'title': title, 'lon': lon, 'lat': lat,
             'observed': latest['date'], 'windKt': latest.get('magnitudeValue') if latest.get('magnitudeUnit') == 'kts' else None,
