@@ -3471,7 +3471,7 @@ class InfrastructureTests(unittest.TestCase):
         response.read.return_value = body
         with patch.object(feeds.urllib.request, 'urlopen', return_value=response), \
                 patch.object(feeds.time, 'time', return_value=NOW), \
-                patch.object(feeds, '_elcat_snapshot_frame', return_value=b'jpeg') as frame:
+                patch.object(feeds, '_public_camera_snapshot_frame', return_value=b'jpeg') as frame:
             self.assertEqual(feeds.elcat_camera_snapshot('Kemin'), (b'jpeg', 'image/jpeg'))
             frame.assert_called_once_with(body)
             response.headers['Last-Modified'] = email.utils.formatdate(NOW - 181, usegmt=True)
@@ -3497,7 +3497,7 @@ class InfrastructureTests(unittest.TestCase):
         jpeg = b'\xff\xd8' + bytes(100)
         with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
                 patch.object(feeds.subprocess, 'run', return_value=MagicMock(stdout=jpeg)) as run:
-            self.assertEqual(feeds._elcat_snapshot_frame(b'input'), jpeg)
+            self.assertEqual(feeds._public_camera_snapshot_frame(b'input'), jpeg)
         command = run.call_args.args[0]
         self.assertEqual(command[command.index('-protocol_whitelist') + 1], 'pipe')
         self.assertEqual(command[command.index('-frames:v') + 1], '1')
@@ -3505,7 +3505,7 @@ class InfrastructureTests(unittest.TestCase):
         with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
                 patch.object(feeds.subprocess, 'run', side_effect=subprocess.TimeoutExpired('ffmpeg', 12)):
             with self.assertRaises(OSError):
-                feeds._elcat_snapshot_frame(b'input')
+                feeds._public_camera_snapshot_frame(b'input')
         self.assertTrue(feeds._ELCAT_SNAPSHOT_SLOTS.acquire(blocking=False))
         feeds._ELCAT_SNAPSHOT_SLOTS.release()
 

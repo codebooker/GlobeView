@@ -1150,6 +1150,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
           } catch { /* Try the feed URL below. */ }
         }
         if (!streamUrl) throw new Error('Live stream unavailable');
+        if (!popup.isOpen()) return;
         root.querySelectorAll('img.popup-media').forEach(image => image.remove());
         const video = document.createElement('video');
         video.className = 'popup-media';
@@ -1188,6 +1189,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
           video.src = streamUrl;
         } else {
           await loadHlsScript();
+          if (!popup.isOpen() || !video.isConnected) return;
           if (!window.Hls?.isSupported()) throw new Error('Live stream is unsupported in this browser');
           const hls = new window.Hls({ enableWorker: true });
           hls.loadSource(streamUrl);
@@ -1207,9 +1209,8 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
   }
 
   function attachCameraGallery(root, views, refreshMs, popup) {
-    const image = document.createElement('img');
-    image.className = 'popup-media camera-gallery-image';
-    image.alt = 'Latest road camera snapshot';
+    const media = document.createElement('div');
+    media.className = 'popup-camera-gallery';
     const caption = textElement('span', 'popup-media-caption', '');
     const controls = document.createElement('div');
     controls.className = 'popup-camera-views';
@@ -1217,26 +1218,37 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     const next = textElement('button', '', 'Next →');
     previous.type = next.type = 'button';
     let index = 0;
-    function show(position, refresh = false) {
+    let dispose = () => {};
+    function show(position) {
+      dispose();
+      media.replaceChildren();
       index = (position + views.length) % views.length;
       const view = views[index];
-      image.hidden = false;
       caption.textContent = `${index + 1} / ${views.length} · ${view.label}`;
-      image.src = refresh ? `${view.url}${view.url.includes('?') ? '&' : '?'}v=${Date.now()}` : view.url;
+      // Switching angles must stop the old stream and image refresh timers.
+      // Give the existing media player a lifetime scoped to this selected view.
+      let active = true;
+      const cleanup = [];
+      const viewPopup = {
+        isOpen: () => active && popup.isOpen(),
+        on: (event, callback) => { if (event === 'close') cleanup.push(callback); }
+      };
+      dispose = () => {
+        active = false;
+        cleanup.splice(0).forEach(callback => callback());
+      };
+      attachCameraMedia(media, { item: { expando: {
+        snapshotUrl: view.url, snapshotRefreshMs: refreshMs,
+        videoEnabled: !!view.video_url, videoUrl: view.video_url,
+        videoFormat: view.video_format
+      } } }, null, viewPopup);
     }
-    image.addEventListener('error', () => {
-      image.hidden = true;
-      caption.textContent = `View ${index + 1} unavailable · try another view`;
-    });
     previous.addEventListener('click', () => show(index - 1));
     next.addEventListener('click', () => show(index + 1));
     controls.append(previous, next);
-    root.append(caption, controls, image);
+    root.append(caption, controls, media);
     show(0);
-    if (refreshMs >= 60000) {
-      const refresh = window.setInterval(() => show(index, true), refreshMs);
-      popup.on('close', () => window.clearInterval(refresh));
-    }
+    popup.on('close', () => dispose());
   }
 
   function webcamMedia(camera) {

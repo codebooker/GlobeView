@@ -30,6 +30,7 @@ import shapefile
 
 from kyrgyzstan_outages import bishkek_planned_outages, issyk_kul_planned_outages
 from kyrgyzstan_roads import bishkek_roadworks
+from kyrgyztelecom_cameras import camera_features as kyrgyztelecom_cameras, camera_segment
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
@@ -8383,8 +8384,8 @@ def _elcat_cameras():
         return [point for point in executor.map(_elcat_camera, ELCAT_CAMERAS) if point is not None]
 
 
-def _elcat_snapshot_frame(body):
-    """Decode one frame from the operator's short preview, with bounded CPU."""
+def _public_camera_snapshot_frame(body):
+    """Decode one frame from bounded operator video bytes, without network IO."""
     import imageio_ffmpeg
     if not _ELCAT_SNAPSHOT_SLOTS.acquire(timeout=2):
         raise OSError('Camera preview conversion is busy')
@@ -8402,7 +8403,7 @@ def _elcat_snapshot_frame(body):
         _ELCAT_SNAPSHOT_SLOTS.release()
     image = result.stdout
     if not 64 <= len(image) <= 2 * 1024 * 1024 or not image.startswith(b'\xff\xd8'):
-        raise ValueError('ElCat preview conversion returned an invalid image')
+        raise ValueError('Camera preview conversion returned an invalid image')
     return image
 
 
@@ -8424,7 +8425,11 @@ def elcat_camera_snapshot(camera_id):
         body = response.read(4 * 1024 * 1024 + 1)
     if len(body) != size or body[4:8] != b'ftyp':
         raise ValueError('ElCat preview is invalid')
-    return _elcat_snapshot_frame(body), 'image/jpeg'
+    return _public_camera_snapshot_frame(body), 'image/jpeg'
+
+
+def kyrgyztelecom_camera_snapshot(camera_id):
+    return _public_camera_snapshot_frame(camera_segment(camera_id)), 'image/jpeg'
 
 
 def _qaj_road_segments(wkt):
@@ -8757,6 +8762,7 @@ _FETCHERS = {
         'no_travel_times': _norway_travel_times,
         'kz_kaztoll_cameras': _kaztoll_cameras,
         'kg_elcat_cameras': _elcat_cameras,
+        'kg_kyrgyztelecom_cameras': kyrgyztelecom_cameras,
         'kg_bishkek_roadworks': bishkek_roadworks,
         'kz_qaj_restrictions': _qaj_restrictions,
     },
