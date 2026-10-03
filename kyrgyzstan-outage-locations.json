@@ -1,0 +1,195 @@
+{
+  "source": "OpenStreetMap contributors",
+  "license": "ODbL 1.0",
+  "audited": "2026-10-03",
+  "scope": "Bishkek PES published locations; building, street, or named-area reference points, not outage footprints",
+  "locations": [
+    {
+      "id": "ibraimova-146",
+      "label": "Ibraimova 146",
+      "kind": "building",
+      "pattern": "ибраимов[а]?\\b.*(?<!\\d)146(?![\\da-zа-я/])",
+      "coordinates": [
+        74.6163613,
+        42.8838266
+      ],
+      "osm": "way/51267388"
+    },
+    {
+      "id": "chokmorova-207",
+      "label": "Chokmorova 207",
+      "kind": "building",
+      "pattern": "чокморов[а]?\\b.*(?<!\\d)207(?![\\da-zа-я/])",
+      "coordinates": [
+        74.5797626,
+        42.8696
+      ],
+      "osm": "way/37081106"
+    },
+    {
+      "id": "asanbay",
+      "label": "Asanbay",
+      "kind": "area",
+      "pattern": "асанбай",
+      "coordinates": [
+        74.6248602,
+        42.8185024
+      ],
+      "osm": "node/1940888634"
+    },
+    {
+      "id": "ala-too",
+      "label": "Ala-Too",
+      "kind": "area",
+      "pattern": "ж/м\\s+ала-тоо",
+      "coordinates": [
+        74.4780684,
+        42.863783
+      ],
+      "osm": "node/1728091875"
+    },
+    {
+      "id": "maevka",
+      "label": "Maevka",
+      "kind": "area",
+      "pattern": "с\\.\\s*маевка\\b",
+      "coordinates": [
+        74.569485,
+        42.9204613
+      ],
+      "osm": "node/702032565"
+    },
+    {
+      "id": "baytik-village",
+      "label": "Baytik village",
+      "kind": "area",
+      "pattern": "с\\.\\s*байтик\\b",
+      "coordinates": [
+        74.5494432,
+        42.7381512
+      ],
+      "osm": "node/702704478"
+    },
+    {
+      "id": "kashka-suu",
+      "label": "Kashka-Suu",
+      "kind": "area",
+      "pattern": "с\\.\\s*кашка-суу\\b",
+      "coordinates": [
+        74.531734,
+        42.6993181
+      ],
+      "osm": "node/1747601807"
+    },
+    {
+      "id": "sarban",
+      "label": "Sarban",
+      "kind": "area",
+      "pattern": "с\\.\\s*сарбан\\b",
+      "coordinates": [
+        74.5183749,
+        42.7846281
+      ],
+      "osm": "node/2629467405"
+    },
+    {
+      "id": "drevesnaya",
+      "label": "Drevesnaya street",
+      "kind": "street",
+      "pattern": "древесной\\b",
+      "coordinates": [
+        74.628842,
+        42.8905512
+      ],
+      "osm": "way/47281921"
+    },
+    {
+      "id": "baytik-street",
+      "label": "Baytik Baatyr street",
+      "kind": "street",
+      "pattern": "байтик\\s+баатыра\\b",
+      "coordinates": [
+        74.6066704,
+        42.8488242
+      ],
+      "osm": "way/51091855"
+    },
+    {
+      "id": "ibraimova-street",
+      "label": "Ibraimova street",
+      "kind": "street",
+      "pattern": "ибраимов[а]?\\b",
+      "coordinates": [
+        74.6165888,
+        42.8851513
+      ],
+      "osm": "way/263239725"
+    },
+    {
+      "id": "tunuk",
+      "label": "Tunuk street · Ak-Ordo",
+      "kind": "street",
+      "pattern": "тунук\\b",
+      "coordinates": [
+        74.4998917,
+        42.8515418
+      ],
+      "osm": "way/255006280"
+    },
+    {
+      "id": "chokmorova-street",
+      "label": "Chokmorova street",
+      "kind": "street",
+      "pattern": "чокморов[а]?\\b",
+      "coordinates": [
+        74.5856613,
+        42.8690391
+      ],
+      "osm": "way/31725707"
+    },
+    {
+      "id": "kulieva",
+      "label": "Kulieva street",
+      "kind": "street",
+      "pattern": "кулиева\\b",
+      "coordinates": [
+        74.5677663,
+        42.8746705
+      ],
+      "osm": "way/33069499"
+    },
+    {
+      "id": "archa-gul",
+      "label": "Archa-Gul street · Ala-Too",
+      "kind": "street",
+      "pattern": "арча-гуль\\b",
+      "coordinates": [
+        74.4798132,
+        42.8640633
+      ],
+      "osm": "way/38049946"
+    },
+    {
+      "id": "narvskaya",
+      "label": "Narvskaya street",
+      "kind": "street",
+      "pattern": "нарвская\\b",
+      "coordinates": [
+        74.5502608,
+        42.881884
+      ],
+      "osm": "way/54985164"
+    },
+    {
+      "id": "kokchetavskaya",
+      "label": "Kokchetavskaya street",
+      "kind": "street",
+      "pattern": "\\bкокчетавск(?:ая|ой)\\b",
+      "coordinates": [
+        74.5850318,
+        42.9005818
+      ],
+      "osm": "way/51086577"
+    }
+  ]
+}
