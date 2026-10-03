@@ -1268,6 +1268,11 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       if (url.hostname === 'rtsp.me' && /^\/embed\/[a-z0-9]+\/?$/i.test(url.pathname)) {
         return { embedUrl: url.href };
       }
+      if (url.origin === 'https://shahdag.panomax.com' && !url.username && !url.password
+          && /^\/(?:central-viewpoint|alpine-horizon|lake-view|3)$/.test(url.pathname)
+          && !url.search && !url.hash) {
+        return { embedUrl: url.href, panorama: true };
+      }
     } catch { /* Some catalog entries may only have a stream URL. */ }
     return {};
   }
@@ -1314,13 +1319,14 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     if (meta.streamUrl) {
       attachCameraMedia(root, { item: { itemId: meta.id, expando: { videoEnabled: true, videoUrl: meta.streamUrl } } }, null, popup);
     } else if (media.embedUrl) {
-      const button = textElement('button', 'popup-play', '▶ Play live camera');
+      const button = textElement('button', 'popup-play', media.panorama ? 'Open live panorama' : '▶ Play live camera');
       button.type = 'button';
       button.addEventListener('click', () => {
         button.disabled = true;
-        button.textContent = 'Loading live player…';
+        button.textContent = media.panorama ? 'Loading panorama…' : 'Loading live player…';
         const frame = document.createElement('iframe');
         frame.className = 'popup-media popup-video-frame';
+        if (media.panorama) frame.classList.add('popup-panorama-frame');
         frame.title = `Live camera: ${meta.title}`;
         frame.allow = 'autoplay; fullscreen';
         frame.allowFullscreen = true;
@@ -1393,7 +1399,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     const popup = new maplibregl.Popup({ closeButton: true,
       maxWidth: `${mobilePopup ? Math.min(315, mobileWidth - 90) : 315}px`, offset: 14, anchor })
       .setLngLat(coordinates).setDOMContent(root).addTo(map);
-    if ((mobilePopup || type === 'cameras') && (anchor.startsWith('top') || anchor.startsWith('bottom'))) {
+    if ((mobilePopup || type === 'cameras' || type === 'webcams') && (anchor.startsWith('top') || anchor.startsWith('bottom'))) {
       const room = anchor.startsWith('top')
         ? map.getCanvas().clientHeight - point.y - (mobilePopup ? 56 : 0)
         : point.y - (mobilePopup ? cameraPadding.top : 0);
@@ -2238,7 +2244,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     if (!styleReady || !enabled.webcams) return;
     try {
       if (!webcamCatalog) {
-        const response = await fetch('/global-cameras.json');
+        const response = await fetch(`/global-cameras.json${new URL(import.meta.url).search}`);
         if (!response.ok) throw new Error(`Webcam catalog: ${response.status}`);
         webcamCatalog = (await response.json()).cameras || [];
       }
