@@ -1007,7 +1007,7 @@ SECURITY_HEADERS = {
         "connect-src 'self' https://api.rainviewer.com https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://marine-api.open-meteo.com https://webcam.elcat.kg https://stream.kt.kg:5443 https://tiles.openfreemap.org https://tiles.versatiles.org https://*.wowza.com https://*.streamlock.net https://widevine-dash.ezdrm.com wss://cctv.trafficview.org:8420; "
         "media-src 'self' blob: https:; "
         "worker-src 'self' blob:; "
-        "frame-src https://www.ipcamlive.com https://rtsp.me https://shahdag.panomax.com; "
+        "frame-src https://www.ipcamlive.com https://rtsp.me https://shahdag.panomax.com https://www.youtube-nocookie.com; "
         "frame-ancestors 'self'; "
         "object-src 'none';"
     ),
