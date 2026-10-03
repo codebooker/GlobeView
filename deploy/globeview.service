@@ -13,6 +13,7 @@ Environment=AMERICAMAP_PORT=8765
 Environment=AMERICAMAP_CACHE_DIR=/var/cache/globeview
 Environment=AMERICAMAP_ALLOWED_HOSTS=globeview.app,127.0.0.1,localhost
 Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg
 EnvironmentFile=-/etc/globeview/env
 ExecStart=/opt/globeview/current/.venv/bin/python /opt/globeview/current/proxy.py
 Restart=on-failure
