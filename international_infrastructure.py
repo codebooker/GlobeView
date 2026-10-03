@@ -32,6 +32,7 @@ from kyrgyzstan_outages import bishkek_planned_outages, issyk_kul_planned_outage
 from azerbaijan_outages import azerishiq_planned_outages
 from armenia_outages import ena_planned_outages
 from georgia_power import telasi_planned_outages
+from georgia_energo_outages import energo_pro_outages
 from georgia_roads import road_restrictions as georgia_road_restrictions
 from kyrgyzstan_roads import bishkek_roadworks
 from armenia_roads import road_notices as armenia_road_notices
@@ -8782,7 +8783,8 @@ _FETCHERS = {
               'kg_ipes_planned': issyk_kul_planned_outages,
               'az_azerishiq_planned': azerishiq_planned_outages,
               'am_ena_planned': ena_planned_outages,
-              'ge_telasi_planned': telasi_planned_outages},
+              'ge_telasi_planned': telasi_planned_outages,
+              'ge_energo_pro': energo_pro_outages},
 }
 
 
