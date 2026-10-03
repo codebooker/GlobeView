@@ -38,7 +38,7 @@ jobs:
       - name: Compile Python
         run: >-
           python -m py_compile proxy.py global_feeds.py hazard_feeds.py kyrgyzstan_outages.py kyrgyzstan_roads.py kyrgyztelecom_cameras.py
-          cyclone_guidance.py cyber_feeds.py international_emergency.py tajikistan_alerts.py
+          cyclone_guidance.py cyber_feeds.py international_emergency.py tajikistan_alerts.py uzbek_enforcement.py
           international_infrastructure.py radio_catalog.py arcgis_catalog.py
           trip_routing.py deploy/deploy_hook.py
       - name: Check JavaScript syntax
