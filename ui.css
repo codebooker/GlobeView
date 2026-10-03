@@ -237,7 +237,7 @@ body.tracking-aircraft #status{top:64px;right:300px}
 .maplibregl-ctrl-attrib a{color:#dce7e7!important}
 .maplibregl-popup-content{max-width:300px;max-height:min(68dvh,480px);overflow-y:auto;padding:14px;border:1px solid #566970;border-radius:5px;background:#1b292f;color:#eef2f1;box-shadow:0 8px 28px #0008}
 .maplibregl-popup-tip{border-top-color:#1b292f!important;border-bottom-color:#1b292f!important}
-.maplibregl-popup-close-button{top:4px;right:5px;color:#d6e0df;font-size:18px}
+.maplibregl-popup-close-button{top:4px;right:18px;color:#d6e0df;font-size:18px}
 .arcgis-popup{display:grid;gap:5px;padding-right:9px;font-size:12px;line-height:1.35}
 .arcgis-popup strong{font-size:14px;color:#f3f5ee}
 .arcgis-popup small{margin-top:5px;color:#a7bab9;font-size:10px}
