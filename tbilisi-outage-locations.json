@@ -1,0 +1,110 @@
+{
+  "source": "https://www.openstreetmap.org/copyright",
+  "licence": "ODbL 1.0",
+  "dataThrough": "2026-10-03T11:39:57Z",
+  "relationsSha256": "4ac08bedf159d94ec5a4f9d02e5ff99a5cbb7d9db9bf7055dba8ababada0189f",
+  "nodesSha256": "f268fb4e38043f2e076d7171c5081e1136ad2474c191d1a690c5e2ae4fb17e88",
+  "locationKind": "approximate_district_reference",
+  "locations": [
+    {
+      "id": "11300436",
+      "name": "Samgori",
+      "heading": "სამგორის რაიონი",
+      "coordinates": [
+        44.9378584,
+        41.7045752
+      ],
+      "osmNode": 11373213795
+    },
+    {
+      "id": "11300438",
+      "name": "Nadzaladevi",
+      "heading": "ნაძალადევის რაიონი",
+      "coordinates": [
+        44.8207273,
+        41.7471107
+      ],
+      "osmNode": 930185638
+    },
+    {
+      "id": "11300445",
+      "name": "Didube",
+      "heading": "დიდუბის რაიონი",
+      "coordinates": [
+        44.7773284,
+        41.7546791
+      ],
+      "osmNode": 14118362247
+    },
+    {
+      "id": "11300446",
+      "name": "Saburtalo",
+      "heading": "საბურთალოს რაიონი",
+      "coordinates": [
+        44.744396,
+        41.7655503
+      ],
+      "osmNode": 11373213800
+    },
+    {
+      "id": "11300449",
+      "name": "Vake",
+      "heading": "ვაკის რაიონი",
+      "coordinates": [
+        44.7196768,
+        41.7017556
+      ],
+      "osmNode": 11373213801
+    },
+    {
+      "id": "13438808",
+      "name": "Isani",
+      "heading": "ისნის რაიონი",
+      "coordinates": [
+        44.8450756,
+        41.6906042
+      ],
+      "osmNode": 11373213797
+    },
+    {
+      "id": "13438809",
+      "name": "Krtsanisi",
+      "heading": "კრწანისის რაიონი",
+      "coordinates": [
+        44.8637866,
+        41.6600242
+      ],
+      "osmNode": 11373213796
+    },
+    {
+      "id": "13438810",
+      "name": "Chugureti",
+      "heading": "ჩუღურეთის რაიონი",
+      "coordinates": [
+        44.8262786,
+        41.7173899
+      ],
+      "osmNode": 11373213798
+    },
+    {
+      "id": "13438811",
+      "name": "Mtatsminda",
+      "heading": "მთაწმინდის რაიონი",
+      "coordinates": [
+        44.7552107,
+        41.6715015
+      ],
+      "osmNode": 11373213802
+    },
+    {
+      "id": "13438812",
+      "name": "Gldani",
+      "heading": "გლდანის რაიონი",
+      "coordinates": [
+        44.8291485,
+        41.8026847
+      ],
+      "osmNode": 11373213799
+    }
+  ]
+}
