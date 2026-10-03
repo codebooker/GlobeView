@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from tajikistan_alerts import alerts as _tajikistan_alerts
 
 
 FEEDS = {
@@ -1382,7 +1383,7 @@ def _world_alerts():
                ('Philippines', _pagasa_alerts), ('India', _sachet_alerts),
                ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts),
                ('Malaysia', _malaysia_alerts), ('Kazakhstan', _kazakhstan_alerts),
-               ('Kyrgyzstan', _kyrgyzstan_alerts)]
+               ('Kyrgyzstan', _kyrgyzstan_alerts), ('Tajikistan', _tajikistan_alerts)]
     # Each provider is independent; a slow national service should not delay
     # every other country's current alerts.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:
@@ -1476,6 +1477,21 @@ FEEDS['world_alerts']['loader'] = _world_alerts
 FEEDS['gdelt_events']['loader'] = _gdelt_events
 
 
+def _current_weather_body(layer, body):
+    """Drop alerts that expire while their shared snapshot is cached."""
+    if layer not in ('world_alerts', 'nws_alerts'):
+        return body
+    snapshot = json.loads(body)
+    now = dt.datetime.now(_UTC)
+    items = snapshot['items']
+    active = [item for item in items
+              if not item.get('ends') or _future_timestamp(item['ends'], now)]
+    if len(active) == len(items):
+        return body
+    snapshot['items'] = active
+    return json.dumps(snapshot, separators=(',', ':')).encode()
+
+
 def hazard_snapshot(layer):
     if layer not in FEEDS:
         raise ValueError('Unknown hazard layer')
@@ -1485,10 +1501,10 @@ def hazard_snapshot(layer):
             now = time.monotonic()
             cached = _CACHE.get(layer)
             if cached and now < cached['expires']:
-                return cached['body']
+                return _current_weather_body(layer, cached['body'])
             if now < _RETRY_AFTER.get(layer, 0):
                 if cached and now < cached['stale']:
-                    return cached['body']
+                    return _current_weather_body(layer, cached['body'])
                 raise RuntimeError('Hazard provider is temporarily unavailable')
             event = _INFLIGHT.get(layer)
             if event is None:
@@ -1503,14 +1519,14 @@ def hazard_snapshot(layer):
             _RETRY_AFTER[layer] = time.monotonic() + 60
             cached = _CACHE.get(layer)
             if cached and time.monotonic() < cached['stale']:
-                return cached['body']
+                return _current_weather_body(layer, cached['body'])
         raise
     else:
         now = time.monotonic()
         with _LOCK:
             _CACHE[layer] = {'body': body, 'expires': now + config['ttl'], 'stale': now + config['stale']}
             _RETRY_AFTER.pop(layer, None)
-        return body
+        return _current_weather_body(layer, body)
     finally:
         with _LOCK:
             _INFLIGHT.pop(layer, None)

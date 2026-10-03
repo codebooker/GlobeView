@@ -2615,6 +2615,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
             item.area ? String(item.area).slice(0, 230) : item.zoneName || '',
             item.ends ? `Ends ${observedLabel(item.ends)}` : '',
             item.locationKind === 'polygon' ? 'Mapped alert boundary'
+              : item.locationKind === 'national advisory reference point' ? 'National advisory · capital reference'
               : item.locationKind === 'published area representative point' ? 'Approximate alert area'
               : 'Representative zone point'].filter(Boolean).join(' · ');
           if (item.geometry?.type === 'Polygon' || item.geometry?.type === 'MultiPolygon') areas.push({
