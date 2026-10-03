@@ -328,7 +328,7 @@ These mapped nodes are a separate source from the ministry's nationwide speed-ca
 
 | Category | Evidence and next work |
 | --- | --- |
-| Power outages | Telasi planned windows integrated. Unplanned notices and [Energo-Pro’s public outage section](https://my.energo-pro.ge/ow/) need independent current-status and location checks. Customer accounts are not used. |
+| Power outages | Telasi planned windows and Energo-Pro public planned/reported unplanned notices integrated; see below for date, location and public-list limits. Telasi unplanned notices still need independent checks. Customer accounts are not used. |
 | Road incidents / construction | Batumi bypass night-work restrictions integrated under Construction; see below. Other road identities and notice formats still need verified location joins. The 1 October restored Tsalenjikha–Obuji–Jikhaskari km 11, 25 September restored Dariali Gorge and 24 September restored Samtredia–Grigoleti Lot 3 records clear older restrictions and are not mapped as current closures. |
 | Emergency calls / reports | [112’s official service description](https://112.gov.ge/?lang=en&page_id=1715) explains call handling, rather than establishing public dispatch locations. Located emergency reports remain under review. |
 | Traffic cameras | Public playable feeds and verified camera references remain under review. |
