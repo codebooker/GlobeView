@@ -1372,6 +1372,13 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     const detail = textElement('span', 'popup-detail', meta.detail || '');
     root.append(textElement('span', 'popup-kicker', meta.source || POINT[type].label), title);
     if (meta.detail) root.append(detail);
+    if (type === 'power' && meta.affectedAddress) {
+      const addresses = document.createElement('details');
+      addresses.className = 'source-details';
+      addresses.append(textElement('summary', '', 'Affected addresses'),
+        textElement('span', 'popup-detail', meta.affectedAddress));
+      root.append(addresses);
+    }
     if ((type === 'nws_alerts' || type === 'world_alerts') && meta.advice) root.append(textElement('span', 'popup-detail', meta.advice));
     if (type === 'signs' && meta.signImage) {
       const preview = document.createElement('img');
@@ -2389,6 +2396,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       if (regionVisible({ bounds: { minLon: -170, maxLon: -50, minLat: 15, maxLat: 73 } }, bounds)) urls.push('/power-outages');
       if ([{ minLon: -11, maxLon: 8, minLat: 49, maxLat: 60 },
         { minLon: 74, maxLon: 81, minLat: 42, maxLat: 47 },
+        { minLon: 43, maxLon: 47, minLat: 38, maxLat: 42 },
         { minLon: 44, maxLon: 51, minLat: 38, maxLat: 42 }]
         .some(area => regionVisible({ bounds: area }, bounds))) urls.push('/international-power');
       const results = await Promise.allSettled(urls.map(async url => {
@@ -2412,7 +2420,8 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
           : Number.isFinite(count) && count > 0 ? `${count.toLocaleString()} affected` : 'Impact unreported';
         records.set(ref, {
           title: p.provider || 'Power outage',
-          detail: [p.area_name, p.planned ? p.source_address : '', impactLabel, p.outages ? `${p.outages} outages` : '', p.status, p.reason, p.etr ? `ETR ${p.etr}` : '', p.source_updated ? `Source updated ${p.source_updated}` : ''].filter(Boolean).join(' · '),
+          detail: [p.area_name, p.planned && !impact ? '' : impactLabel, p.outages ? `${p.outages} outages` : '', p.status, p.reason, p.etr ? `ETR ${p.etr}` : '', p.source_updated ? `Source updated ${p.source_updated}` : ''].filter(Boolean).join(' · '),
+          affectedAddress: p.planned ? p.source_address : '',
           source: p.source_label || 'Utility outage feed', sourceUrl: p.source_url
         });
         let position = null;
