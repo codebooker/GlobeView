@@ -22,6 +22,36 @@ def road(way_id, name, nodes, english=None):
 
 
 class ArmeniaEnforcementTests(unittest.TestCase):
+    def test_recorded_old_names_find_the_same_physical_junction(self):
+        entry = 'Կասյան-Գյուլբենկյան փողոցների խաչմերուկ (անշարժ տեսախցիկներ).'
+        renamed = road(1, 'Վազգեն I փողոց', [(10, 40.20, 44.49)])
+        renamed['tags']['old_name'] = 'Կասյան փողոց'
+        matched, omitted = match_inventory([entry], [renamed,
+            road(2, 'Գյուլբենկյան փողոց', [(10, 40.20, 44.49)])])
+        self.assertFalse(omitted)
+        self.assertEqual(matched[0]['osmNode'], 10)
+        self.assertIn('Կասյան փողոց', matched[0]['matchedRoadNames'])
+        self.assertIn('Վազգեն I փողոց', matched[0]['roadNames'])
+
+    def test_aliases_cannot_count_one_way_as_two_junction_roads(self):
+        entry = 'Կասյան-Գյուլբենկյան փողոցների խաչմերուկ (անշարժ տեսախցիկներ).'
+        renamed = road(1, 'Գյուլբենկյան փողոց', [(10, 40.20, 44.49)])
+        renamed['tags']['old_name'] = 'Կասյան փողոց'
+        self.assertFalse(match_inventory([entry], [renamed])[0])
+
+    def test_square_and_spelling_variants_preserve_personal_qualifiers(self):
+        entry = 'Տ.Մեծ պողոտա-Հանրապետության Հրապարակ խաչմերուկ (անշարժ տեսախցիկներ).'
+        roads = [road(1, 'Տիգրան Մեծի պողոտա', [(10, 40.18, 44.51)]),
+                 road(2, 'Հանրապետության հրապարակ', [(10, 40.18, 44.51)])]
+        self.assertEqual(match_inventory([entry], roads)[0][0]['osmNode'], 10)
+        descriptor = street_descriptor('Փ․Բյուզանդ փողոց')
+        self.assertTrue(qualified_road(descriptor, 'Փավստոս Բուզանդի փողոց'))
+        self.assertFalse(qualified_road(descriptor, 'Էլեն Բյուզանդի փողոց'))
+        entry = 'Մ.Խորենացի-Զաքիյան փողոցների խաչմերուկ (անշարժ տեսախցիկներ).'
+        self.assertTrue(match_inventory([entry], [
+            road(1, 'Մովսես Խորենացու փողոց', [(10, 40.18, 44.51)]),
+            road(2, 'Զաքյան փողոց', [(10, 40.18, 44.51)])])[0])
+
     def test_reference_requires_shared_node_on_all_explicit_roads(self):
         entry = 'Մ.Մաշտոցի պողոտա-Ամիրյան փողոց խաչմերուկ (անշարժ տեսախցիկներ).'
         roads = [road(1, 'Մեսրոպ Մաշտոցի պողոտա', [(10, 40.18, 44.51)], 'Mashtots Avenue'),
@@ -123,9 +153,9 @@ class ArmeniaEnforcementTests(unittest.TestCase):
     def test_committed_catalog_and_bbox_are_inventory_references_without_streams(self):
         feed.enforcement_catalog.cache_clear()
         rows = feed.enforcement_catalog()
-        self.assertEqual(len(rows), 98)
+        self.assertEqual(len(rows), 106)
         visible = feed.enforcement_for_bbox((44.40, 40.08, 44.63, 40.28))
-        self.assertEqual(len(visible), 98)
+        self.assertEqual(len(visible), 106)
         self.assertFalse(feed.enforcement_for_bbox((44.8, 40.1, 45.0, 40.3)))
         for item in visible:
             self.assertEqual(item['record_kind'], 'road_surveillance_inventory')
