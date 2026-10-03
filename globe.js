@@ -83,7 +83,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     international: { label: 'International emergency report', color: '#c47673', glyph: '!', minZoom: 10, refreshMs: 300000 },
     sensors: { label: 'Road sensor', color: '#7b9eb7', glyph: 'S', minZoom: 10, refreshMs: 300000 },
     temperature: { label: 'Temperature station', color: '#c49375', glyph: '°', minZoom: 10, refreshMs: 300000 },
-    lpr: { label: 'Plate reader', color: '#a18cba', glyph: '◎', minZoom: 10, refreshMs: 300000 },
+    lpr: { label: 'Plate reader / enforcement', color: '#a18cba', glyph: '◎', minZoom: 10, refreshMs: 300000 },
     power: { label: 'Power outage', color: '#bb84a1', glyph: 'ϟ', minZoom: 9, refreshMs: 300000 },
     vessels: { label: 'Live vessel', color: '#78aaa9', glyph: '▲', minZoom: 5, refreshMs: 15000 },
     webcams: { label: 'Public webcam', color: '#90a9bc', glyph: '◉', minZoom: 10, refreshMs: 86400000 },
@@ -806,7 +806,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       : type === 'construction' ? `Taipei roadworks: Public Works Department, Taipei City Government ${new Date().getUTCFullYear()} <a href="https://data.gov.tw/en/datasets/145614">Taipei City Today's Construction Information</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)`
       : type === 'signs' ? 'Taiwan road signs: <a href="https://data.gov.tw/en/datasets/129029">Taipei City</a> / <a href="https://data.gov.tw/en/datasets/29817">Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
       : type === 'sensors' ? 'Road detectors: <a href="https://data.gov.tw/en/datasets/29817">Taiwan Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
-      : type === 'lpr' ? 'Plate-reader locations: <a href="https://deflock.me/">DeFlock / OpenStreetMap</a> / <a href="https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html">Dutch Police</a> / <a href="https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13">Via Lietuva</a> / <a href="https://dati.comune.milano.it/dataset/ds959-varchi-areab">Comune di Milano Area B</a> / <a href="https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_">Area C</a> / <a href="https://www.data.gouv.fr/datasets/autoroutes-et-peages-en-flux-libre">Maxime Lopes · French toll gantries</a>'
+      : type === 'lpr' ? 'Plate readers &amp; enforcement: <a href="https://gov.uz/oz/iiv/news/view/34435">Uzbekistan IIV · Jan 2025 inventory</a> / <a href="https://deflock.me/">DeFlock / OpenStreetMap</a> / <a href="https://zoek.officielebekendmakingen.nl/stcrt-2026-23725.html">Dutch Police</a> / <a href="https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13">Via Lietuva</a> / <a href="https://dati.comune.milano.it/dataset/ds959-varchi-areab">Comune di Milano Area B</a> / <a href="https://dati.comune.milano.it/dataset/ds82_infogeo_varchi_elettronici_localizzazione_">Area C</a> / <a href="https://www.data.gouv.fr/datasets/autoroutes-et-peages-en-flux-libre">Maxime Lopes · French toll gantries</a>'
       : type === 'cyclones' ? 'Cyclones: <a href="https://eonet.gsfc.nasa.gov/">NASA EONET</a>'
       : type === 'earthquakes' ? 'Earthquakes: <a href="https://earthquake.usgs.gov/">USGS</a>'
       : type === 'nws_alerts' ? 'Weather alerts: <a href="https://api.weather.gov/alerts/active">National Weather Service</a>'
