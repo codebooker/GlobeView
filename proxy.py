@@ -43,6 +43,7 @@ from arcgis_catalog import arcgis_viewport
 from dutch_anpr import SEARCH_URL as DUTCH_ANPR_SEARCH_URL, latest_plan as dutch_anpr_latest_plan, parse_plan as parse_dutch_anpr_plan, plan_for_bbox as dutch_anpr_for_bbox
 from france_toll_gantries import gantries_for_bbox as france_gantries_for_bbox
 from uzbek_enforcement import enforcement_for_bbox as uzbek_enforcement_for_bbox
+from armenia_enforcement import enforcement_for_bbox as armenia_enforcement_for_bbox
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = os.getenv('AMERICAMAP_HOST', os.getenv('FLORIDAMAP_HOST', '127.0.0.1'))
@@ -18730,12 +18731,14 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                       and min_lat <= 51.5 and max_lat >= 41)
     uzbekistan_visible = (min_lon <= 73.22 and max_lon >= 55.99
                           and min_lat <= 45.60 and max_lat >= 37.18)
+    armenia_visible = (min_lon <= 44.63 and max_lon >= 44.40
+                       and min_lat <= 40.28 and max_lat >= 40.08)
     source_errors = []
     try:
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18768,7 +18771,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -18801,6 +18804,12 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Uzbekistan IIV inventory: {error}')
+    if armenia_visible:
+        try:
+            for item in armenia_enforcement_for_bbox(bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Armenia MIA road-camera inventory: {error}')
     if milan_visible:
         try:
             catalog = cached_deflock_json(MILAN_AREA_B_GATES_URL, 'it-milan-area-b-gates:v1', ttl=86400)
