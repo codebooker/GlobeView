@@ -21,6 +21,7 @@ from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 from pyproj import Transformer
+from armenia_reports import rescue_reports
 
 
 NSW_URL = 'https://www.rfs.nsw.gov.au/feeds/majorIncidents.json'
@@ -1464,6 +1465,7 @@ _LOADERS = {
     'th_ddpm': _thailand_ddpm,
     'id_bnpb': lambda: parse_indonesia_bnpb(_html(INDONESIA_BNPB_URL)),
     'np_bipad': _nepal_bipad,
+    'am_rescue': rescue_reports,
 }
 
 
