@@ -2390,6 +2390,10 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         console.warn('International road sensors:', internationalResult.reason);
       }
       setPoints(type, features, records);
+      if (internationalResult.status === 'fulfilled' && internationalResult.value?.loading) {
+        // Pick up sources still filling the shared snapshot after a restart.
+        fetchedAt.set(type, Date.now() - POINT[type].refreshMs + 10000);
+      }
     } catch (error) {
       if (controller.signal.aborted) return;
       console.warn(error);
