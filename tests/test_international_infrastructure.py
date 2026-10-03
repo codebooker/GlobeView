@@ -3298,6 +3298,57 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_liander_outages(dict(payload, exceededTransferLimit=True), now)
 
+    def test_almaty_outages_filter_old_finished_future_and_invalid_records(self):
+        now = dt.datetime(2026, 10, 2, 23, 30, tzinfo=dt.timezone.utc).timestamp()
+        def row(reference='1', start='03.10.2026 04:15', kind='crash', clock='2'):
+            return {'id': reference, 'Dolgota': '76.948', 'Shirota': '43.255',
+                    'type_r': kind, 'time_on': clock,
+                    'Information': f'Аварийное отключение <br>Время отключения - {start} <br>'
+                                   'Район погашения: <b>Almaty</b> <br>Причина отключения - Repairs <br>'
+                                   'Ожидаемое время включения 2-часа'}
+        live = row()
+        live['date'] = '03.10.2026 04:30'
+        rows = [live, row(), row('2', '03.10.2026 01:00', 'plan', '06:00'),
+                row('3', '02.10.2026 23:00', 'plan', '05:00'),
+                row('4', '02.10.2026 08:00', 'plan', '17:00'),
+                row('5', '03.10.2026 05:00'), row('6', '16.04.2026 21:50'),
+                dict(row('7'), Dolgota='NaN'), dict(row('8'), Shirota='0'),
+                row('9', kind='restored'), row('10', kind='plan', clock='25:00'),
+                dict(row('11'), Information='Missing start time')]
+        result = feeds._parse_azhk_outages(rows, now)
+        self.assertEqual([item['properties']['key'] for item in result],
+                         ['kz:azhk:1', 'kz:azhk:2', 'kz:azhk:3'])
+        props = result[0]['properties']
+        self.assertEqual(result[0]['geometry']['coordinates'], [76.948, 43.255])
+        self.assertEqual(props['area_name'], 'Almaty')
+        self.assertEqual(props['source_updated'], '2026-10-02T23:30:00Z')
+        self.assertEqual(props['valid_until'], now + 900)
+        self.assertEqual(props['etr'], '')  # Never invent an absolute ETR from relative hours.
+        self.assertEqual(props['customers_affected'], 0)
+        self.assertNotIn('<', props['reason'])
+        self.assertEqual(result[1]['properties']['etr'], '2026-10-03T01:00:00Z')
+        self.assertEqual(result[2]['properties']['etr'], '2026-10-03T00:00:00Z')
+
+    def test_almaty_catalog_requires_recent_publication_and_known_shape(self):
+        now = dt.datetime(2026, 10, 2, 23, 30, tzinfo=dt.timezone.utc).timestamp()
+        for date in (None, '03.10.2026 04:00', '03.10.2026 05:00', 'invalid'):
+            with self.subTest(date=date), self.assertRaisesRegex(ValueError, 'stale or undated'):
+                feeds._parse_azhk_outages([{'date': date}], now)
+        for payload in ({'error': 'unavailable'}, [None], [{}] * 10001):
+            with self.assertRaisesRegex(ValueError, 'invalid outage catalog'):
+                feeds._parse_azhk_outages(payload, now)
+        self.assertEqual(feeds._parse_azhk_outages([], now), [])
+
+    def test_almaty_cached_points_expire_even_during_provider_failure(self):
+        point = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [76.948, 43.255]},
+                 'properties': {'key': 'kz:azhk:1', 'valid_until': NOW}}
+        other = dict(point, properties={'key': 'uk:ukpn:1'})
+        snapshot = {'sources': {'kz_azhk': [point], 'ukpn': [other]}, 'errors': ['kz_azhk: unavailable']}
+        with patch.object(feeds, '_snapshot', return_value=snapshot), patch.object(feeds.time, 'time', return_value=NOW):
+            result = feeds.power_snapshot()
+        self.assertEqual([item['properties']['key'] for item in result['features']], ['uk:ukpn:1'])
+        self.assertEqual(result['sourceErrors'], snapshot['errors'])
+
     def test_scottish_archive_maps_current_work_and_bounds_response(self):
         fields = ['ActivityStatus', 'Category', 'Longitude', 'Latitude', 'StartDateTimeUTC',
                   'EndDateTimeUTC', 'ActivityReference', 'Street', 'Town', 'TrafficManagement',

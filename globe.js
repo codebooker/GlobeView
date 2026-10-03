@@ -2290,7 +2290,9 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       const bounds = currentBounds();
       const urls = [];
       if (regionVisible({ bounds: { minLon: -170, maxLon: -50, minLat: 15, maxLat: 73 } }, bounds)) urls.push('/power-outages');
-      if (regionVisible({ bounds: { minLon: -11, maxLon: 8, minLat: 49, maxLat: 60 } }, bounds)) urls.push('/international-power');
+      if ([{ minLon: -11, maxLon: 8, minLat: 49, maxLat: 60 },
+        { minLon: 74, maxLon: 81, minLat: 42, maxLat: 47 }]
+        .some(area => regionVisible({ bounds: area }, bounds))) urls.push('/international-power');
       const results = await Promise.allSettled(urls.map(async url => {
         const response = await fetch(url, { signal: controller.signal });
         if (!response.ok) throw new Error(`${url}: ${response.status}`);

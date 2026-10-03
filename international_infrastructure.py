@@ -127,6 +127,8 @@ NIE_OUTAGES_SOURCE = 'https://powercheck.nienetworks.co.uk/'
 LIANDER_OUTAGES_URL = ('https://services1.arcgis.com/v6W5HAVrpgSg3vts/ArcGIS/rest/services/'
                        'IStoringen_Productie_V7/FeatureServer/0/query')
 LIANDER_OUTAGES_SOURCE = 'https://data.overheid.nl/dataset/storingsdata-liander-actuele-storingen'
+AZHK_OUTAGES_URL = 'https://www.azhk.kz/Map/get_tp_to_map.txt'
+AZHK_OUTAGES_SOURCE = 'https://www.azhk.kz/ru/spetsialnye-razdely/avarijnye-otklyucheniya'
 WALES_RSS_BASE = 'https://traffic.wales/feeds'
 NATIONAL_HIGHWAYS_ROADWORKS_DATASET = ('https://www.data.gov.uk/dataset/'
                                        '5b3267d8-4307-4eef-a9af-3a4c28224694/'
@@ -4179,6 +4181,87 @@ def _liander_outages():
         'resultRecordCount': 2000, 'f': 'json',
     })
     return _parse_liander_outages(_get_json(f'{LIANDER_OUTAGES_URL}?{query}'))
+
+
+def _parse_azhk_outages(payload, now=None):
+    """Public transformer interruption points, excluding old and finished work."""
+    now = time.time() if now is None else now
+    if not isinstance(payload, list) or len(payload) > 10000 or any(not isinstance(row, dict) for row in payload):
+        raise ValueError('Alatau Zharyk returned an invalid outage catalog')
+    if not payload:
+        return []
+    zone = ZoneInfo('Asia/Almaty')
+
+    def local_time(value):
+        try:
+            return dt.datetime.strptime(str(value), '%d.%m.%Y %H:%M').replace(tzinfo=zone)
+        except (TypeError, ValueError):
+            return None
+
+    # AZHK puts the snapshot timestamp on only one catalog row.
+    publications = [stamp.timestamp() for row in payload if (stamp := local_time(row.get('date')))]
+    published = max(publications, default=0)
+    if not -300 <= now - published <= 900:
+        raise ValueError('Alatau Zharyk outage snapshot is stale or undated')
+    updated = dt.datetime.fromtimestamp(published, dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+    features, seen = [], set()
+    for row in payload:
+        reference = str(row.get('id') or '')
+        kind = row.get('type_r')
+        if not reference.isdecimal() or reference in seen or kind not in {'plan', 'crash'}:
+            continue
+        try:
+            lon, lat = float(row['Dolgota']), float(row['Shirota'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (74 <= lon <= 81 and 42 <= lat <= 47):
+            continue
+        info = _clean(row.get('Information'), 2000)
+        match = re.search(r'Время отключения\s*-\s*(\d{2}\.\d{2}\.\d{4} \d{2}:\d{2})', info)
+        start = local_time(match[1]) if match else None
+        if not start or not 0 <= now - start.timestamp() <= 48 * 3600:
+            continue
+        expires = min(published + 900, start.timestamp() + 48 * 3600)
+        etr = ''
+        if kind == 'plan':
+            clock = str(row.get('time_on') or '')
+            if not re.fullmatch(r'\d{2}:\d{2}', clock):
+                continue
+            try:
+                hour, minute = (int(part) for part in clock.split(':'))
+                end = start.replace(hour=hour, minute=minute)
+            except ValueError:
+                continue
+            if end <= start:
+                end += dt.timedelta(days=1)
+            if now >= end.timestamp():
+                continue
+            expires = min(expires, end.timestamp())
+            etr = end.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+        area = re.search(r'Район погашения:\s*(.*?)\s*Причина отключения', info)
+        reason = re.search(r'Причина отключения\s*-\s*(.*?)\s*Ожидаемое время включения', info)
+        seen.add(reference)
+        features.append(_feature([lon, lat], {
+            'key': f'kz:azhk:{reference}', 'provider': 'Alatau Zharyk Company',
+            'provider_key': 'kz:azhk',
+            'area_name': _clean(area[1], 200) if area else 'Almaty service area',
+            'customers_affected': 0,
+            'status': 'Reported planned outage' if kind == 'plan' else 'Reported unplanned outage',
+            'reason': ' · '.join(filter(None, [
+                _clean(reason[1], 120) if reason else '',
+                f'Reported {start.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")}',
+                'Utility-reported transformer point',
+            ])),
+            # Numeric crash time_on values are relative estimates, not timestamps.
+            'etr': etr, 'source_label': 'Alatau Zharyk Company · public outage map',
+            'source_url': AZHK_OUTAGES_SOURCE, 'source_updated': updated,
+            'valid_until': expires,
+        }))
+    return features
+
+
+def _azhk_outages():
+    return _parse_azhk_outages(_get_json(AZHK_OUTAGES_URL))
 
 
 _DATEX_NS = {'d': 'http://datex2.eu/schema/2/2_0'}
@@ -8316,7 +8399,7 @@ _FETCHERS = {
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages, 'nie': _nie_outages,
-              'nl_liander': _liander_outages},
+              'nl_liander': _liander_outages, 'kz_azhk': _azhk_outages},
 }
 
 
@@ -8448,6 +8531,8 @@ def road_snapshot(layer, bbox=None):
 
 def power_snapshot():
     snapshot = _snapshot('power')
-    features = [item for rows in snapshot['sources'].values() for item in rows]
+    now = time.time()
+    features = [item for rows in snapshot['sources'].values() for item in rows
+                if item['properties'].get('valid_until', float('inf')) > now]
     return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': snapshot['errors'],
             'sources': list(snapshot['sources'])}
