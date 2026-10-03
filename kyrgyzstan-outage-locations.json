@@ -2,7 +2,7 @@
   "source": "OpenStreetMap contributors",
   "license": "ODbL 1.0",
   "audited": "2026-10-03",
-  "scope": "Bishkek PES published locations; building, street, or named-area reference points, not outage footprints",
+  "scope": "Bishkek and Issyk-Kul PES published locations; building, street, or named-area references, not outage footprints",
   "locations": [
     {
       "id": "ibraimova-146",
@@ -190,6 +190,175 @@
         42.9005818
       ],
       "osm": "way/51086577"
+    },
+    {
+      "id": "tasma",
+      "label": "Tasma",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Тюпский",
+      "pattern": "\\bтасма\\b",
+      "coordinates": [
+        78.5902461,
+        42.710645
+      ],
+      "osm": "node/1376572983"
+    },
+    {
+      "id": "yntymak",
+      "label": "Yntymak",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Тюпский",
+      "pattern": "\\bынтымак\\b",
+      "coordinates": [
+        78.1309569,
+        42.6587506
+      ],
+      "osm": "node/297582901"
+    },
+    {
+      "id": "sary-bulun",
+      "label": "Sary-Bulun",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Тюпский",
+      "pattern": "\\bсары-булу[ңн]\\b",
+      "coordinates": [
+        78.1826874,
+        42.6702331
+      ],
+      "osm": "node/1964710834"
+    },
+    {
+      "id": "tyup",
+      "label": "Tyup",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Тюпский",
+      "pattern": "\\b(?:тюп|түп)\\b",
+      "coordinates": [
+        78.3594129,
+        42.7336454
+      ],
+      "osm": "node/247831442"
+    },
+    {
+      "id": "barskoon",
+      "label": "Barskoon",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Жети-Огузский",
+      "pattern": "\\bбарск(?:оон|аун)\\b",
+      "coordinates": [
+        77.6044015,
+        42.1579251
+      ],
+      "osm": "node/297346359"
+    },
+    {
+      "id": "darkhan",
+      "label": "Darkhan",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Жети-Огузский",
+      "pattern": "\\bдар[хк]ан\\b",
+      "coordinates": [
+        77.8876606,
+        42.3103256
+      ],
+      "osm": "node/1349850188"
+    },
+    {
+      "id": "kyzyl-suu-jeti-oguz",
+      "label": "Kyzyl-Suu",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Жети-Огузский",
+      "pattern": "\\bкызыл-суу\\b",
+      "coordinates": [
+        78.004654,
+        42.339524
+      ],
+      "osm": "node/297334113"
+    },
+    {
+      "id": "jalgyz-oruk",
+      "label": "Jalgyz-Oruk",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Жети-Огузский",
+      "pattern": "\\bд?жалгыз[ -](?:[өо]р[үу]к|урюк)\\b",
+      "coordinates": [
+        77.9706752,
+        42.3169039
+      ],
+      "osm": "node/297334496"
+    },
+    {
+      "id": "korgondu-bulak",
+      "label": "Korgondu-Bulak",
+      "kind": "area",
+      "service": "issyk_kul",
+      "district": "Тонский",
+      "pattern": "\\bкоргонду-булак\\b",
+      "coordinates": [
+        77.2393052,
+        42.0819841
+      ],
+      "osm": "way/337302367"
+    },
+    {
+      "id": "stalingradskaya",
+      "label": "Stalingradskaya street · Karakol",
+      "kind": "street",
+      "service": "issyk_kul",
+      "district": "Каракольский",
+      "pattern": "\\bсталинградск(?:ая|ой)\\b",
+      "coordinates": [
+        78.3844865,
+        42.4750897
+      ],
+      "osm": "way/220868238"
+    },
+    {
+      "id": "elebayeva",
+      "label": "Elebayeva street · Karakol",
+      "kind": "street",
+      "service": "issyk_kul",
+      "district": "Каракольский",
+      "pattern": "\\bэлебаева\\b",
+      "coordinates": [
+        78.3702889,
+        42.483274
+      ],
+      "osm": "way/1418196481"
+    },
+    {
+      "id": "zhaparova",
+      "label": "Zhaparova street · Karakol",
+      "kind": "street",
+      "service": "issyk_kul",
+      "district": "Каракольский",
+      "pattern": "\\bжапарова\\b",
+      "coordinates": [
+        78.3853561,
+        42.4899442
+      ],
+      "osm": "way/218460857"
+    },
+    {
+      "id": "gebze",
+      "label": "Gebze street · Karakol",
+      "kind": "street",
+      "service": "issyk_kul",
+      "district": "Каракольский",
+      "pattern": "\\bгебзе\\b",
+      "coordinates": [
+        78.3990986,
+        42.4924312
+      ],
+      "osm": "way/28556841"
     }
   ]
 }

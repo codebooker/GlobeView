@@ -20,6 +20,72 @@ def page(text):
 
 
 class KyrgyzstanOutageTests(unittest.TestCase):
+    def test_issyk_kul_published_schedule_maps_each_verified_district(self):
+        notice = page(FIXTURE.with_name('issyk-kul-planned-work-20261007.html').read_text(encoding='utf-8'))
+        url = outages._SERVICES['issyk_kul']['index'] + 'data-07102026-zh/'
+        points = outages._parse_notice(notice, dt.date(2026, 10, 7), url, NOW, 'issyk_kul')
+        self.assertEqual(len(points), 13)
+        self.assertEqual({p['properties']['source_district'] for p in points},
+                         {'Тюпский', 'Каракольский', 'Жети-Огузский', 'Тонский'})
+        for point in points:
+            lon, lat = point['geometry']['coordinates']
+            self.assertTrue(77 < lon < 79 and 42 < lat < 43)
+            properties = point['properties']
+            self.assertTrue(properties['key'].startswith('kg:ipes:planned:'))
+            self.assertEqual(properties['provider'], 'Issyk-Kul PES · planned power work')
+            self.assertEqual(properties['starts_at'], '2026-10-07T03:00:00+00:00')
+            self.assertEqual(properties['ends_at'], '2026-10-07T11:00:00+00:00')
+            self.assertTrue(properties['status'].startswith('Scheduled'))
+            self.assertEqual(properties['source_url'], url)
+        names = [p['properties']['area_name'] for p in points]
+        self.assertIn('Darkhan · Approximate area reference', names)
+        self.assertIn('Jalgyz-Oruk · Approximate area reference', names)
+        self.assertIn('Korgondu-Bulak · Approximate area reference', names)
+
+    def test_homonyms_are_scoped_to_the_utility_and_published_district(self):
+        # Bishkek's Ak-Ordo row includes a Kyzyl-Suu street. It must not place an
+        # outage 350 km away at the identically named Issyk-Kul village.
+        self.assertEqual([p['id'] for p in outages._locations_for('ж/м Ак-Ордо (ул. Тунук, Кызыл-Суу)')],
+                         ['tunuk'])
+        self.assertEqual([p['id'] for p in outages._locations_for('Кызыл-Суу', 'issyk_kul', 'Жети-Огузский')],
+                         ['kyzyl-suu-jeti-oguz'])
+        self.assertEqual(outages._locations_for('Кызыл-Суу', 'issyk_kul', 'Тонский'), [])
+        # The OSM Kainar in Tyup is not the unverified Kainar in the Ton notice.
+        self.assertEqual(outages._locations_for('Кайнар', 'issyk_kul', 'Тонский'), [])
+        self.assertEqual(outages._locations_for('Курмонту Пристань', 'issyk_kul', 'Тюпский'), [])
+        self.assertEqual(outages._locations_for('Тасма', 'bishkek', 'Тюпский'), [])
+
+    def test_issyk_kul_adapter_only_follows_its_published_current_year_links(self):
+        index = outages._SERVICES['issyk_kul']['index']
+        url = index + 'data-07102026-zh/'
+        catalog = page(''.join(f'<a href="{href}">График плановых работ и техобслуживания</a>'
+                               for href in (url, index + 'data-02102026-zh/',
+                                            index + 'data-07102025-zh/', NOTICE_URL)))
+        notice = page(FIXTURE.with_name('issyk-kul-planned-work-20261007.html').read_text(encoding='utf-8'))
+        with mock.patch.object(outages, '_read_page', side_effect=[catalog, notice]) as read:
+            points = outages.issyk_kul_planned_outages(NOW)
+        self.assertEqual(len(points), 13)
+        self.assertEqual(read.call_args_list, [mock.call(index, 'issyk_kul'), mock.call(url, 'issyk_kul')])
+        with mock.patch.object(outages._OPENER, 'open') as read:
+            with self.assertRaisesRegex(ValueError, 'URL'):
+                outages._read_page(NOTICE_URL, 'issyk_kul')
+            read.assert_not_called()
+
+    def test_issyk_kul_schedules_expire_and_do_not_accept_a_wrong_heading_year(self):
+        text = FIXTURE.with_name('issyk-kul-planned-work-20261007.html').read_text(encoding='utf-8')
+        url = outages._SERVICES['issyk_kul']['index'] + 'data-07102026-zh/'
+        date = dt.date(2026, 10, 7)
+        active = outages._parse_notice(page(text), date, url,
+                                        dt.datetime(2026, 10, 7, 10, 55, tzinfo=UTC), 'issyk_kul')
+        self.assertEqual(len(active), 13)
+        self.assertTrue(all(p['properties']['status'].startswith('Planned work window') for p in active))
+        self.assertTrue(all(p['properties']['valid_until'] == dt.datetime(2026, 10, 7, 11, tzinfo=UTC).timestamp()
+                            for p in active))
+        self.assertEqual(outages._parse_notice(page(text), date, url,
+                                              dt.datetime(2026, 10, 7, 11, tzinfo=UTC), 'issyk_kul'), [])
+        with self.assertRaisesRegex(ValueError, 'date'):
+            outages._parse_notice(page(text.replace('07.10.2026', '07.10.2025')), date, url, NOW, 'issyk_kul')
+
     def test_published_table_rowspans_and_audited_reference_locations(self):
         points = outages._parse_notice(page(FIXTURE.read_text(encoding='utf-8')),
                                        NOTICE_DATE, NOTICE_URL, NOW)
