@@ -1187,7 +1187,8 @@ def _kazakhstan_cap_alert(url):
     return _get_xml(url, max_bytes=150_000)
 
 
-def _parse_kazakhstan_caps(caps, now):
+def _parse_meteoalert_caps(caps, now, *, country, source, country_code, identifier_prefix,
+                           bounds, max_age=dt.timedelta(days=2)):
     referenced = set()
     for _, cap in caps:
         for reference in (cap.findtext('cap:references', namespaces=_CAP_NS) or '').split():
@@ -1197,7 +1198,7 @@ def _parse_kazakhstan_caps(caps, now):
     items, seen = [], set()
     for url, cap in caps:
         identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or ''
-        if (not identifier.startswith('2.49.0.0.398.0-') or len(identifier) > 160
+        if (not identifier.startswith(identifier_prefix) or len(identifier) > 160
                 or identifier in referenced or identifier in seen
                 or cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual'
                 or cap.findtext('cap:scope', namespaces=_CAP_NS) != 'Public'
@@ -1207,7 +1208,7 @@ def _parse_kazakhstan_caps(caps, now):
         sent = cap.findtext('cap:sent', namespaces=_CAP_NS)
         try:
             issued = dt.datetime.fromisoformat(sent.replace('Z', '+00:00'))
-            if not dt.timedelta(minutes=-5) <= now - issued <= dt.timedelta(days=2):
+            if not dt.timedelta(minutes=-5) <= now - issued <= max_age:
                 continue
         except (AttributeError, TypeError, ValueError):
             continue
@@ -1224,7 +1225,8 @@ def _parse_kazakhstan_caps(caps, now):
                     names.append(name)
                 for polygon in area.findall('cap:polygon', _CAP_NS):
                     ring = _cap_polygon(polygon.text)
-                    if ring and all(45 <= lon <= 88 and 40 <= lat <= 56 for lon, lat in ring):
+                    if ring and all(bounds[0] <= lon <= bounds[2] and bounds[1] <= lat <= bounds[3]
+                                    for lon, lat in ring):
                         polygons.append([ring])
             if not polygons or len(polygons) > 50 or sum(len(p[0]) for p in polygons) > 20_000:
                 continue
@@ -1235,11 +1237,11 @@ def _parse_kazakhstan_caps(caps, now):
             advice = (info.findtext('cap:instruction', namespaces=_CAP_NS) or
                       info.findtext('cap:description', namespaces=_CAP_NS) or '')
             items.append({
-                'id': f'kz:{identifier}:{index}',
+                'id': f'{country_code}:{identifier}:{index}',
                 'title': info.findtext('cap:headline', namespaces=_CAP_NS) or
                          info.findtext('cap:event', namespaces=_CAP_NS) or 'Weather warning',
                 'lon': round(point[0], 5), 'lat': round(point[1], 5), 'geometry': geometry,
-                'locationKind': 'polygon', 'country': 'Kazakhstan', 'source': 'Kazhydromet',
+                'locationKind': 'polygon', 'country': country, 'source': source,
                 'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
                 'area': '; '.join(names)[:250], 'advice': ' '.join(advice.split())[:480],
                 'observed': sent, 'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
@@ -1248,13 +1250,19 @@ def _parse_kazakhstan_caps(caps, now):
     return items
 
 
-def _load_kazakhstan_caps():
-    feed = _get_xml(_KAZAKHSTAN_CAP_FEED, max_bytes=1_000_000)
+def _parse_kazakhstan_caps(caps, now):
+    return _parse_meteoalert_caps(caps, now, country='Kazakhstan', source='Kazhydromet',
+                                 country_code='kz', identifier_prefix='2.49.0.0.398.0-',
+                                 bounds=(45, 40, 88, 56))
+
+
+def _load_meteoalert_caps(feed_url, url_pattern, fetch_cap, country):
+    feed = _get_xml(feed_url, max_bytes=1_000_000)
     if (feed.findtext('atom:rights', namespaces=_ATOM_NS) or '').strip().lower() != 'public domain':
-        raise ValueError('Kazakhstan CAP feed reuse terms changed')
+        raise ValueError(f'{country} CAP feed reuse terms changed')
     entries = feed.findall('atom:entry', _ATOM_NS)
     if len(entries) > 1000:
-        raise ValueError('Kazakhstan CAP feed exceeded entry limit')
+        raise ValueError(f'{country} CAP feed exceeded entry limit')
     now = dt.datetime.now(_UTC)
     urls = set()
     for entry in entries:
@@ -1266,14 +1274,19 @@ def _load_kazakhstan_caps():
             continue
         for link in entry.findall('atom:link', _ATOM_NS):
             url = link.get('href') or ''
-            if link.get('type') == 'application/cap+xml' and _KAZAKHSTAN_CAP_URL.fullmatch(url):
+            if link.get('type') == 'application/cap+xml' and url_pattern.fullmatch(url):
                 urls.add(url)
                 break
     # Immutable CAP documents are cached once across users and feed refreshes.
     # Bounded concurrency keeps the first national catalog fetch considerate.
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        caps = list(zip(sorted(urls), executor.map(_kazakhstan_cap_alert, sorted(urls))))
+        caps = list(zip(sorted(urls), executor.map(fetch_cap, sorted(urls))))
     return caps
+
+
+def _load_kazakhstan_caps():
+    return _load_meteoalert_caps(_KAZAKHSTAN_CAP_FEED, _KAZAKHSTAN_CAP_URL,
+                                 _kazakhstan_cap_alert, 'Kazakhstan')
 
 
 def _refresh_kazakhstan_caps():
@@ -1305,6 +1318,61 @@ def _kazakhstan_alerts():
     return _parse_kazakhstan_caps(caps, dt.datetime.now(_UTC))
 
 
+# WMO authority 2.49.0.0.417.0 publishes these public-domain English CAP alerts.
+# Filenames differ from Kazakhstan; keep each national URL/identifier restricted.
+_KYRGYZSTAN_CAP_FEED = 'https://meteoalert.meteoinfo.ru/kyrgyzstan/cap-feed/en/atom.xml'
+_KYRGYZSTAN_CAP_URL = re.compile(
+    r'https://meteoalert\.meteoinfo\.ru/kyrgyzstan/cap-feed/en/\d{14}-\d{7}\.xml')
+_KYRGYZSTAN_LOCK = threading.Lock()
+_KYRGYZSTAN_STATE = {'caps': None, 'fetched_at': 0, 'refresh_after': 0, 'inflight': False}
+
+
+@lru_cache(maxsize=1024)
+def _kyrgyzstan_cap_alert(url):
+    if not _KYRGYZSTAN_CAP_URL.fullmatch(url):
+        raise ValueError('Unexpected Kyrgyzstan CAP URL')
+    return _get_xml(url, max_bytes=150_000)
+
+
+def _parse_kyrgyzstan_caps(caps, now):
+    # Published 72-hour outlooks can still be valid more than two days after issue.
+    return _parse_meteoalert_caps(caps, now, country='Kyrgyzstan', source='Kyrgyzhydromet',
+                                 country_code='kg', identifier_prefix='2.49.0.0.417.0.',
+                                 bounds=(69, 39, 81, 44), max_age=dt.timedelta(days=7))
+
+
+def _load_kyrgyzstan_caps():
+    return _load_meteoalert_caps(_KYRGYZSTAN_CAP_FEED, _KYRGYZSTAN_CAP_URL,
+                                 _kyrgyzstan_cap_alert, 'Kyrgyzstan')
+
+
+def _refresh_kyrgyzstan_caps():
+    try:
+        caps = _load_kyrgyzstan_caps()
+    except Exception:
+        with _KYRGYZSTAN_LOCK:
+            _KYRGYZSTAN_STATE.update(refresh_after=time.monotonic() + 60, inflight=False)
+    else:
+        with _KYRGYZSTAN_LOCK:
+            fetched_at = time.monotonic()
+            _KYRGYZSTAN_STATE.update(caps=caps, fetched_at=fetched_at,
+                                    refresh_after=fetched_at + 300, inflight=False)
+
+
+def _kyrgyzstan_alerts():
+    with _KYRGYZSTAN_LOCK:
+        if (time.monotonic() >= _KYRGYZSTAN_STATE['refresh_after']
+                and not _KYRGYZSTAN_STATE['inflight']):
+            _KYRGYZSTAN_STATE['inflight'] = True
+            threading.Thread(target=_refresh_kyrgyzstan_caps,
+                             name='kyrgyzstan-cap-refresh', daemon=True).start()
+        caps = _KYRGYZSTAN_STATE['caps']
+        fetched_at = _KYRGYZSTAN_STATE['fetched_at']
+    if caps is None or time.monotonic() - fetched_at > 900:
+        raise RuntimeError('Kyrgyzstan warning catalog is warming or unavailable')
+    return _parse_kyrgyzstan_caps(caps, dt.datetime.now(_UTC))
+
+
 def _world_alerts():
     items = []
     unavailable = []
@@ -1313,7 +1381,8 @@ def _world_alerts():
                ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
                ('Philippines', _pagasa_alerts), ('India', _sachet_alerts),
                ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts),
-               ('Malaysia', _malaysia_alerts), ('Kazakhstan', _kazakhstan_alerts)]
+               ('Malaysia', _malaysia_alerts), ('Kazakhstan', _kazakhstan_alerts),
+               ('Kyrgyzstan', _kyrgyzstan_alerts)]
     # Each provider is independent; a slow national service should not delay
     # every other country's current alerts.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:

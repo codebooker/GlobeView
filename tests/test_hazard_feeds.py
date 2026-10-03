@@ -251,6 +251,7 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_maldives_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_malaysia_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_kazakhstan_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_kyrgyzstan_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
@@ -332,6 +333,96 @@ class HazardFeedTests(unittest.TestCase):
                     time.sleep(.01)
             self.assertEqual(hazard_feeds._kazakhstan_alerts(), [])
             self.assertEqual(fetch.call_count, 1)
+
+    def test_kyrgyzstan_caps_keep_valid_outlooks_and_published_district_polygons(self):
+        now = dt.datetime(2026, 10, 4, 12, tzinfo=dt.timezone.utc)
+        def cap(name, expires='2026-10-05T16:00:00Z', status='Actual', kind='Alert', references='',
+                polygon='40,70 41,70 41,71 40,71 40,70', scope='Public', response='None',
+                authority='2.49.0.0.417.0.', sent='2026-10-02T04:40:42Z'):
+            identifier = authority + name
+            url = 'https://meteoalert.meteoinfo.ru/kyrgyzstan/cap-feed/en/20261002044042-0058776.xml'
+            document = ET.fromstring(f'''<alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+                <identifier>{identifier}</identifier><sent>{sent}</sent><status>{status}</status>
+                <scope>{scope}</scope><msgType>{kind}</msgType><references>{references}</references>
+                <info><language>en</language><event>Wind</event><severity>Moderate</severity>
+                <responseType>{response}</responseType><onset>2026-10-04T00:00:00Z</onset>
+                <expires>{expires}</expires><description>Published warning text</description>
+                <area><areaDesc>Batken district</areaDesc><polygon>{polygon}</polygon></area>
+                </info></alert>''')
+            return url, document
+        records = [cap('old'), cap('new', kind='Update',
+                   references='sender,2.49.0.0.417.0.old,2026-10-02T04:00:00Z'),
+                   cap('expired', expires='2026-10-04T10:00:00Z'), cap('test', status='Test'),
+                   cap('private', scope='Private'), cap('clear', response='AllClear'),
+                   cap('wrong-region', polygon='45,80 46,80 46,81 45,81 45,80'),
+                   cap('wrong-authority', authority='2.49.0.0.398.0-'),
+                   cap('future', sent='2026-10-06T04:40:42Z'),
+                   cap('stale', sent='2026-09-20T04:40:42Z'), cap('cancelled'),
+                   cap('cancel', kind='Cancel',
+                       references='sender,2.49.0.0.417.0.cancelled,2026-10-02T04:00:00Z')]
+        records.append(records[1])
+        items = hazard_feeds._parse_kyrgyzstan_caps(records, now)
+        self.assertEqual([item['id'] for item in items], ['kg:2.49.0.0.417.0.new:0'])
+        self.assertEqual(items[0]['country'], 'Kyrgyzstan')
+        self.assertEqual(items[0]['source'], 'Kyrgyzhydromet')
+        self.assertEqual(items[0]['advice'], 'Published warning text')
+        self.assertEqual(items[0]['geometry']['coordinates'],
+                         [[[[70.0, 40.0], [70.0, 41.0], [71.0, 41.0], [71.0, 40.0], [70.0, 40.0]]]])
+
+    def test_kyrgyzstan_catalog_caches_caps_and_rejects_untrusted_links_and_reuse_changes(self):
+        hazard_feeds._kyrgyzstan_cap_alert.cache_clear()
+        self.addCleanup(hazard_feeds._kyrgyzstan_cap_alert.cache_clear)
+        url = 'https://meteoalert.meteoinfo.ru/kyrgyzstan/cap-feed/en/20261002044042-0058776.xml'
+        with patch.object(hazard_feeds, '_get_xml', return_value=ET.Element('alert')) as fetch:
+            hazard_feeds._kyrgyzstan_cap_alert(url)
+            hazard_feeds._kyrgyzstan_cap_alert(url)
+            fetch.assert_called_once_with(url, max_bytes=150_000)
+            for bad in ['https://example.org/alert.xml', url + '?redirect=1',
+                        url.replace('/kyrgyzstan/', '/kazakhstan/'), url.replace('https:', 'http:')]:
+                with self.assertRaises(ValueError):
+                    hazard_feeds._kyrgyzstan_cap_alert(bad)
+        stamp = dt.datetime.now(dt.timezone.utc).isoformat()
+        feed = ET.fromstring(f'''<feed xmlns="http://www.w3.org/2005/Atom"><rights>public domain</rights>
+            <entry><updated>{stamp}</updated><link type="application/cap+xml" href="{url}"/></entry>
+            <entry><updated>{stamp}</updated><link type="application/cap+xml" href="{url}"/></entry>
+            <entry><updated>{stamp}</updated><link type="application/cap+xml" href="https://example.org/alert.xml"/></entry>
+            <entry><updated>2025-01-01T00:00:00Z</updated><link type="application/cap+xml"
+                href="{url.replace('0058776', '0058777')}"/></entry></feed>''')
+        with patch.object(hazard_feeds, '_get_xml', return_value=feed), \
+                patch.object(hazard_feeds, '_kyrgyzstan_cap_alert', return_value=ET.Element('alert')) as fetch:
+            self.assertEqual(len(hazard_feeds._load_kyrgyzstan_caps()), 1)
+            fetch.assert_called_once_with(url)
+            feed.find('atom:rights', hazard_feeds._ATOM_NS).text = 'All rights reserved'
+            with self.assertRaises(ValueError):
+                hazard_feeds._load_kyrgyzstan_caps()
+
+    def test_kyrgyzstan_background_refresh_is_shared_and_stale_catalog_is_unavailable(self):
+        started, release = threading.Event(), threading.Event()
+        def load():
+            started.set()
+            release.wait(2)
+            return []
+        with patch.dict(hazard_feeds._KYRGYZSTAN_STATE,
+                        {'caps': None, 'fetched_at': 0, 'refresh_after': 0, 'inflight': False}, clear=True), \
+                patch.object(hazard_feeds, '_load_kyrgyzstan_caps', side_effect=load) as fetch:
+            try:
+                with self.assertRaises(RuntimeError):
+                    hazard_feeds._kyrgyzstan_alerts()
+                self.assertTrue(started.wait(1))
+                with self.assertRaises(RuntimeError):
+                    hazard_feeds._kyrgyzstan_alerts()
+                self.assertEqual(fetch.call_count, 1)
+            finally:
+                release.set()
+                deadline = time.monotonic() + 2
+                while hazard_feeds._KYRGYZSTAN_STATE['inflight'] and time.monotonic() < deadline:
+                    time.sleep(.01)
+            self.assertEqual(hazard_feeds._kyrgyzstan_alerts(), [])
+            self.assertEqual(fetch.call_count, 1)
+            hazard_feeds._KYRGYZSTAN_STATE.update(fetched_at=time.monotonic() - 901,
+                                                refresh_after=time.monotonic() + 10)
+            with self.assertRaises(RuntimeError):
+                hazard_feeds._kyrgyzstan_alerts()
 
     def test_malaysia_warning_maps_only_active_land_states(self):
         now = dt.datetime(2026, 10, 2, 20, tzinfo=dt.timezone.utc)
