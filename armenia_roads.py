@@ -20,11 +20,12 @@ from scripts.update_armenia_road_locations import canonical, road_refs
 
 BASE = 'https://armroad.am'
 INDEX = BASE + '/am/press/urgentnews'
+NEWS_INDEX = BASE + '/am/press/news'
 _ZONE = dt.timezone(dt.timedelta(hours=4))
 _UTC = dt.timezone.utc
 _PAGES = {}
 _LOCK = threading.Lock()
-_URL_PATH = re.compile(r'/am/urgent_news/inner/News_(\d{2})\.(\d{2})\.(\d{4})(?:_\d{1,3})?')
+_URL_PATH = re.compile(r'/am/(?:urgent_news|news)/inner/News_(\d{2})\.(\d{2})\.(\d{4})(?:_\d{1,3})?')
 _WINDOW = re.compile(r'(' + '|'.join(_GENITIVE_MONTHS) + r')\s+(\d{1,2})-ին[՝,\s]+ժամը\s+'
                      r'(\d{1,2})[:։.](\d{2})-ից\s+մինչև\s+(\d{1,2})[:։.](\d{2})', re.I)
 
@@ -150,7 +151,7 @@ def _window(body, published, now):
 def parse_notice(page, url, now=None, locations=None):
     now = now or dt.datetime.now(_UTC)
     published = _url_date(url)
-    if published is None:
+    if published is None or '/am/urgent_news/' not in url:
         raise ValueError('Unexpected Armenia road notice URL')
     if not 0 <= (now.astimezone(_ZONE).date() - published).days <= 14:
         return []
@@ -214,7 +215,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _read(url):
-    if url != INDEX and _url_date(url) is None:
+    if url not in {INDEX, NEWS_INDEX} and _url_date(url) is None:
         raise ValueError('Unexpected Armenia road URL')
     with _LOCK:
         cached = _PAGES.get(url)
@@ -235,7 +236,7 @@ def _read(url):
 def road_notices(now=None):
     now = now or dt.datetime.now(_UTC)
     page = _parse(_read(INDEX))
-    all_links = {url for url in page.links if _url_date(url) is not None}
+    all_links = {url for url in page.links if _url_date(url) is not None and '/am/urgent_news/' in url}
     if not all_links or len(all_links) > 64:
         raise ValueError('Armenia road listing structure changed')
     urls = sorted(url for url in all_links if 0 <= (now.astimezone(_ZONE).date() - _url_date(url)).days <= 14)
@@ -244,3 +245,97 @@ def road_notices(now=None):
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         pages = list(pool.map(_read, urls))
     return [item for page, url in zip(pages, urls) for item in parse_notice(page, url, now)]
+
+
+@lru_cache(maxsize=1)
+def _named_locations():
+    data = json.loads(Path(__file__).with_name('armenia-named-road-locations.json').read_text())
+    if (data.get('locationKind') != 'approximate_named_road_reference'
+            or data.get('osmLicence') != 'ODbL 1.0'):
+        raise ValueError('Armenia named-road provenance changed')
+    locations = data.get('locations')
+    if not isinstance(locations, list) or not 1 <= len(locations) <= 100:
+        raise ValueError('Armenia named-road reference size changed')
+    for place in locations:
+        lon, lat = place['coordinates']
+        if (not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (lon, lat))
+                or not 43.4 <= lon <= 46.7 or not 38.8 <= lat <= 41.4
+                or type(place.get('osmNode')) is not int or place['osmNode'] <= 0
+                or not place.get('osmWays') or not place.get('aliases')
+                or not all(type(w) is int and w > 0 for w in place['osmWays'])):
+            raise ValueError('Invalid Armenia named-road reference')
+    return locations
+
+
+_ONGOING = re.compile(r'շարունակվում\s+(?:են|է)|կատարվում\s+(?:են|է)|կառուցվում\s+(?:են|է)|'
+                      r'տեղադրվում\s+(?:են|է)|իրականացվում\s+(?:են|է)|ընթացքի\s+մեջ\s+է|Շինտեխնիկան\s+այժմ', re.I)
+_COMPLETE = re.compile(r'(?:ավարտվել|ավարտված|ավարտել|վերականգնվել|դադարեցվել)\s+(?:են|է)\b', re.I)
+_FUTURE = re.compile(r'կավարտ|կտեղադրվ|կկառուց|նախատեսվում', re.I)
+
+
+def parse_news_roadworks(page, url, now=None, locations=None, include_resolved=False):
+    """Keep dated reports of work; never infer current closures or exact extents."""
+    now = now or dt.datetime.now(_UTC)
+    published = _url_date(url)
+    if published is None or '/am/news/' not in url:
+        raise ValueError('Unexpected Armenia construction report URL')
+    if not 0 <= (now.astimezone(_ZONE).date() - published).days <= 14:
+        return []
+    page = _parse(page)
+    if page.articles != 1 or ''.join(page.dates).strip() != published.strftime('%d-%m-%Y'):
+        raise ValueError('Armenia construction article structure or date changed')
+    body = ' '.join(''.join(page.body).split())
+    if not body:
+        raise ValueError('Armenia construction article body missing')
+    sentences = [s.strip() for s in re.split(r'[։.!?]\s+', body)]
+    title = ' '.join(page.title)
+    if not any(term in title + ' ' + body for term in ('նորոգ', 'շինարար', 'շինհրապարակ', 'ճանապարհաշին', 'Շինտեխնիկա')):
+        return []
+    features = []
+    for place in locations if locations is not None else _named_locations():
+        if place['context'] and not all(term in body for term in place['context']):
+            continue
+        named = [s for s in sentences if any(alias in s for alias in place['aliases'])]
+        resolved = any(_COMPLETE.search(s) and not _FUTURE.search(s)
+                       and not re.search(r'\bչեն\b|\bչի\b', s) for s in named)
+        matched = [s for s in named if _ONGOING.search(s) and not _COMPLETE.search(s)
+                   and not _FUTURE.search(s) and not re.search(r'\bչեն\b|\bչի\b', s)]
+        if resolved and include_resolved:
+            features.append({'properties': {'key': 'am:armroad:works:' + place['id'],
+                                            'reported_at': published.isoformat(), 'resolved': True}})
+            continue
+        if resolved or not matched:
+            continue
+        expiry = min(dt.datetime.combine(published + dt.timedelta(days=15), dt.time(), _ZONE).timestamp(),
+                     now.timestamp() + 900)
+        features.append({'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': place['coordinates']},
+                         'properties': {'key': 'am:armroad:works:' + place['id'], 'layer': 'construction',
+                                        'title': 'Roadworks report · ' + place['name'],
+                                        'detail': f'Reported {published:%d %b %Y} · Current restrictions unverified · Approximate road reference',
+                                        'source': 'Armenia Road Department · OpenStreetMap (ODbL) / GeoNames (CC BY 4.0)',
+                                        'source_url': url, 'reported_at': published.isoformat(),
+                                        'record_kind': 'published_roadworks_report',
+                                        'location_kind': 'approximate_named_road_reference',
+                                        'location_source_url': 'https://www.openstreetmap.org/node/' + str(place['osmNode']),
+                                        'valid_until': expiry}})
+    return features
+
+
+def news_roadworks(now=None):
+    now = now or dt.datetime.now(_UTC)
+    page = _parse(_read(NEWS_INDEX))
+    all_links = {url for url in page.links if _url_date(url) is not None and '/am/news/' in url}
+    if not all_links or len(all_links) > 64:
+        raise ValueError('Armenia construction listing structure changed')
+    urls = sorted(url for url in all_links if 0 <= (now.astimezone(_ZONE).date() - _url_date(url)).days <= 14)
+    if len(urls) > 12:
+        raise ValueError('Armenia recent construction report limit exceeded')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        pages = list(pool.map(_read, urls))
+    latest = {}
+    for page, url in zip(pages, urls):
+        for row in parse_news_roadworks(page, url, now, include_resolved=True):
+            key = row['properties']['key']
+            if key not in latest or row['properties']['reported_at'] > latest[key]['properties']['reported_at']:
+                latest[key] = row
+    return [row for row in latest.values() if not row['properties'].get('resolved')]
