@@ -30,6 +30,7 @@ from international_infrastructure import (road_snapshot as international_road_sn
                                           hong_kong_camera_snapshot,
                                           singapore_camera_snapshot,
                                           taiwan_highway_camera_snapshot,
+                                          kaztoll_camera_clip,
                                           lithuania_camera_snapshot,
                                           lithuania_event_detail,
                                           tii_camera_snapshot)
@@ -70,10 +71,29 @@ STREAM_HTTP_OPENER = urllib.request.build_opener(NoStreamRedirectHandler)
 
 
 def rate_limit_bucket(path):
-    for prefix in ('/stream/', '/camera-snapshot/', '/511/', '/fl511/'):
+    for prefix in ('/stream/', '/camera-snapshot/', '/kaztoll-camera/', '/511/', '/fl511/'):
         if path.startswith(prefix):
             return prefix
     return path
+
+
+def parse_media_range(value, size):
+    """A bounded single HTTP byte range for cached camera clips."""
+    if not value:
+        return None
+    match = re.fullmatch(r'bytes=(\d{0,10})-(\d{0,10})', str(value))
+    if not match or not any(match.groups()):
+        raise ValueError('Unsupported media range')
+    first, last = match.groups()
+    if not first:
+        length = int(last)
+        if length <= 0:
+            raise ValueError('Empty media range')
+        return max(0, size - length), size - 1
+    start, end = int(first), min(int(last), size - 1) if last else size - 1
+    if not 0 <= start <= end < size:
+        raise ValueError('Unsatisfiable media range')
+    return start, end
 
 
 def parse_trusted_proxy_networks(value):
@@ -19360,6 +19380,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_singapore_camera(parsed)
         elif parsed.path.startswith('/taiwan-highway-camera/'):
             self._handle_taiwan_highway_camera(parsed)
+        elif parsed.path.startswith('/kaztoll-camera/'):
+            self._handle_kaztoll_camera(parsed)
         elif parsed.path.startswith('/dgt-camera/'):
             self._handle_dgt_camera(parsed)
         elif parsed.path.startswith('/lithuania-camera/'):
@@ -19960,6 +19982,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as exc:
             self._log_exception('singapore-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_kaztoll_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/kaztoll-camera/')
+        if camera_id not in {'jjvezd', 'ttvezd'}:
+            self.send_error(404, 'Unknown camera'); return
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'kaztoll-camera:v1:{camera_id}', lambda: kaztoll_camera_clip(camera_id),
+                ttl=30, stale_ttl=0, persist=False, wait_timeout=40)
+            headers = {'Accept-Ranges': 'bytes', 'X-GlobeView-Cache': cache_status}
+            try:
+                requested = parse_media_range(self.headers.get('Range'), len(content))
+            except ValueError:
+                headers['Content-Range'] = f'bytes */{len(content)}'
+                self._write_bytes(416, b'', content_type, extra_headers=headers)
+                return
+            if requested:
+                start, end = requested
+                headers['Content-Range'] = f'bytes {start}-{end}/{len(content)}'
+                self._write_bytes(206, content[start:end + 1], content_type,
+                                  cache_control='public, max-age=30', extra_headers=headers)
+            else:
+                self._write_bytes(200, content, content_type,
+                                  cache_control='public, max-age=30', extra_headers=headers)
+        except (FileNotFoundError, ValueError):
+            self.send_error(404, 'Recent camera clip unavailable')
+        except Exception as exc:
+            self._log_exception('kaztoll-camera', exc)
+            self.send_error(502, 'Camera clip unavailable')
 
     def _handle_taiwan_highway_camera(self, parsed):
         camera_id = parsed.path.removeprefix('/taiwan-highway-camera/')

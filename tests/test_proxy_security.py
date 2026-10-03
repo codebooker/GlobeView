@@ -2,6 +2,7 @@ import email.message
 import io
 import urllib.error
 import urllib.request
+import urllib.parse
 import unittest
 from unittest import mock
 
@@ -9,6 +10,42 @@ import proxy
 
 
 class ProxySecurityTests(unittest.TestCase):
+    def test_cached_camera_clip_byte_ranges_cover_browser_requests(self):
+        self.assertIsNone(proxy.parse_media_range(None, 100))
+        for header, expected in [('bytes=0-31', (0, 31)), ('bytes=50-', (50, 99)),
+                                 ('bytes=-20', (80, 99)), ('bytes=90-200', (90, 99)),
+                                 ('bytes=-200', (0, 99))]:
+            with self.subTest(header=header):
+                self.assertEqual(proxy.parse_media_range(header, 100), expected)
+        for header in ('bytes=100-', 'bytes=20-10', 'bytes=-0', 'bytes=-',
+                       'bytes=0-20,30-40', 'bytes=' + '9' * 1000 + '-', 'invalid'):
+            with self.subTest(header=header), self.assertRaises(ValueError):
+                proxy.parse_media_range(header, 100)
+
+    def test_kaztoll_clip_handler_shares_cache_and_serves_native_video_ranges(self):
+        handler = object.__new__(proxy.Handler)
+        handler.headers = {'Range': 'bytes=2-5'}
+        handler._write_bytes = mock.Mock()
+        handler.send_error = mock.Mock()
+        with mock.patch.object(proxy.MEDIA_RESPONSE_CACHE, 'get_or_load',
+                               return_value=(b'0123456789', 'video/mp4', 'HIT')) as cache:
+            handler._handle_kaztoll_camera(urllib.parse.urlsplit('/kaztoll-camera/jjvezd'))
+            args, kwargs = handler._write_bytes.call_args
+            self.assertEqual(args, (206, b'2345', 'video/mp4'))
+            self.assertEqual(kwargs['extra_headers']['Content-Range'], 'bytes 2-5/10')
+            self.assertEqual(cache.call_args.kwargs['ttl'], 30)
+            self.assertEqual(cache.call_args.kwargs['stale_ttl'], 0)
+            handler.headers = {'Range': 'bytes=100-'}
+            handler._handle_kaztoll_camera(urllib.parse.urlsplit('/kaztoll-camera/jjvezd'))
+            self.assertEqual(handler._write_bytes.call_args.args[0], 416)
+            self.assertEqual(handler._write_bytes.call_args.kwargs['extra_headers']['Content-Range'], 'bytes */10')
+            cache.reset_mock()
+            handler._handle_kaztoll_camera(urllib.parse.urlsplit('/kaztoll-camera/anything-else'))
+            handler.send_error.assert_called_once_with(404, 'Unknown camera')
+            cache.assert_not_called()
+        self.assertEqual(proxy.rate_limit_bucket('/kaztoll-camera/jjvezd'),
+                         proxy.rate_limit_bucket('/kaztoll-camera/ttvezd'))
+
     def test_european_road_camera_hosts_are_allowed_by_image_policy(self):
         image_policy = proxy.SECURITY_HEADERS['Content-Security-Policy'].split('img-src ', 1)[1].split(';', 1)[0]
         for host in ('weathercam.digitraffic.fi', 'etraffic.dgt.es', 'informo.madrid.es',

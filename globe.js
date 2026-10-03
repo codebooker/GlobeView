@@ -1101,11 +1101,12 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       popup.on('close', () => window.clearTimeout(retryTimer));
     }
     if (!(detail?.video_enabled || meta.item.expando?.videoEnabled)) return;
-    const button = textElement('button', 'popup-play', '▶ Play live camera');
+    const isClip = meta.item.expando?.videoFormat === 'mp4';
+    const button = textElement('button', 'popup-play', isClip ? '▶ Play recent camera clip' : '▶ Play live camera');
     button.type = 'button';
     button.addEventListener('click', async () => {
       button.disabled = true;
-      button.textContent = 'Loading live video…';
+      button.textContent = isClip ? 'Loading camera clip…' : 'Loading live video…';
       try {
         let streamUrl = detail?.video_url || meta.item.expando?.videoUrl;
         if (/^\d+$/.test(String(meta.item.itemId))) {
@@ -1122,7 +1123,34 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         video.autoplay = true;
         video.playsInline = true;
         root.append(video);
-        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        popup.on('close', () => { video.pause(); video.removeAttribute('src'); video.load(); });
+        if (isClip || /\.mp4(?:\?|$)/i.test(streamUrl)) {
+          if (!video.canPlayType('video/mp4')) throw new Error('Camera clip is unsupported in this browser');
+          video.muted = true;
+          video.loop = true;
+          let refresh;
+          const separator = streamUrl.includes('?') ? '&' : '?';
+          const loadClip = () => {
+            video.src = `${streamUrl}${separator}t=${Math.floor(Date.now() / 60000)}`;
+            video.play().catch(() => {});
+          };
+          video.addEventListener('error', () => {
+            window.clearInterval(refresh);
+            video.remove();
+            if (!popup.isOpen()) return;
+            button.disabled = false;
+            button.textContent = 'Retry camera clip';
+            if (!button.isConnected) root.append(button);
+          });
+          loadClip();
+          const refreshMs = Number(meta.item.expando?.videoRefreshMs);
+          if (refreshMs >= 60000) {
+            refresh = window.setInterval(() => {
+              if (popup.isOpen() && document.visibilityState === 'visible' && !video.paused) loadClip();
+            }, refreshMs);
+            popup.on('close', () => window.clearInterval(refresh));
+          }
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = streamUrl;
         } else {
           await loadHlsScript();
@@ -1137,7 +1165,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         video.play().catch(() => {});
       } catch (error) {
         button.disabled = false;
-        button.textContent = 'Live video unavailable';
+        button.textContent = isClip ? 'Camera clip unavailable' : 'Live video unavailable';
         console.warn(error);
       }
     });
@@ -1370,14 +1398,16 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       button.addEventListener('click', () => openSeaConditions(coordinates));
       root.append(button);
     }
-    if (type === 'cameras' && meta.snapshotUrl) {
+    if (type === 'cameras' && (meta.snapshotUrl || meta.videoUrl)) {
       if (meta.cameraViews?.length > 1) {
         attachCameraGallery(root, meta.cameraViews, meta.snapshotRefreshMs, popup);
         return;
       }
       attachCameraMedia(root, { item: { expando: { snapshotUrl: meta.snapshotUrl,
         snapshotFallbackUrl: meta.snapshotFallbackUrl,
-        snapshotRefreshMs: meta.snapshotRefreshMs } } }, null, popup);
+        snapshotRefreshMs: meta.snapshotRefreshMs,
+        videoEnabled: !!meta.videoUrl, videoUrl: meta.videoUrl,
+        videoFormat: meta.videoFormat, videoRefreshMs: meta.videoRefreshMs } } }, null, popup);
       return;
     }
     if (!meta.region || !meta.item) return;
@@ -1472,7 +1502,8 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       { bounds: { minLon: 113.8, maxLon: 114.5, minLat: 22.1, maxLat: 22.6 } }, // Hong Kong
       { bounds: { minLon: 103.5, maxLon: 104.1, minLat: 1.1, maxLat: 1.6 } }, // Singapore
       { bounds: { minLon: 121.3, maxLon: 121.8, minLat: 24.8, maxLat: 25.4 } }, // Taipei
-      { bounds: { minLon: 119, maxLon: 123, minLat: 21, maxLat: 26 } } // Taiwan highways
+      { bounds: { minLon: 119, maxLon: 123, minLat: 21, maxLat: 26 } }, // Taiwan highways
+      { bounds: { minLon: 46, maxLon: 88, minLat: 40, maxLat: 56 } } // Kazakhstan
     ].some(region => regionVisible(region, bounds));
     const internationalPromise = internationalVisible
       ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
@@ -1535,7 +1566,10 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         snapshotFallbackUrl: type === 'cameras' ? p.snapshot_fallback_url || '' : '',
         lithuaniaEventId: p.lithuania_event_id || '',
         cameraViews: type === 'cameras' && Array.isArray(p.camera_views) ? p.camera_views : [],
-        snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0
+        snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0,
+        videoUrl: type === 'cameras' ? p.video_url || '' : '',
+        videoFormat: type === 'cameras' ? p.video_format || '' : '',
+        videoRefreshMs: type === 'cameras' ? Number(p.video_refresh_ms) || 0 : 0
       });
       features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && (p.alert === true || /warning/i.test(p.title || '')) }));
     }
