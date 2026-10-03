@@ -191,7 +191,7 @@ class ArmeniaEnforcementTests(unittest.TestCase):
 
     def test_official_references_survive_a_deflock_failure_and_filter_viewport(self):
         bbox = (44.5, 40.17, 44.52, 40.19)
-        expected = feed.enforcement_for_bbox(bbox)
+        expected = feed.enforcement_for_bbox(bbox) + feed.speed_cameras_for_bbox(bbox)
         self.assertTrue(expected)
         with patch.object(proxy, 'cached_deflock_json', side_effect=OSError('unavailable')):
             data = json.loads(proxy.fetch_deflock_lpr_content(bbox))

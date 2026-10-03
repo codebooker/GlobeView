@@ -1,0 +1,2687 @@
+{
+  "sourceUrl": "https://download.geofabrik.de/asia/armenia.html",
+  "osmDataThrough": "2026-10-02T20:21:34Z",
+  "osmLicence": "ODbL 1.0",
+  "tag": "highway=speed_camera",
+  "checkedDate": "2026-10-03",
+  "osmInputSha256": "d2d357184142c7dfaf2a1476f9bbbe44af9881b8bbe62843cd8627505e93607f",
+  "sourceNodes": 281,
+  "locations": [
+    {
+      "osmNode": 130062206,
+      "lat": 39.7992417,
+      "lon": 44.9609865,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 208856779,
+      "lat": 40.7392301,
+      "lon": 44.6906133,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 210130583,
+      "lat": 40.1602943,
+      "lon": 45.2504104,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        130.0,
+        310.0
+      ]
+    },
+    {
+      "osmNode": 287885925,
+      "lat": 40.15821,
+      "lon": 44.5404936,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        0.0
+      ]
+    },
+    {
+      "osmNode": 287885928,
+      "lat": 40.1552523,
+      "lon": 44.5408417,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 287892373,
+      "lat": 40.1256616,
+      "lon": 44.4933735,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        90.0,
+        270.0
+      ]
+    },
+    {
+      "osmNode": 288952205,
+      "lat": 40.2335271,
+      "lon": 44.5495666,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 80,
+      "directions": [
+        63.0
+      ]
+    },
+    {
+      "osmNode": 288954082,
+      "lat": 40.2118674,
+      "lon": 44.5620107,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        200.0
+      ]
+    },
+    {
+      "osmNode": 292949553,
+      "lat": 40.1563602,
+      "lon": 44.4731677,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        290.0
+      ]
+    },
+    {
+      "osmNode": 331497966,
+      "lat": 40.2115779,
+      "lon": 44.5385613,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        140.0,
+        320.0
+      ]
+    },
+    {
+      "osmNode": 354434145,
+      "lat": 40.1832276,
+      "lon": 44.4807414,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        140.0
+      ]
+    },
+    {
+      "osmNode": 412353063,
+      "lat": 41.1850298,
+      "lon": 44.8885321,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 457493772,
+      "lat": 40.7302997,
+      "lon": 44.8665666,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": [
+        173.0,
+        345.0
+      ]
+    },
+    {
+      "osmNode": 457495574,
+      "lat": 41.2008449,
+      "lon": 44.993221,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 467011908,
+      "lat": 40.5366903,
+      "lon": 44.930519,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        280.0
+      ]
+    },
+    {
+      "osmNode": 597102785,
+      "lat": 40.2228974,
+      "lon": 44.4543858,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 80,
+      "directions": [
+        130.0
+      ]
+    },
+    {
+      "osmNode": 597103112,
+      "lat": 40.5939551,
+      "lon": 44.3553108,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 597103239,
+      "lat": 40.6581158,
+      "lon": 44.300456,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 597103384,
+      "lat": 40.835624,
+      "lon": 44.2811465,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 602698990,
+      "lat": 41.0053256,
+      "lon": 44.4042694,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 611406096,
+      "lat": 40.1684228,
+      "lon": 44.525793,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 40,
+      "directions": [
+        45.0,
+        235.0
+      ]
+    },
+    {
+      "osmNode": 632025891,
+      "lat": 40.1818865,
+      "lon": 44.5240641,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        9.0,
+        190.0
+      ]
+    },
+    {
+      "osmNode": 635463443,
+      "lat": 40.2124836,
+      "lon": 44.5621184,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        20.0
+      ]
+    },
+    {
+      "osmNode": 703653339,
+      "lat": 40.1996604,
+      "lon": 44.5072995,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 703653350,
+      "lat": 40.1944354,
+      "lon": 44.517802,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        95.0
+      ]
+    },
+    {
+      "osmNode": 760306310,
+      "lat": 39.6957629,
+      "lon": 45.4596909,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 954462704,
+      "lat": 39.7385965,
+      "lon": 45.2644172,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        95.0
+      ]
+    },
+    {
+      "osmNode": 983124830,
+      "lat": 40.2434312,
+      "lon": 44.5760657,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        237.0
+      ]
+    },
+    {
+      "osmNode": 983124868,
+      "lat": 40.2466145,
+      "lon": 44.5820736,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 983124944,
+      "lat": 40.2462944,
+      "lon": 44.5817607,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        235.0
+      ]
+    },
+    {
+      "osmNode": 986406475,
+      "lat": 40.1441124,
+      "lon": 44.3270498,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 1141147399,
+      "lat": 40.2228423,
+      "lon": 44.454243,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        310.0
+      ]
+    },
+    {
+      "osmNode": 1342686376,
+      "lat": 40.1964599,
+      "lon": 44.5170372,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        35.0
+      ]
+    },
+    {
+      "osmNode": 1410205970,
+      "lat": 40.6558429,
+      "lon": 44.0757377,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1410205989,
+      "lat": 40.6565096,
+      "lon": 44.0807801,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1421784993,
+      "lat": 40.3329208,
+      "lon": 44.3681883,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        15.0,
+        195.0
+      ]
+    },
+    {
+      "osmNode": 1495549465,
+      "lat": 40.223433,
+      "lon": 44.5599608,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        335.0
+      ]
+    },
+    {
+      "osmNode": 1565977605,
+      "lat": 40.1952043,
+      "lon": 44.5389751,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        105.0
+      ]
+    },
+    {
+      "osmNode": 1775782153,
+      "lat": 40.2083093,
+      "lon": 44.4943958,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        323.0
+      ]
+    },
+    {
+      "osmNode": 1827774633,
+      "lat": 40.1652721,
+      "lon": 44.3383983,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 1876379933,
+      "lat": 40.67872,
+      "lon": 44.2893259,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1888390756,
+      "lat": 40.9560529,
+      "lon": 44.4422852,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 1890073921,
+      "lat": 40.2898662,
+      "lon": 44.6096445,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": [
+        208.0
+      ]
+    },
+    {
+      "osmNode": 1902258450,
+      "lat": 40.1654763,
+      "lon": 44.3352002,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        90.0
+      ]
+    },
+    {
+      "osmNode": 1965740475,
+      "lat": 40.2097049,
+      "lon": 44.5345022,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        145.0,
+        325.0
+      ]
+    },
+    {
+      "osmNode": 1972936528,
+      "lat": 40.3126562,
+      "lon": 44.5772122,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        15.0,
+        200.0
+      ]
+    },
+    {
+      "osmNode": 1973140981,
+      "lat": 40.3092596,
+      "lon": 44.5755323,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        20.0,
+        195.0
+      ]
+    },
+    {
+      "osmNode": 1980753488,
+      "lat": 40.1979035,
+      "lon": 44.5112293,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2004508489,
+      "lat": 40.1810278,
+      "lon": 44.4598751,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        15.0
+      ]
+    },
+    {
+      "osmNode": 2004508697,
+      "lat": 40.1895534,
+      "lon": 44.4759394,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        143.0
+      ]
+    },
+    {
+      "osmNode": 2004508885,
+      "lat": 40.1987166,
+      "lon": 44.4622047,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2035436364,
+      "lat": 40.5288472,
+      "lon": 44.7810084,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        140.0,
+        320.0
+      ]
+    },
+    {
+      "osmNode": 2035518010,
+      "lat": 40.4674657,
+      "lon": 44.737605,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 2035518154,
+      "lat": 40.536818,
+      "lon": 44.9306051,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        100.0
+      ]
+    },
+    {
+      "osmNode": 2178857499,
+      "lat": 40.2811196,
+      "lon": 44.6250366,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        205.0
+      ]
+    },
+    {
+      "osmNode": 2219510105,
+      "lat": 40.2020312,
+      "lon": 44.5820392,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        155.0,
+        335.0
+      ]
+    },
+    {
+      "osmNode": 2240175285,
+      "lat": 40.1405569,
+      "lon": 44.5106987,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        5.0
+      ]
+    },
+    {
+      "osmNode": 2242761559,
+      "lat": 40.6524542,
+      "lon": 44.8938113,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 2254360419,
+      "lat": 40.1770669,
+      "lon": 44.5286141,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 2317707961,
+      "lat": 40.1484752,
+      "lon": 44.4700186,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        65.0
+      ]
+    },
+    {
+      "osmNode": 2317707972,
+      "lat": 40.150292,
+      "lon": 44.4731472,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 40,
+      "directions": [
+        45.0
+      ]
+    },
+    {
+      "osmNode": 2327075339,
+      "lat": 40.1853364,
+      "lon": 44.5028244,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        47.0,
+        227.0
+      ]
+    },
+    {
+      "osmNode": 2327176016,
+      "lat": 40.1623687,
+      "lon": 44.4414796,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        337.0
+      ]
+    },
+    {
+      "osmNode": 2327176031,
+      "lat": 40.2160322,
+      "lon": 44.5552092,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 2337651445,
+      "lat": 40.2203118,
+      "lon": 44.531324,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        0.0
+      ]
+    },
+    {
+      "osmNode": 2345485288,
+      "lat": 40.2467647,
+      "lon": 44.4250557,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2345485296,
+      "lat": 40.2467942,
+      "lon": 44.4252023,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2407257041,
+      "lat": 40.8747695,
+      "lon": 43.8501997,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2431058372,
+      "lat": 39.7982954,
+      "lon": 44.7694656,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 2458144200,
+      "lat": 40.662174,
+      "lon": 43.8847424,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        87.0,
+        267.0
+      ]
+    },
+    {
+      "osmNode": 2479786880,
+      "lat": 40.1612104,
+      "lon": 44.2942911,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": [
+        172.0,
+        350.0
+      ]
+    },
+    {
+      "osmNode": 2559589911,
+      "lat": 39.7309141,
+      "lon": 45.3839992,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2559590034,
+      "lat": 40.1610066,
+      "lon": 44.4249989,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        120.0
+      ]
+    },
+    {
+      "osmNode": 2559590035,
+      "lat": 40.1650519,
+      "lon": 44.3634391,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 2704382102,
+      "lat": 40.0197682,
+      "lon": 44.4890338,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2738044091,
+      "lat": 40.4924835,
+      "lon": 44.7779675,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 2738044092,
+      "lat": 40.4925782,
+      "lon": 44.7778608,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 2745881073,
+      "lat": 40.1497938,
+      "lon": 44.1640431,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        255.0
+      ]
+    },
+    {
+      "osmNode": 2745881074,
+      "lat": 40.1499295,
+      "lon": 44.1639807,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 2745881110,
+      "lat": 40.1606213,
+      "lon": 44.4256268,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        300.0
+      ]
+    },
+    {
+      "osmNode": 2745881148,
+      "lat": 40.1649227,
+      "lon": 44.3634495,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2764889289,
+      "lat": 40.1452298,
+      "lon": 44.510124,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        347.0
+      ]
+    },
+    {
+      "osmNode": 2776273493,
+      "lat": 40.2061235,
+      "lon": 44.5066539,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        60.0
+      ]
+    },
+    {
+      "osmNode": 2781170681,
+      "lat": 40.2183177,
+      "lon": 44.4989103,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        50.0
+      ]
+    },
+    {
+      "osmNode": 2788521544,
+      "lat": 40.1842005,
+      "lon": 44.6269225,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        110.0,
+        290.0
+      ]
+    },
+    {
+      "osmNode": 2832387047,
+      "lat": 39.9520421,
+      "lon": 44.5403407,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        310.0
+      ]
+    },
+    {
+      "osmNode": 2832387048,
+      "lat": 39.9518442,
+      "lon": 44.5409362,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        130.0
+      ]
+    },
+    {
+      "osmNode": 2832455760,
+      "lat": 39.7278253,
+      "lon": 45.188196,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        110.0,
+        290.0
+      ]
+    },
+    {
+      "osmNode": 2853656018,
+      "lat": 40.7063103,
+      "lon": 44.8508365,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": [
+        165.0,
+        345.0
+      ]
+    },
+    {
+      "osmNode": 2916445324,
+      "lat": 40.1889035,
+      "lon": 44.5278117,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        40.0
+      ]
+    },
+    {
+      "osmNode": 2925156500,
+      "lat": 39.7545248,
+      "lon": 45.3333047,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2925541673,
+      "lat": 40.0907598,
+      "lon": 44.0449432,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2925554205,
+      "lat": 40.8476168,
+      "lon": 43.838142,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2925559966,
+      "lat": 40.840017,
+      "lon": 43.7852021,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 2951366425,
+      "lat": 40.2274056,
+      "lon": 44.5493149,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        35.0,
+        215.0
+      ]
+    },
+    {
+      "osmNode": 2951369093,
+      "lat": 40.3830774,
+      "lon": 44.6553302,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        30.0
+      ]
+    },
+    {
+      "osmNode": 2960584637,
+      "lat": 40.2609302,
+      "lon": 44.6096168,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        55.0,
+        235.0
+      ]
+    },
+    {
+      "osmNode": 2976955357,
+      "lat": 40.1828591,
+      "lon": 44.5620088,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        10.0
+      ]
+    },
+    {
+      "osmNode": 2976959156,
+      "lat": 40.1579903,
+      "lon": 44.4495478,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        105.0
+      ]
+    },
+    {
+      "osmNode": 3006218946,
+      "lat": 40.5186968,
+      "lon": 44.3900991,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        0.0
+      ]
+    },
+    {
+      "osmNode": 3006218947,
+      "lat": 40.5852407,
+      "lon": 44.3587923,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3006218948,
+      "lat": 40.6567473,
+      "lon": 44.3008328,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3006218955,
+      "lat": 40.7201171,
+      "lon": 44.2062357,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3006219023,
+      "lat": 40.8382927,
+      "lon": 44.4342517,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        133.0,
+        313.0
+      ]
+    },
+    {
+      "osmNode": 3006219126,
+      "lat": 41.2265098,
+      "lon": 44.8576768,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3192581992,
+      "lat": 40.7686902,
+      "lon": 43.8455384,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3222853654,
+      "lat": 40.296269,
+      "lon": 44.2924003,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        90.0,
+        270.0
+      ]
+    },
+    {
+      "osmNode": 3331413578,
+      "lat": 40.2046443,
+      "lon": 44.5642165,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        158.0
+      ]
+    },
+    {
+      "osmNode": 3413163179,
+      "lat": 40.1342858,
+      "lon": 44.5007873,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        345.0
+      ]
+    },
+    {
+      "osmNode": 3415474039,
+      "lat": 40.203349,
+      "lon": 44.5301557,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        127.0
+      ]
+    },
+    {
+      "osmNode": 3424399676,
+      "lat": 40.193086,
+      "lon": 44.4850574,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        235.0
+      ]
+    },
+    {
+      "osmNode": 3424399686,
+      "lat": 40.1935143,
+      "lon": 44.4894537,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 40,
+      "directions": [
+        117.0,
+        297.0
+      ]
+    },
+    {
+      "osmNode": 3520247820,
+      "lat": 40.172887,
+      "lon": 44.4936419,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        235.0
+      ]
+    },
+    {
+      "osmNode": 3520247821,
+      "lat": 40.1729803,
+      "lon": 44.493561,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 3520247822,
+      "lat": 40.1834086,
+      "lon": 44.5274895,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        167.0
+      ]
+    },
+    {
+      "osmNode": 3526589031,
+      "lat": 41.1282354,
+      "lon": 45.0035965,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3536688745,
+      "lat": 39.7617724,
+      "lon": 44.8051262,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3613297917,
+      "lat": 40.2229832,
+      "lon": 44.5756522,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3613370241,
+      "lat": 39.81443,
+      "lon": 45.0436096,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 3654727205,
+      "lat": 40.4755102,
+      "lon": 44.7419743,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": [
+        40.0,
+        220.0
+      ]
+    },
+    {
+      "osmNode": 3687717718,
+      "lat": 40.2921487,
+      "lon": 44.3678285,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        60.0,
+        240.0
+      ]
+    },
+    {
+      "osmNode": 3715913149,
+      "lat": 40.2187744,
+      "lon": 44.4960445,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3721912756,
+      "lat": 40.3028402,
+      "lon": 44.6185324,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": [
+        30.0
+      ]
+    },
+    {
+      "osmNode": 3722035926,
+      "lat": 39.7442881,
+      "lon": 44.826422,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3735729787,
+      "lat": 40.1503577,
+      "lon": 44.5063737,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        90.0
+      ]
+    },
+    {
+      "osmNode": 3779181656,
+      "lat": 40.1327908,
+      "lon": 44.4856387,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        50.0
+      ]
+    },
+    {
+      "osmNode": 3779188162,
+      "lat": 40.1364056,
+      "lon": 44.4730264,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        135.0
+      ]
+    },
+    {
+      "osmNode": 3798200671,
+      "lat": 40.1564749,
+      "lon": 44.4732302,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        110.0
+      ]
+    },
+    {
+      "osmNode": 3824317473,
+      "lat": 40.1832032,
+      "lon": 44.4806689,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        330.0
+      ]
+    },
+    {
+      "osmNode": 3824493932,
+      "lat": 40.1931531,
+      "lon": 44.4849804,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 3824493939,
+      "lat": 40.1968818,
+      "lon": 44.4912643,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        50.0
+      ]
+    },
+    {
+      "osmNode": 3830337104,
+      "lat": 40.1827997,
+      "lon": 44.5098451,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        42.0
+      ]
+    },
+    {
+      "osmNode": 3835488428,
+      "lat": 40.1998069,
+      "lon": 44.4937977,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        21.0
+      ]
+    },
+    {
+      "osmNode": 3836963489,
+      "lat": 40.1775495,
+      "lon": 44.5226339,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        205.0
+      ]
+    },
+    {
+      "osmNode": 3890241121,
+      "lat": 40.1653778,
+      "lon": 44.3352396,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        270.0
+      ]
+    },
+    {
+      "osmNode": 3903814249,
+      "lat": 40.1365524,
+      "lon": 44.4622961,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        225.0
+      ]
+    },
+    {
+      "osmNode": 3913253971,
+      "lat": 40.1782429,
+      "lon": 44.4805437,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        335.0
+      ]
+    },
+    {
+      "osmNode": 3913360568,
+      "lat": 40.774899,
+      "lon": 44.9763483,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3913360570,
+      "lat": 40.8716199,
+      "lon": 45.1425452,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3913379130,
+      "lat": 40.3471171,
+      "lon": 44.3804387,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        25.0,
+        205.0
+      ]
+    },
+    {
+      "osmNode": 3913387525,
+      "lat": 40.3846949,
+      "lon": 44.3796259,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        173.0,
+        353.0
+      ]
+    },
+    {
+      "osmNode": 3963323866,
+      "lat": 40.3106629,
+      "lon": 44.4726318,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        10.0
+      ]
+    },
+    {
+      "osmNode": 3963323874,
+      "lat": 40.3185961,
+      "lon": 44.4850136,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        43.0,
+        223.0
+      ]
+    },
+    {
+      "osmNode": 3963348082,
+      "lat": 40.1680147,
+      "lon": 44.5468688,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        35.0
+      ]
+    },
+    {
+      "osmNode": 3989379749,
+      "lat": 40.4176895,
+      "lon": 45.1093065,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        150.0,
+        330.0
+      ]
+    },
+    {
+      "osmNode": 4084595412,
+      "lat": 39.6480503,
+      "lon": 45.8872749,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4091260896,
+      "lat": 40.1782745,
+      "lon": 44.4806701,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        155.0
+      ]
+    },
+    {
+      "osmNode": 4113489888,
+      "lat": 39.9105563,
+      "lon": 44.7115376,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4113489889,
+      "lat": 39.9210098,
+      "lon": 44.7513741,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        100.0,
+        280.0
+      ]
+    },
+    {
+      "osmNode": 4181036351,
+      "lat": 40.1987362,
+      "lon": 44.4623552,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4194771997,
+      "lat": 40.1578472,
+      "lon": 44.5110951,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        195.0
+      ]
+    },
+    {
+      "osmNode": 4200865058,
+      "lat": 40.7806129,
+      "lon": 43.8474839,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 4200866274,
+      "lat": 40.817682,
+      "lon": 43.8373602,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4200866400,
+      "lat": 40.81987,
+      "lon": 43.8208489,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 4227214348,
+      "lat": 40.6900503,
+      "lon": 44.272566,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4227214349,
+      "lat": 40.7039137,
+      "lon": 44.220139,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4227214350,
+      "lat": 40.8233678,
+      "lon": 44.2438438,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4228153889,
+      "lat": 40.2002003,
+      "lon": 44.4647314,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        93.0,
+        273.0
+      ]
+    },
+    {
+      "osmNode": 4230885941,
+      "lat": 40.2032471,
+      "lon": 44.530075,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        307.0
+      ]
+    },
+    {
+      "osmNode": 4242357382,
+      "lat": 40.1959937,
+      "lon": 44.5475759,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        230.0
+      ]
+    },
+    {
+      "osmNode": 4277726218,
+      "lat": 40.151948,
+      "lon": 44.5163756,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        5.0,
+        185.0
+      ]
+    },
+    {
+      "osmNode": 4283672681,
+      "lat": 40.1398157,
+      "lon": 44.5175589,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        5.0,
+        185.0
+      ]
+    },
+    {
+      "osmNode": 4373250631,
+      "lat": 40.1497948,
+      "lon": 44.474206,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": [
+        60.0,
+        240.0
+      ]
+    },
+    {
+      "osmNode": 4406579553,
+      "lat": 40.1940575,
+      "lon": 44.5248778,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        257.0
+      ]
+    },
+    {
+      "osmNode": 4423444517,
+      "lat": 40.1832828,
+      "lon": 44.5151019,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 30,
+      "directions": [
+        224.0
+      ]
+    },
+    {
+      "osmNode": 4471849296,
+      "lat": 39.7422876,
+      "lon": 44.83268,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4473556412,
+      "lat": 39.5227344,
+      "lon": 46.3332443,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        115.0,
+        295.0
+      ]
+    },
+    {
+      "osmNode": 4473806836,
+      "lat": 39.6793081,
+      "lon": 45.7613408,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        85.0,
+        265.0
+      ]
+    },
+    {
+      "osmNode": 4474517922,
+      "lat": 39.6904457,
+      "lon": 45.4702342,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4557113566,
+      "lat": 40.1322731,
+      "lon": 44.4850405,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        230.0
+      ]
+    },
+    {
+      "osmNode": 4695993515,
+      "lat": 41.1125409,
+      "lon": 44.2928258,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4695993537,
+      "lat": 41.0190878,
+      "lon": 44.3767264,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        145.0,
+        325.0
+      ]
+    },
+    {
+      "osmNode": 4716327794,
+      "lat": 40.8255619,
+      "lon": 44.4676298,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4716327799,
+      "lat": 40.8708253,
+      "lon": 44.4388758,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4769915718,
+      "lat": 40.15787,
+      "lon": 44.5023129,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        205.0
+      ]
+    },
+    {
+      "osmNode": 4795517962,
+      "lat": 40.2204957,
+      "lon": 44.5784689,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        90.0,
+        270.0
+      ]
+    },
+    {
+      "osmNode": 4810928089,
+      "lat": 40.2007419,
+      "lon": 44.4797877,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        185.0
+      ]
+    },
+    {
+      "osmNode": 4886144202,
+      "lat": 40.1776822,
+      "lon": 45.5756216,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        73.0,
+        253.0
+      ]
+    },
+    {
+      "osmNode": 4890340367,
+      "lat": 40.2234867,
+      "lon": 44.5601048,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        155.0
+      ]
+    },
+    {
+      "osmNode": 4891351530,
+      "lat": 40.2027237,
+      "lon": 44.5553234,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        40.0
+      ]
+    },
+    {
+      "osmNode": 4892324562,
+      "lat": 40.2045901,
+      "lon": 44.5640696,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        335.0
+      ]
+    },
+    {
+      "osmNode": 4908459682,
+      "lat": 40.2811622,
+      "lon": 44.6249269,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        25.0
+      ]
+    },
+    {
+      "osmNode": 4908971292,
+      "lat": 40.2436877,
+      "lon": 44.5762338,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 4947171592,
+      "lat": 40.1646825,
+      "lon": 44.4623351,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        290.0
+      ]
+    },
+    {
+      "osmNode": 4947171593,
+      "lat": 40.1645379,
+      "lon": 44.4631982,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        110.0
+      ]
+    },
+    {
+      "osmNode": 4953562663,
+      "lat": 40.1685649,
+      "lon": 44.4384614,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        157.0
+      ]
+    },
+    {
+      "osmNode": 4953562664,
+      "lat": 40.1684929,
+      "lon": 44.4382617,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        337.0
+      ]
+    },
+    {
+      "osmNode": 5017653080,
+      "lat": 40.1909686,
+      "lon": 44.4659259,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        85.0
+      ]
+    },
+    {
+      "osmNode": 5017653081,
+      "lat": 40.1908708,
+      "lon": 44.4660226,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        265.0
+      ]
+    },
+    {
+      "osmNode": 5037605625,
+      "lat": 40.2095748,
+      "lon": 44.4934879,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        147.0
+      ]
+    },
+    {
+      "osmNode": 5047465704,
+      "lat": 40.1452516,
+      "lon": 44.5102934,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        170.0
+      ]
+    },
+    {
+      "osmNode": 5141771164,
+      "lat": 40.8463975,
+      "lon": 43.8379052,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 5183222226,
+      "lat": 40.1851809,
+      "lon": 45.7205467,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        95.0,
+        275.0
+      ]
+    },
+    {
+      "osmNode": 5200073360,
+      "lat": 40.1624625,
+      "lon": 44.4739062,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 80,
+      "directions": [
+        60.0
+      ]
+    },
+    {
+      "osmNode": 5200073365,
+      "lat": 40.1148517,
+      "lon": 44.4776344,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        215.0
+      ]
+    },
+    {
+      "osmNode": 5200073367,
+      "lat": 40.1402747,
+      "lon": 44.0481366,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        295.0
+      ]
+    },
+    {
+      "osmNode": 5200073368,
+      "lat": 40.1398381,
+      "lon": 44.0496427,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        115.0
+      ]
+    },
+    {
+      "osmNode": 5220006396,
+      "lat": 40.0708281,
+      "lon": 44.4407007,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        35.0,
+        215.0
+      ]
+    },
+    {
+      "osmNode": 5254591312,
+      "lat": 40.7564767,
+      "lon": 44.8843494,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        70.0,
+        250.0
+      ]
+    },
+    {
+      "osmNode": 5282135451,
+      "lat": 40.15999,
+      "lon": 44.4026375,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        40.0
+      ]
+    },
+    {
+      "osmNode": 5282135475,
+      "lat": 40.162655,
+      "lon": 44.3900576,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        95.0
+      ]
+    },
+    {
+      "osmNode": 5282135476,
+      "lat": 40.1625514,
+      "lon": 44.3900145,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        275.0
+      ]
+    },
+    {
+      "osmNode": 5368815351,
+      "lat": 40.2089573,
+      "lon": 44.4654283,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        270.0
+      ]
+    },
+    {
+      "osmNode": 5370659189,
+      "lat": 40.2034502,
+      "lon": 44.4617397,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        175.0
+      ]
+    },
+    {
+      "osmNode": 5371065967,
+      "lat": 40.2035985,
+      "lon": 44.4615873,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        355.0
+      ]
+    },
+    {
+      "osmNode": 5391027540,
+      "lat": 40.2041142,
+      "lon": 44.5083649,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        60.0
+      ]
+    },
+    {
+      "osmNode": 5391027541,
+      "lat": 40.2039731,
+      "lon": 44.5082774,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        244.0
+      ]
+    },
+    {
+      "osmNode": 5391066416,
+      "lat": 40.2043253,
+      "lon": 44.5154509,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 40,
+      "directions": [
+        90.0,
+        270.0
+      ]
+    },
+    {
+      "osmNode": 5454764452,
+      "lat": 40.6249935,
+      "lon": 43.9786485,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 5467304802,
+      "lat": 40.310638,
+      "lon": 44.4727662,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        193.0
+      ]
+    },
+    {
+      "osmNode": 5482777969,
+      "lat": 40.2194527,
+      "lon": 44.4764283,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 5489632014,
+      "lat": 40.18151,
+      "lon": 45.5929607,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        85.0,
+        265.0
+      ]
+    },
+    {
+      "osmNode": 5502010276,
+      "lat": 40.2062737,
+      "lon": 44.5293037,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        135.0,
+        315.0
+      ]
+    },
+    {
+      "osmNode": 5514692676,
+      "lat": 40.1577899,
+      "lon": 44.5112158,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        15.0
+      ]
+    },
+    {
+      "osmNode": 5658920065,
+      "lat": 40.2384144,
+      "lon": 44.5648435,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 5714605579,
+      "lat": 40.1599562,
+      "lon": 44.4027063,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        220.0
+      ]
+    },
+    {
+      "osmNode": 5746658010,
+      "lat": 40.1625302,
+      "lon": 44.474338,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        240.0
+      ]
+    },
+    {
+      "osmNode": 5806060694,
+      "lat": 40.2203057,
+      "lon": 44.5314557,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        180.0
+      ]
+    },
+    {
+      "osmNode": 5806134714,
+      "lat": 40.2334401,
+      "lon": 44.5496359,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 80,
+      "directions": [
+        243.0
+      ]
+    },
+    {
+      "osmNode": 5846967889,
+      "lat": 40.1825777,
+      "lon": 44.5621542,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        190.0
+      ]
+    },
+    {
+      "osmNode": 6009156900,
+      "lat": 39.7386025,
+      "lon": 45.2643443,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        275.0
+      ]
+    },
+    {
+      "osmNode": 6129431485,
+      "lat": 40.1580196,
+      "lon": 44.502167,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        20.0
+      ]
+    },
+    {
+      "osmNode": 6139214148,
+      "lat": 40.204893,
+      "lon": 44.5559288,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        235.0
+      ]
+    },
+    {
+      "osmNode": 6139214160,
+      "lat": 40.2049719,
+      "lon": 44.5558175,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 6312979055,
+      "lat": 40.2183902,
+      "lon": 44.4993617,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        230.0
+      ]
+    },
+    {
+      "osmNode": 6398054016,
+      "lat": 40.183388,
+      "lon": 44.5273961,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        343.0
+      ]
+    },
+    {
+      "osmNode": 6419284779,
+      "lat": 40.1348824,
+      "lon": 44.5282173,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        55.0,
+        235.0
+      ]
+    },
+    {
+      "osmNode": 6434511035,
+      "lat": 40.1746126,
+      "lon": 44.4496647,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        85.0
+      ]
+    },
+    {
+      "osmNode": 6435498693,
+      "lat": 40.1702812,
+      "lon": 44.4461007,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6710232635,
+      "lat": 40.1538258,
+      "lon": 44.6558902,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        105.0,
+        285.0
+      ]
+    },
+    {
+      "osmNode": 6989144749,
+      "lat": 40.1502492,
+      "lon": 44.5062751,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        270.0
+      ]
+    },
+    {
+      "osmNode": 7002939803,
+      "lat": 40.1405522,
+      "lon": 44.5108933,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        185.0
+      ]
+    },
+    {
+      "osmNode": 7003093314,
+      "lat": 40.1307856,
+      "lon": 44.5097571,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        0.0
+      ]
+    },
+    {
+      "osmNode": 7003093315,
+      "lat": 40.130668,
+      "lon": 44.5099161,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        180.0
+      ]
+    },
+    {
+      "osmNode": 7418703143,
+      "lat": 40.1343016,
+      "lon": 44.5008917,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        165.0
+      ]
+    },
+    {
+      "osmNode": 7528211845,
+      "lat": 40.1483443,
+      "lon": 44.4699467,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        245.0
+      ]
+    },
+    {
+      "osmNode": 7528363639,
+      "lat": 40.1501927,
+      "lon": 44.4731773,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 40,
+      "directions": [
+        225.0
+      ]
+    },
+    {
+      "osmNode": 7545029198,
+      "lat": 40.1366086,
+      "lon": 44.472601,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        315.0
+      ]
+    },
+    {
+      "osmNode": 7595364138,
+      "lat": 40.1679597,
+      "lon": 44.5469588,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        215.0
+      ]
+    },
+    {
+      "osmNode": 7596234101,
+      "lat": 40.1582054,
+      "lon": 44.5406401,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": [
+        180.0
+      ]
+    },
+    {
+      "osmNode": 8780343388,
+      "lat": 41.0334168,
+      "lon": 45.1447515,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 8780350659,
+      "lat": 41.1759081,
+      "lon": 44.9980591,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 8816510706,
+      "lat": 40.144328,
+      "lon": 44.5337384,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        18.0,
+        198.0
+      ]
+    },
+    {
+      "osmNode": 8818078250,
+      "lat": 40.1315607,
+      "lon": 44.5339277,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        40.0,
+        220.0
+      ]
+    },
+    {
+      "osmNode": 8818078251,
+      "lat": 40.139197,
+      "lon": 44.5364154,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        150.0,
+        330.0
+      ]
+    },
+    {
+      "osmNode": 8818078314,
+      "lat": 40.146243,
+      "lon": 44.5159164,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        5.0,
+        185.0
+      ]
+    },
+    {
+      "osmNode": 8914183954,
+      "lat": 40.1640708,
+      "lon": 44.4082024,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        80.0
+      ]
+    },
+    {
+      "osmNode": 8914183955,
+      "lat": 40.1639899,
+      "lon": 44.4082072,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        260.0
+      ]
+    },
+    {
+      "osmNode": 8914197452,
+      "lat": 40.1622091,
+      "lon": 44.3956878,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        80.0
+      ]
+    },
+    {
+      "osmNode": 8914197453,
+      "lat": 40.1620942,
+      "lon": 44.3934273,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        280.0
+      ]
+    },
+    {
+      "osmNode": 8914242440,
+      "lat": 40.1742076,
+      "lon": 43.9525981,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        110.0,
+        290.0
+      ]
+    },
+    {
+      "osmNode": 8914270713,
+      "lat": 40.1656201,
+      "lon": 44.25298,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 8914270714,
+      "lat": 40.1651537,
+      "lon": 44.2509035,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": [
+        255.0
+      ]
+    },
+    {
+      "osmNode": 8914339607,
+      "lat": 40.1601643,
+      "lon": 44.2217362,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 8914339608,
+      "lat": 40.1596222,
+      "lon": 44.2194227,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": [
+        255.0
+      ]
+    },
+    {
+      "osmNode": 8914436528,
+      "lat": 40.1431144,
+      "lon": 44.1099402,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        90.0
+      ]
+    },
+    {
+      "osmNode": 8914436529,
+      "lat": 40.143019,
+      "lon": 44.1093885,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        270.0
+      ]
+    },
+    {
+      "osmNode": 8914577138,
+      "lat": 40.4978613,
+      "lon": 45.2722226,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        110.0,
+        290.0
+      ]
+    },
+    {
+      "osmNode": 8914600252,
+      "lat": 40.5808108,
+      "lon": 44.6769413,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        145.0,
+        320.0
+      ]
+    },
+    {
+      "osmNode": 9084238470,
+      "lat": 40.1427262,
+      "lon": 44.1159573,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 9084319661,
+      "lat": 40.1653813,
+      "lon": 44.3384058,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 9084334122,
+      "lat": 40.1648802,
+      "lon": 44.3610769,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 9968056271,
+      "lat": 40.7404328,
+      "lon": 44.8488906,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        87.0
+      ]
+    },
+    {
+      "osmNode": 9987489791,
+      "lat": 40.115047,
+      "lon": 44.4776927,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        34.0
+      ]
+    },
+    {
+      "osmNode": 10008910036,
+      "lat": 40.1000161,
+      "lon": 43.9519408,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 10008948394,
+      "lat": 40.1317786,
+      "lon": 44.0095201,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 11073600194,
+      "lat": 40.2090252,
+      "lon": 44.4654072,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        90.0
+      ]
+    },
+    {
+      "osmNode": 11127595751,
+      "lat": 40.1887988,
+      "lon": 44.5155304,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 11648951447,
+      "lat": 40.1366141,
+      "lon": 44.4622103,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": [
+        45.0
+      ]
+    },
+    {
+      "osmNode": 12093139948,
+      "lat": 40.5354291,
+      "lon": 44.8760728,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 12093265523,
+      "lat": 40.2730459,
+      "lon": 44.5991926,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 12093274640,
+      "lat": 40.4734308,
+      "lon": 44.7477722,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 12549694712,
+      "lat": 40.5284483,
+      "lon": 44.7668839,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 13049636576,
+      "lat": 40.8507317,
+      "lon": 44.1567821,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        90.0
+      ]
+    },
+    {
+      "osmNode": 13049671356,
+      "lat": 40.8377254,
+      "lon": 44.3226564,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        270.0
+      ]
+    },
+    {
+      "osmNode": 14079376665,
+      "lat": 40.7586294,
+      "lon": 43.8350009,
+      "locationKind": "osm_mapped_node",
+      "mappedLimitKmh": null,
+      "directions": [
+        45.0
+      ]
+    }
+  ],
+  "omitted": [
+    {
+      "osmNode": 130041119,
+      "reason": "Position or equipment status flagged for review"
+    },
+    {
+      "osmNode": 597695089,
+      "reason": "Position or equipment status flagged for review"
+    },
+    {
+      "osmNode": 1884452947,
+      "reason": "Position or equipment status flagged for review"
+    },
+    {
+      "osmNode": 1972401132,
+      "reason": "Position or equipment status flagged for review"
+    },
+    {
+      "osmNode": 1972401134,
+      "reason": "Position or equipment status flagged for review"
+    }
+  ]
+}
