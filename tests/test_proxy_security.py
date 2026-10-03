@@ -10,6 +10,26 @@ import proxy
 
 
 class ProxySecurityTests(unittest.TestCase):
+    def test_kyrgyztelecom_previews_share_cache_and_reject_unknown_camera_ids(self):
+        handler = object.__new__(proxy.Handler)
+        handler._write_bytes = mock.Mock()
+        handler.send_error = mock.Mock()
+        with mock.patch.object(proxy.MEDIA_RESPONSE_CACHE, 'get_or_load',
+                               return_value=(b'jpeg', 'image/jpeg', 'HIT')) as cache:
+            handler._handle_kyrgyztelecom_camera(urllib.parse.urlsplit('/kyrgyztelecom-camera/camera25?v=123'))
+            self.assertEqual(handler._write_bytes.call_args.args, (200, b'jpeg', 'image/jpeg'))
+            self.assertEqual(cache.call_args.args[0], 'kyrgyztelecom-camera:v1:camera25')
+            self.assertEqual(cache.call_args.kwargs['ttl'], 60)
+            self.assertEqual(cache.call_args.kwargs['stale_ttl'], 0)
+            handler._handle_kyrgyztelecom_camera(urllib.parse.urlsplit('/kyrgyztelecom-camera/camera99'))
+            handler.send_error.assert_called_with(404, 'Unknown camera')
+            self.assertEqual(cache.call_count, 1)
+        self.assertEqual(proxy.rate_limit_bucket('/kyrgyztelecom-camera/camera25'),
+                         proxy.rate_limit_bucket('/kyrgyztelecom-camera/camera27'))
+        policy = proxy.SECURITY_HEADERS['Content-Security-Policy']
+        self.assertIn('https://stream.kt.kg:5443', policy.split('connect-src ', 1)[1].split(';', 1)[0].split())
+        self.assertNotIn('https://*.kt.kg', policy)
+
     def test_cached_camera_clip_byte_ranges_cover_browser_requests(self):
         self.assertIsNone(proxy.parse_media_range(None, 100))
         for header, expected in [('bytes=0-31', (0, 31)), ('bytes=50-', (50, 99)),

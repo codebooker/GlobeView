@@ -31,11 +31,13 @@ from international_infrastructure import (road_snapshot as international_road_sn
                                           singapore_camera_snapshot,
                                           taiwan_highway_camera_snapshot,
                                           kaztoll_camera_clip, elcat_camera_snapshot, ELCAT_CAMERAS,
+                                          kyrgyztelecom_camera_snapshot,
                                           lithuania_camera_snapshot,
                                           lithuania_event_detail,
                                           tii_camera_snapshot)
 from radio_catalog import catalog_snapshot as radio_catalog_snapshot, record_station_click
 from cyclone_guidance import guidance_snapshot as cyclone_guidance_snapshot
+from kyrgyztelecom_cameras import CAMERAS as KYRGYZTELECOM_CAMERAS
 from trip_routing import RouteBusy, RouteNotFound, RouteTooLong, RouteUnavailable, parse_point as parse_route_point, route_snapshot
 from arcgis_catalog import arcgis_viewport
 from dutch_anpr import SEARCH_URL as DUTCH_ANPR_SEARCH_URL, latest_plan as dutch_anpr_latest_plan, parse_plan as parse_dutch_anpr_plan, plan_for_bbox as dutch_anpr_for_bbox
@@ -71,7 +73,7 @@ STREAM_HTTP_OPENER = urllib.request.build_opener(NoStreamRedirectHandler)
 
 
 def rate_limit_bucket(path):
-    for prefix in ('/stream/', '/camera-snapshot/', '/kaztoll-camera/', '/elcat-camera/', '/511/', '/fl511/'):
+    for prefix in ('/stream/', '/camera-snapshot/', '/kaztoll-camera/', '/elcat-camera/', '/kyrgyztelecom-camera/', '/511/', '/fl511/'):
         if path.startswith(prefix):
             return prefix
     return path
@@ -1000,7 +1002,7 @@ SECURITY_HEADERS = {
         "img-src 'self' data: blob: https://fl511.com https://511ga.org https://511wi.gov https://az511.gov https://511.idaho.gov https://udottraffic.utah.gov https://api.algotraffic.com https://www.mdottraffic.com https://*.mdottraffic.com https://drivenc.gov https://www.drivenc.gov https://snapshot.navigator.dot.ga.gov https://tiles.openfreemap.org "
         "https://mapservices.weather.noaa.gov https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://tiles.versatiles.org "
         "https://*.arcgisonline.com https://tile.openweathermap.org https://embed.skylinewebcams.com https://www.ipcamlive.com https://*.ipcamlive.com https://kamera.atlas.vegvesen.no https://www.cita.lu https://weathercam.digitraffic.fi https://etraffic.dgt.es https://informo.madrid.es https://www.vegagerdin.is; "
-        "connect-src 'self' https://api.rainviewer.com https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://marine-api.open-meteo.com https://webcam.elcat.kg https://tiles.openfreemap.org https://tiles.versatiles.org https://*.wowza.com https://*.streamlock.net https://widevine-dash.ezdrm.com wss://cctv.trafficview.org:8420; "
+        "connect-src 'self' https://api.rainviewer.com https://*.rainviewer.com https://gibs.earthdata.nasa.gov https://server.arcgisonline.com https://marine-api.open-meteo.com https://webcam.elcat.kg https://stream.kt.kg:5443 https://tiles.openfreemap.org https://tiles.versatiles.org https://*.wowza.com https://*.streamlock.net https://widevine-dash.ezdrm.com wss://cctv.trafficview.org:8420; "
         "media-src 'self' blob: https:; "
         "worker-src 'self' blob:; "
         "frame-src https://www.ipcamlive.com https://rtsp.me; "
@@ -19382,6 +19384,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_taiwan_highway_camera(parsed)
         elif parsed.path.startswith('/elcat-camera/'):
             self._handle_elcat_camera(parsed)
+        elif parsed.path.startswith('/kyrgyztelecom-camera/'):
+            self._handle_kyrgyztelecom_camera(parsed)
         elif parsed.path.startswith('/kaztoll-camera/'):
             self._handle_kaztoll_camera(parsed)
         elif parsed.path.startswith('/dgt-camera/'):
@@ -20000,6 +20004,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, 'Camera preview unavailable')
         except Exception as exc:
             self._log_exception('elcat-camera', exc)
+            self.send_error(502, 'Camera preview unavailable')
+
+    def _handle_kyrgyztelecom_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/kyrgyztelecom-camera/')
+        if camera_id not in KYRGYZTELECOM_CAMERAS:
+            self.send_error(404, 'Unknown camera'); return
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'kyrgyztelecom-camera:v1:{camera_id}', lambda: kyrgyztelecom_camera_snapshot(camera_id),
+                ttl=60, stale_ttl=0,
+            )
+            self._write_bytes(200, content, content_type, cache_control='public, max-age=30',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except FileNotFoundError:
+            self.send_error(404, 'Camera preview unavailable')
+        except Exception as exc:
+            self._log_exception('kyrgyztelecom-camera', exc)
             self.send_error(502, 'Camera preview unavailable')
 
     def _handle_kaztoll_camera(self, parsed):
