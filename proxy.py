@@ -45,6 +45,7 @@ from france_toll_gantries import gantries_for_bbox as france_gantries_for_bbox
 from uzbek_enforcement import enforcement_for_bbox as uzbek_enforcement_for_bbox
 from armenia_enforcement import enforcement_for_bbox as armenia_enforcement_for_bbox
 from armenia_enforcement import speed_cameras_for_bbox as armenia_speed_cameras_for_bbox
+from georgia_enforcement import enforcement_for_bbox as georgia_enforcement_for_bbox
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = os.getenv('AMERICAMAP_HOST', os.getenv('FLORIDAMAP_HOST', '127.0.0.1'))
@@ -18734,6 +18735,8 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                           and min_lat <= 45.60 and max_lat >= 37.18)
     armenia_visible = (min_lon <= 46.7 and max_lon >= 43.4
                        and min_lat <= 41.4 and max_lat >= 38.8)
+    georgia_visible = (min_lon <= 46.8 and max_lon >= 39.8
+                       and min_lat <= 43.7 and max_lat >= 41.0)
     yerevan_visible = (min_lon <= 44.63 and max_lon >= 44.40
                        and min_lat <= 40.28 and max_lat >= 40.08)
     source_errors = []
@@ -18741,7 +18744,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18774,7 +18777,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible):
+        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -18820,6 +18823,13 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id.setdefault(str(item['id']), item)
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Armenia mapped speed cameras: {error}')
+    if georgia_visible:
+        try:
+            for item in georgia_enforcement_for_bbox(bbox):
+                # OSM IDs identify the same device in the shared DeFlock tiles.
+                elements_by_id.setdefault(str(item['id']), item)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Georgia mapped enforcement: {error}')
     if milan_visible:
         try:
             catalog = cached_deflock_json(MILAN_AREA_B_GATES_URL, 'it-milan-area-b-gates:v1', ttl=86400)
