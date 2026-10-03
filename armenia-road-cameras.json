@@ -1,0 +1,2236 @@
+{
+  "sourceUrl": "https://mia.gov.am/certificate/",
+  "documentUrl": "https://mia.gov.am/wp-content/uploads/2026/05/%D4%BD%D5%A1%D5%B9%D5%B4%D5%A5%D6%80%D5%B8%D6%82%D5%AF%D5%B6%D5%A5%D6%80.docx",
+  "documentModified": "2026-05-25T09:24:00Z",
+  "documentSha256": "a9e756c637b13530bce6a17149f824858ae453d3ddced8095f7c1df25271ac89",
+  "checkedDate": "2026-10-03",
+  "osmSource": "https://download.geofabrik.de/asia/armenia.html",
+  "osmDataThrough": "2026-10-02T20:21:34Z",
+  "osmLicence": "ODbL 1.0",
+  "sourceEntries": 158,
+  "locations": [
+    {
+      "id": "am:mia:surveillance:1",
+      "sourceIndex": 1,
+      "sourceAddress": "Ծ.Իսակովի պողոտա-Աթենքի փողոց խաչմերուկ",
+      "roadNames": [
+        "Admiral Isakov Avenue",
+        "Atenk street"
+      ],
+      "lat": 40.1757674,
+      "lon": 44.4983767,
+      "locationKind": "junction_reference",
+      "osmNode": 10832112968,
+      "osmWays": [
+        1164686875,
+        1164686882,
+        1164686883,
+        1164686884
+      ],
+      "matchSpreadMetres": 50
+    },
+    {
+      "id": "am:mia:surveillance:4",
+      "sourceIndex": 4,
+      "sourceAddress": "Արգիշտի փողոց-Մ.Մաշտոցի պողոտա խաչմերուկ",
+      "roadNames": [
+        "Argishti street",
+        "Mesrop Mashtots Avenue"
+      ],
+      "lat": 40.1742166,
+      "lon": 44.500613,
+      "locationKind": "junction_reference",
+      "osmNode": 4685816051,
+      "osmWays": [
+        1164558544,
+        1164558551
+      ],
+      "matchSpreadMetres": 23
+    },
+    {
+      "id": "am:mia:surveillance:5",
+      "sourceIndex": 5,
+      "sourceAddress": "Մ.Մաշտոցի պողոտա-Խորենացի փողոց խաչմերուկ",
+      "roadNames": [
+        "Mesrop Mashtots Avenue",
+        "Movses Khorenatsi street"
+      ],
+      "lat": 40.1794513,
+      "lon": 44.5060143,
+      "locationKind": "junction_reference",
+      "osmNode": 11644940359,
+      "osmWays": [
+        138001051,
+        1254517562,
+        1293796777
+      ],
+      "matchSpreadMetres": 7
+    },
+    {
+      "id": "am:mia:surveillance:8",
+      "sourceIndex": 8,
+      "sourceAddress": "Մ.Մաշտոցի պողոտա-Պուշկինի փողոց խաչմերուկ",
+      "roadNames": [
+        "Mesrop Mashtots Avenue",
+        "Pushkin Street"
+      ],
+      "lat": 40.1838345,
+      "lon": 44.5110896,
+      "locationKind": "junction_reference",
+      "osmNode": 3830315808,
+      "osmWays": [
+        379701520,
+        379702358,
+        379706687,
+        1446599693
+      ],
+      "matchSpreadMetres": 11
+    },
+    {
+      "id": "am:mia:surveillance:9",
+      "sourceIndex": 9,
+      "sourceAddress": "Մ.Մաշտոցի պողոտա-Թումանյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Mesrop Mashtots Avenue",
+        "Tumanyan street"
+      ],
+      "lat": 40.1854572,
+      "lon": 44.5132057,
+      "locationKind": "junction_reference",
+      "osmNode": 287884654,
+      "osmWays": [
+        82550790,
+        133000078,
+        288103367,
+        1259284236
+      ],
+      "matchSpreadMetres": 11
+    },
+    {
+      "id": "am:mia:surveillance:10",
+      "sourceIndex": 10,
+      "sourceAddress": "Մ.Մաշտոց-Սայաթ-Նովա պողոտաների խաչմերուկ",
+      "roadNames": [
+        "Mesrop Mashtots Avenue",
+        "Sayat-Nova Avenue"
+      ],
+      "lat": 40.1872317,
+      "lon": 44.5153523,
+      "locationKind": "junction_reference",
+      "osmNode": 2954854773,
+      "osmWays": [
+        291974040,
+        291974727,
+        291974730
+      ],
+      "matchSpreadMetres": 19
+    },
+    {
+      "id": "am:mia:surveillance:11",
+      "sourceIndex": 11,
+      "sourceAddress": "Մ.Մաշտոցի պողոտա-Մոսկովյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Mesrop Mashtots Avenue",
+        "Moskovyan street"
+      ],
+      "lat": 40.1882932,
+      "lon": 44.5163837,
+      "locationKind": "junction_reference",
+      "osmNode": 3828703845,
+      "osmWays": [
+        133126013,
+        1285232023,
+        1318793174
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:12",
+      "sourceIndex": 12,
+      "sourceAddress": "Մ.Մաշտոցի պողոտա-Իսահակյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Avetik Isahakyan street",
+        "Mesrop Mashtots Avenue"
+      ],
+      "lat": 40.1891271,
+      "lon": 44.5173846,
+      "locationKind": "junction_reference",
+      "osmNode": 3828703848,
+      "osmWays": [
+        133126031,
+        133126048,
+        1318793173,
+        1318793175
+      ],
+      "matchSpreadMetres": 11
+    },
+    {
+      "id": "am:mia:surveillance:13",
+      "sourceIndex": 13,
+      "sourceAddress": "Կորյուն-Տերյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Koryun street",
+        "Teryan street"
+      ],
+      "lat": 40.1894439,
+      "lon": 44.5222858,
+      "locationKind": "junction_reference",
+      "osmNode": 11648745684,
+      "osmWays": [
+        689013160,
+        1328470931,
+        1450352409,
+        1450352410
+      ],
+      "matchSpreadMetres": 15
+    },
+    {
+      "id": "am:mia:surveillance:14",
+      "sourceIndex": 14,
+      "sourceAddress": "Կորյունի-Աբովյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Abovyan street",
+        "Koryun street"
+      ],
+      "lat": 40.1880852,
+      "lon": 44.5241038,
+      "locationKind": "junction_reference",
+      "osmNode": 4110471700,
+      "osmWays": [
+        133000063,
+        423956931,
+        423956932,
+        748955839
+      ],
+      "matchSpreadMetres": 19
+    },
+    {
+      "id": "am:mia:surveillance:16",
+      "sourceIndex": 16,
+      "sourceAddress": "Սայաթ-Նովա պողոտա-Չարենց փողոց խաչմերուկ",
+      "roadNames": [
+        "Charents street",
+        "Sayat-Nova Avenue"
+      ],
+      "lat": 40.1769266,
+      "lon": 44.5273702,
+      "locationKind": "junction_reference",
+      "osmNode": 7571105642,
+      "osmWays": [
+        809772639,
+        809937916,
+        809937917,
+        809937919
+      ],
+      "matchSpreadMetres": 30
+    },
+    {
+      "id": "am:mia:surveillance:17",
+      "sourceIndex": 17,
+      "sourceAddress": "Սայաթ-Նովա պողոտա-Ա.Մանուկյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Alek Manoukyan street",
+        "Sayat-Nova Avenue"
+      ],
+      "lat": 40.1788802,
+      "lon": 44.5247743,
+      "locationKind": "junction_reference",
+      "osmNode": 11657899598,
+      "osmWays": [
+        688883939,
+        1254157399,
+        1446582187,
+        1446582188
+      ],
+      "matchSpreadMetres": 13
+    },
+    {
+      "id": "am:mia:surveillance:19",
+      "sourceIndex": 19,
+      "sourceAddress": "Սայաթ-Նովա պողոտա-Նալբանդյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Nalbandyan street",
+        "Sayat-Nova Avenue"
+      ],
+      "lat": 40.1821361,
+      "lon": 44.5209169,
+      "locationKind": "junction_reference",
+      "osmNode": 2271142975,
+      "osmWays": [
+        186129418,
+        1042623942,
+        1328664744,
+        1446125442
+      ],
+      "matchSpreadMetres": 13
+    },
+    {
+      "id": "am:mia:surveillance:20",
+      "sourceIndex": 20,
+      "sourceAddress": "Սայաթ-Նովա պողոտա-Աբովյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Abovyan street",
+        "Sayat-Nova Avenue"
+      ],
+      "lat": 40.1836665,
+      "lon": 44.5188171,
+      "locationKind": "junction_reference",
+      "osmNode": 4854142864,
+      "osmWays": [
+        133126030,
+        134193294,
+        671338013,
+        1328664748
+      ],
+      "matchSpreadMetres": 10
+    },
+    {
+      "id": "am:mia:surveillance:26",
+      "sourceIndex": 26,
+      "sourceAddress": "Մ.Բաղրամյան պողոտա-Պռոշյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Marshal Baghramyan Avenue",
+        "Proshyan street"
+      ],
+      "lat": 40.192109,
+      "lon": 44.5044947,
+      "locationKind": "junction_reference",
+      "osmNode": 11602032340,
+      "osmWays": [
+        186338252,
+        1261815393,
+        1261815394,
+        1366763356
+      ],
+      "matchSpreadMetres": 15
+    },
+    {
+      "id": "am:mia:surveillance:27",
+      "sourceIndex": 27,
+      "sourceAddress": "Պարոնյան-Ձորափի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Dzorapi Street",
+        "Hakob Paronyan street"
+      ],
+      "lat": 40.1806745,
+      "lon": 44.499064,
+      "locationKind": "junction_reference",
+      "osmNode": 331475926,
+      "osmWays": [
+        25919004,
+        34956963,
+        366072278
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:28",
+      "sourceIndex": 28,
+      "sourceAddress": "Պարոնյան-Լեոյի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Hakob Paronyan street",
+        "Leo street"
+      ],
+      "lat": 40.1792449,
+      "lon": 44.5016848,
+      "locationKind": "junction_reference",
+      "osmNode": 6770724797,
+      "osmWays": [
+        421158149,
+        721763319,
+        1254516002
+      ],
+      "matchSpreadMetres": 10
+    },
+    {
+      "id": "am:mia:surveillance:29",
+      "sourceIndex": 29,
+      "sourceAddress": "Պարոնյան-Գր.Լուսավորիչ փողոցների խաչմերուկ",
+      "roadNames": [
+        "Grigor Lusavorich street",
+        "Hakob Paronyan street"
+      ],
+      "lat": 40.1772741,
+      "lon": 44.5033108,
+      "locationKind": "junction_reference",
+      "osmNode": 3086712971,
+      "osmWays": [
+        134193884,
+        1172070607
+      ],
+      "matchSpreadMetres": 15
+    },
+    {
+      "id": "am:mia:surveillance:31",
+      "sourceIndex": 31,
+      "sourceAddress": "Գր.Լուսավորիչ փողոց-Արշակունյաց պողոտա խաչմերուկ",
+      "roadNames": [
+        "Arshakuniats Avenue",
+        "Grigor Lusavorich street"
+      ],
+      "lat": 40.1712313,
+      "lon": 44.5084554,
+      "locationKind": "junction_reference",
+      "osmNode": 10831688453,
+      "osmWays": [
+        1164639287,
+        1545256096,
+        1545256097,
+        1547959761
+      ],
+      "matchSpreadMetres": 62
+    },
+    {
+      "id": "am:mia:surveillance:33",
+      "sourceIndex": 33,
+      "sourceAddress": "Քրիստափորի փողոց-Տ.Մեծ պողոտա խաչմերուկ",
+      "roadNames": [
+        "Kristapor street",
+        "Tigran Mets avenue"
+      ],
+      "lat": 40.163124,
+      "lon": 44.5129842,
+      "locationKind": "junction_reference",
+      "osmNode": 5503504936,
+      "osmWays": [
+        187645412,
+        572868791,
+        577391101,
+        1126943596
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:34",
+      "sourceIndex": 34,
+      "sourceAddress": "Տ.Մեծ պողոտա-Նար Դոս փողոց խաչմերուկ",
+      "roadNames": [
+        "Nar-Dos street",
+        "Tigran Mets avenue"
+      ],
+      "lat": 40.1651099,
+      "lon": 44.5131637,
+      "locationKind": "junction_reference",
+      "osmNode": 5503504937,
+      "osmWays": [
+        488914720,
+        572868791,
+        577400441,
+        1366077342
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:35",
+      "sourceIndex": 35,
+      "sourceAddress": "Տ.Մեծ պողոտա-Մ.Խորենացի-Եր.Քոչար փողոցների խաչմերուկ",
+      "roadNames": [
+        "Movses Khorenatsi street",
+        "Tigran Mets avenue",
+        "Yervand Kochar street"
+      ],
+      "lat": 40.1691507,
+      "lon": 44.5135385,
+      "locationKind": "junction_reference",
+      "osmNode": 5490759366,
+      "osmWays": [
+        571273620,
+        571273621,
+        571273622,
+        577391102,
+        727208643
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:42",
+      "sourceIndex": 42,
+      "sourceAddress": "Մ.Խորենացի-Վ.Սարգսյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Movses Khorenatsi street",
+        "Vazgen Sargsyan street"
+      ],
+      "lat": 40.1761949,
+      "lon": 44.5087256,
+      "locationKind": "junction_reference",
+      "osmNode": 11644952741,
+      "osmWays": [
+        31661317,
+        1434301341,
+        1434301343,
+        1434301344
+      ],
+      "matchSpreadMetres": 65
+    },
+    {
+      "id": "am:mia:surveillance:44",
+      "sourceIndex": 44,
+      "sourceAddress": "Մ.Խորենացի-Ագաթանգեղոս փողոցների խաչմերուկ",
+      "roadNames": [
+        "Agatangeghos street",
+        "Movses Khorenatsi street"
+      ],
+      "lat": 40.1724007,
+      "lon": 44.5116772,
+      "locationKind": "junction_reference",
+      "osmNode": 5026483107,
+      "osmWays": [
+        119027068,
+        380363607,
+        689004081
+      ],
+      "matchSpreadMetres": 19
+    },
+    {
+      "id": "am:mia:surveillance:47",
+      "sourceIndex": 47,
+      "sourceAddress": "Աբովյան-Թումանյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Abovyan street",
+        "Tumanyan street"
+      ],
+      "lat": 40.1824592,
+      "lon": 44.517414,
+      "locationKind": "junction_reference",
+      "osmNode": 287884652,
+      "osmWays": [
+        134193294,
+        134193298,
+        1253192546,
+        1534661984
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:49",
+      "sourceIndex": 49,
+      "sourceAddress": "Աբովյան-Արամի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Abovyan street",
+        "Aram street"
+      ],
+      "lat": 40.1794553,
+      "lon": 44.5138692,
+      "locationKind": "junction_reference",
+      "osmNode": 406385842,
+      "osmWays": [
+        134194067,
+        1181288638,
+        1364266511,
+        1531851468
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:51",
+      "sourceIndex": 51,
+      "sourceAddress": "Նալբանդյան-Թումանյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Nalbandyan street",
+        "Tumanyan street"
+      ],
+      "lat": 40.1810864,
+      "lon": 44.5193347,
+      "locationKind": "junction_reference",
+      "osmNode": 11648561414,
+      "osmWays": [
+        1446125440,
+        1446125443,
+        1446370918,
+        1534661989
+      ],
+      "matchSpreadMetres": 4
+    },
+    {
+      "id": "am:mia:surveillance:52",
+      "sourceIndex": 52,
+      "sourceAddress": "Նալբանդյան-Իսահակյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Avetik Isahakyan street",
+        "Nalbandyan street"
+      ],
+      "lat": 40.1843861,
+      "lon": 44.5243966,
+      "locationKind": "junction_reference",
+      "osmNode": 407729599,
+      "osmWays": [
+        186409193,
+        189240001,
+        430416184
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:54",
+      "sourceIndex": 54,
+      "sourceAddress": "Տերյան-Իսահակյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Avetik Isahakyan street",
+        "Teryan street"
+      ],
+      "lat": 40.1879657,
+      "lon": 44.5206272,
+      "locationKind": "junction_reference",
+      "osmNode": 632031937,
+      "osmWays": [
+        138002006,
+        425752280,
+        1328467333,
+        1369578052
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:56",
+      "sourceIndex": 56,
+      "sourceAddress": "Տերյան-Թումանյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Teryan street",
+        "Tumanyan street"
+      ],
+      "lat": 40.1837256,
+      "lon": 44.5156424,
+      "locationKind": "junction_reference",
+      "osmNode": 287884653,
+      "osmWays": [
+        133126008,
+        1181099238,
+        1253209808,
+        1534661983
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:57",
+      "sourceIndex": 57,
+      "sourceAddress": "Տերյան-Հին Երևանցու փողոցների խաչմերուկ",
+      "roadNames": [
+        "Hin Yerevantsi street",
+        "Teryan street"
+      ],
+      "lat": 40.1828748,
+      "lon": 44.5146072,
+      "locationKind": "junction_reference",
+      "osmNode": 3370911104,
+      "osmWays": [
+        133144300,
+        330131717,
+        380206933
+      ],
+      "matchSpreadMetres": 50
+    },
+    {
+      "id": "am:mia:surveillance:62",
+      "sourceIndex": 62,
+      "sourceAddress": "Թումանյան-Սարյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Saryan Street",
+        "Tumanyan street"
+      ],
+      "lat": 40.1875651,
+      "lon": 44.5102952,
+      "locationKind": "junction_reference",
+      "osmNode": 11644940283,
+      "osmWays": [
+        1252771427,
+        1271670444
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:63",
+      "sourceIndex": 63,
+      "sourceAddress": "Սարյան-Արամի-Կ.Դեմիրճյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Aram street",
+        "Karen Demirchyan street",
+        "Saryan Street"
+      ],
+      "lat": 40.1847956,
+      "lon": 44.5062544,
+      "locationKind": "junction_reference",
+      "osmNode": 406359747,
+      "osmWays": [
+        182503819,
+        1332082757,
+        1416109177,
+        1416109180
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:64",
+      "sourceIndex": 64,
+      "sourceAddress": "Քրիստափոր-Մ.Խորենացի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Kristapor street",
+        "Movses Khorenatsi street"
+      ],
+      "lat": 40.1637187,
+      "lon": 44.5159756,
+      "locationKind": "junction_reference",
+      "osmNode": 287884830,
+      "osmWays": [
+        134193891,
+        727219110
+      ],
+      "matchSpreadMetres": 8
+    },
+    {
+      "id": "am:mia:surveillance:65",
+      "sourceIndex": 65,
+      "sourceAddress": "Մ.Խորենացի-Նար Դոս փողոցների խաչմերուկ",
+      "roadNames": [
+        "Movses Khorenatsi street",
+        "Nar-Dos street"
+      ],
+      "lat": 40.1655742,
+      "lon": 44.5151358,
+      "locationKind": "junction_reference",
+      "osmNode": 632031868,
+      "osmWays": [
+        133360322,
+        133360326,
+        577400442,
+        1366077343
+      ],
+      "matchSpreadMetres": 4
+    },
+    {
+      "id": "am:mia:surveillance:66",
+      "sourceIndex": 66,
+      "sourceAddress": "Վարդանանց-Ա.Մանուկյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Alek Manoukyan street",
+        "Vardanants Street"
+      ],
+      "lat": 40.1738642,
+      "lon": 44.5213976,
+      "locationKind": "junction_reference",
+      "osmNode": 11657899583,
+      "osmWays": [
+        138000481,
+        1254157399,
+        1254157400
+      ],
+      "matchSpreadMetres": 7
+    },
+    {
+      "id": "am:mia:surveillance:67",
+      "sourceIndex": 67,
+      "sourceAddress": "Իսահակյան-Թամանյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Avetik Isahakyan street",
+        "Tamanyan street"
+      ],
+      "lat": 40.1893944,
+      "lon": 44.5151551,
+      "locationKind": "junction_reference",
+      "osmNode": 406387625,
+      "osmWays": [
+        135473760,
+        380593303,
+        1121013282
+      ],
+      "matchSpreadMetres": 45
+    },
+    {
+      "id": "am:mia:surveillance:68",
+      "sourceIndex": 68,
+      "sourceAddress": "Սարալանջի պողոտա-Արմենակյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Armenak Armenakyan Street",
+        "Saralanj Highway",
+        "Saralanj highway"
+      ],
+      "lat": 40.1909004,
+      "lon": 44.5320532,
+      "locationKind": "junction_reference",
+      "osmNode": 6291463293,
+      "osmWays": [
+        443007504,
+        690579191,
+        737061571,
+        1536949154
+      ],
+      "matchSpreadMetres": 9
+    },
+    {
+      "id": "am:mia:surveillance:72",
+      "sourceIndex": 72,
+      "sourceAddress": "Կիևյան-Օրբելի եղբայրների փողոցների խաչմերուկ",
+      "roadNames": [
+        "Kievyan street",
+        "Orbeli Brothers Street"
+      ],
+      "lat": 40.1943729,
+      "lon": 44.4872766,
+      "locationKind": "junction_reference",
+      "osmNode": 282733926,
+      "osmWays": [
+        309864023,
+        1137190850,
+        1150872603
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:75",
+      "sourceIndex": 75,
+      "sourceAddress": "Կոմիտասի պողոտա-Վ.Վաղարշյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Komitas avenue",
+        "Vagharsh Vagharshyan street"
+      ],
+      "lat": 40.2027856,
+      "lon": 44.4986906,
+      "locationKind": "junction_reference",
+      "osmNode": 3824803073,
+      "osmWays": [
+        380344433,
+        380344439,
+        515004000,
+        1292696867
+      ],
+      "matchSpreadMetres": 13
+    },
+    {
+      "id": "am:mia:surveillance:76",
+      "sourceIndex": 76,
+      "sourceAddress": "Կոմիտասի պողոտա-Փափազյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Komitas avenue",
+        "Vahram Papazyan street"
+      ],
+      "lat": 40.2043175,
+      "lon": 44.5021755,
+      "locationKind": "junction_reference",
+      "osmNode": 1851148145,
+      "osmWays": [
+        380344432,
+        515003994,
+        1149127548,
+        1215050536
+      ],
+      "matchSpreadMetres": 10
+    },
+    {
+      "id": "am:mia:surveillance:77",
+      "sourceIndex": 77,
+      "sourceAddress": "Կոմիտասի պողոտա-Վրացական փողոց խաչմերուկ",
+      "roadNames": [
+        "Komitas avenue",
+        "Vratsakan street"
+      ],
+      "lat": 40.2070184,
+      "lon": 44.5104929,
+      "locationKind": "junction_reference",
+      "osmNode": 4742746249,
+      "osmWays": [
+        481335956,
+        515004002,
+        580483183,
+        580483187
+      ],
+      "matchSpreadMetres": 11
+    },
+    {
+      "id": "am:mia:surveillance:78",
+      "sourceIndex": 78,
+      "sourceAddress": "Կոմիտասի պողոտա-Գրիբոյեդովի փողոց խաչմերուկ",
+      "roadNames": [
+        "Griboyedov street",
+        "Komitas avenue"
+      ],
+      "lat": 40.2068391,
+      "lon": 44.5137766,
+      "locationKind": "junction_reference",
+      "osmNode": 11971663344,
+      "osmWays": [
+        481331815,
+        1292615903,
+        1292615905,
+        1292615906
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:79",
+      "sourceIndex": 79,
+      "sourceAddress": "Կոմիտասի պողոտա-Տիգրանյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Komitas avenue",
+        "Nikogajos Tigranyan street",
+        "Nikoghayos Tigranyan street"
+      ],
+      "lat": 40.2064737,
+      "lon": 44.5203034,
+      "locationKind": "junction_reference",
+      "osmNode": 4742659025,
+      "osmWays": [
+        174417882,
+        380344438,
+        481327571,
+        1136468903
+      ],
+      "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:81",
+      "sourceIndex": 81,
+      "sourceAddress": "Հր.Քոչար-Վ.Վաղարշյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Hrachya Kochar street",
+        "Vagharsh Vagharshyan street"
+      ],
+      "lat": 40.2007766,
+      "lon": 44.5001884,
+      "locationKind": "junction_reference",
+      "osmNode": 11668536573,
+      "osmWays": [
+        579004585,
+        1292696870
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:82",
+      "sourceIndex": 82,
+      "sourceAddress": "Հր.Քոչար-Փափազյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Hrachya Kochar street",
+        "Vahram Papazyan street"
+      ],
+      "lat": 40.2021906,
+      "lon": 44.5036564,
+      "locationKind": "junction_reference",
+      "osmNode": 4110471738,
+      "osmWays": [
+        409155832,
+        464757555,
+        579004587,
+        1330613124
+      ],
+      "matchSpreadMetres": 8
+    },
+    {
+      "id": "am:mia:surveillance:83",
+      "sourceIndex": 83,
+      "sourceAddress": "Ազատության պողոտա-Բաբայան փողոց խաչմերուկ",
+      "roadNames": [
+        "Azatutyan Avenue",
+        "Babayan street"
+      ],
+      "lat": 40.1991062,
+      "lon": 44.5198288,
+      "locationKind": "junction_reference",
+      "osmNode": 256031575,
+      "osmWays": [
+        119516091,
+        380437047,
+        1178182370,
+        1219750107
+      ],
+      "matchSpreadMetres": 17
+    },
+    {
+      "id": "am:mia:surveillance:86",
+      "sourceIndex": 86,
+      "sourceAddress": "Ազատության պողոտա-Ադոնցի փողոց խաչմերուկ",
+      "roadNames": [
+        "Azatutyan Avenue",
+        "Nikoghayos Adonts Street"
+      ],
+      "lat": 40.2095637,
+      "lon": 44.5295924,
+      "locationKind": "junction_reference",
+      "osmNode": 11653461564,
+      "osmWays": [
+        132959941,
+        1291260897,
+        1292622970
+      ],
+      "matchSpreadMetres": 17
+    },
+    {
+      "id": "am:mia:surveillance:87",
+      "sourceIndex": 87,
+      "sourceAddress": "Ազատության պողոտա-Թբիլիսյան խճուղի խաչմերուկ",
+      "roadNames": [
+        "Azatutyan Avenue",
+        "Tbilisian Highway"
+      ],
+      "lat": 40.2115001,
+      "lon": 44.5311676,
+      "locationKind": "junction_reference",
+      "osmNode": 1628035009,
+      "osmWays": [
+        132959941,
+        1189195008
+      ],
+      "matchSpreadMetres": 17
+    },
+    {
+      "id": "am:mia:surveillance:90",
+      "sourceIndex": 90,
+      "sourceAddress": "Ա.Խաչատրյան-Փափազյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Aram Khachatryan street",
+        "Vahram Papazyan street"
+      ],
+      "lat": 40.2063282,
+      "lon": 44.5008126,
+      "locationKind": "junction_reference",
+      "osmNode": 630749014,
+      "osmWays": [
+        1215271094,
+        1215271096
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:91",
+      "sourceIndex": 91,
+      "sourceAddress": "Ա.Խաչատրյան-Վ.Վաղարշյան փողոցների խաչմերուկ և Դավիթաշենի կամուրջ",
+      "roadNames": [
+        "Aram Khachatryan street",
+        "Vagharsh Vagharshyan street"
+      ],
+      "lat": 40.2049201,
+      "lon": 44.4973579,
+      "locationKind": "junction_reference",
+      "osmNode": 7006316452,
+      "osmWays": [
+        1155227821,
+        1155227829,
+        1215271102,
+        1292695710
+      ],
+      "matchSpreadMetres": 9
+    },
+    {
+      "id": "am:mia:surveillance:92",
+      "sourceIndex": 92,
+      "sourceAddress": "Փափազյան-Հ.Էմին փողոցների խաչմերուկ",
+      "roadNames": [
+        "Hovsep Emin street",
+        "Vahram Papazyan street"
+      ],
+      "lat": 40.2078747,
+      "lon": 44.4997379,
+      "locationKind": "junction_reference",
+      "osmNode": 630749011,
+      "osmWays": [
+        28322124,
+        530388624,
+        744217384,
+        1155227816
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:93",
+      "sourceIndex": 93,
+      "sourceAddress": "Ավետիսյան-Վ.Վաղարշյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Avet Avetisyan Street",
+        "Vagharsh Vagharshyan Street",
+        "Vagharsh Vagharshyan street"
+      ],
+      "lat": 40.1986884,
+      "lon": 44.5015707,
+      "locationKind": "junction_reference",
+      "osmNode": 962311984,
+      "osmWays": [
+        380437043,
+        1126544731,
+        1292695715,
+        1292695718,
+        1385409338
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:94",
+      "sourceIndex": 94,
+      "sourceAddress": "Ավետիսյան-Փափազյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Avet Avetisyan Street",
+        "Vahram Papazyan street"
+      ],
+      "lat": 40.2001264,
+      "lon": 44.5050744,
+      "locationKind": "junction_reference",
+      "osmNode": 6291463285,
+      "osmWays": [
+        690579190,
+        1385409352,
+        1535728478
+      ],
+      "matchSpreadMetres": 9
+    },
+    {
+      "id": "am:mia:surveillance:95",
+      "sourceIndex": 95,
+      "sourceAddress": "Մ.Բաղրամյան պողոտա-Ավետիսյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Avet Avetisyan Street",
+        "Marshal Baghramyan Avenue"
+      ],
+      "lat": 40.1958327,
+      "lon": 44.4946326,
+      "locationKind": "junction_reference",
+      "osmNode": 3828421303,
+      "osmWays": [
+        25919007,
+        380870528,
+        480268880
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:100",
+      "sourceIndex": 100,
+      "sourceAddress": "Պ.Սևակ-Կ.Ուլնեցի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Karapet Ulnetsi street",
+        "Paruyr Sevak street"
+      ],
+      "lat": 40.206104,
+      "lon": 44.5380792,
+      "locationKind": "junction_reference",
+      "osmNode": 11971746796,
+      "osmWays": [
+        689080169,
+        1342963964,
+        1342963965,
+        1446371968
+      ],
+      "matchSpreadMetres": 10
+    },
+    {
+      "id": "am:mia:surveillance:101",
+      "sourceIndex": 101,
+      "sourceAddress": "Պ.Սևակ-Ռուբինյանց փողոցների խաչմերուկ",
+      "roadNames": [
+        "Paruyr Sevak Street",
+        "Paruyr Sevak street",
+        "Rubiniants street"
+      ],
+      "lat": 40.2019824,
+      "lon": 44.545155,
+      "locationKind": "junction_reference",
+      "osmNode": 11971771958,
+      "osmWays": [
+        831101929,
+        1342963966,
+        1342963967,
+        1342963969
+      ],
+      "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:102",
+      "sourceIndex": 102,
+      "sourceAddress": "Դ.Անհաղթի-Կ.ՈՒլնեցի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Davit Anhaght street",
+        "Karapet Ulnetsi street"
+      ],
+      "lat": 40.2019719,
+      "lon": 44.5326368,
+      "locationKind": "junction_reference",
+      "osmNode": 11971746777,
+      "osmWays": [
+        187146760,
+        1446370911,
+        1446370912,
+        1446370914
+      ],
+      "matchSpreadMetres": 15
+    },
+    {
+      "id": "am:mia:surveillance:103",
+      "sourceIndex": 103,
+      "sourceAddress": "Պ.Սևակ-Դրո փողոցների խաչմերուկ",
+      "roadNames": [
+        "Dro Street",
+        "Dro street",
+        "Paruyr Sevak Street",
+        "Paruyr Sevak street"
+      ],
+      "lat": 40.2036782,
+      "lon": 44.5423073,
+      "locationKind": "junction_reference",
+      "osmNode": 331497116,
+      "osmWays": [
+        189145302,
+        189403698,
+        729053684,
+        1291273493,
+        1393221937
+      ],
+      "matchSpreadMetres": 6
+    },
+    {
+      "id": "am:mia:surveillance:104",
+      "sourceIndex": 104,
+      "sourceAddress": "Հ.Աճառյան պողոտա- Բաբաջանյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Hrachya Acharyan street",
+        "Marshal Babajanyan street"
+      ],
+      "lat": 40.2192059,
+      "lon": 44.561711,
+      "locationKind": "junction_reference",
+      "osmNode": 331481278,
+      "osmWays": [
+        139387072,
+        343571842,
+        497473170,
+        605818758
+      ],
+      "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:106",
+      "sourceIndex": 106,
+      "sourceAddress": "Հ.Աճառյան պողոտա- Ծ.Աղբյուր փողոց խաչմերուկ",
+      "roadNames": [
+        "Hrachya Acharyan street",
+        "Tsarav Aghbyur street"
+      ],
+      "lat": 40.215214,
+      "lon": 44.5625827,
+      "locationKind": "junction_reference",
+      "osmNode": 4890308090,
+      "osmWays": [
+        497473168,
+        976814349,
+        1453039158
+      ],
+      "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:108",
+      "sourceIndex": 108,
+      "sourceAddress": "Գայի պողոտա- Մալյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Davit Malyan street",
+        "Gai avenue"
+      ],
+      "lat": 40.2071211,
+      "lon": 44.5627919,
+      "locationKind": "junction_reference",
+      "osmNode": 1463752000,
+      "osmWays": [
+        118943859,
+        138001998,
+        689053770
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:109",
+      "sourceIndex": 109,
+      "sourceAddress": "Գայի պողոտա- Մոլդովական փողոց խաչմերուկ",
+      "roadNames": [
+        "Gai avenue",
+        "Moldovakan street"
+      ],
+      "lat": 40.2029636,
+      "lon": 44.5650986,
+      "locationKind": "junction_reference",
+      "osmNode": 4769024762,
+      "osmWays": [
+        175230280,
+        484163841,
+        579006656,
+        1553925662
+      ],
+      "matchSpreadMetres": 13
+    },
+    {
+      "id": "am:mia:surveillance:110",
+      "sourceIndex": 110,
+      "sourceAddress": "Գայի պողոտա- Նանսենի փողոց խաչմերուկ",
+      "roadNames": [
+        "Gai avenue",
+        "Nansen street"
+      ],
+      "lat": 40.2008812,
+      "lon": 44.5661969,
+      "locationKind": "junction_reference",
+      "osmNode": 4769038234,
+      "osmWays": [
+        484164965,
+        795660305,
+        1219349964
+      ],
+      "matchSpreadMetres": 87
+    },
+    {
+      "id": "am:mia:surveillance:111",
+      "sourceIndex": 111,
+      "sourceAddress": "Գայի պողոտա- Ն.Ստեփանյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Gai avenue",
+        "Nelson Stepanyan street"
+      ],
+      "lat": 40.1984032,
+      "lon": 44.5674947,
+      "locationKind": "junction_reference",
+      "osmNode": 4230885905,
+      "osmWays": [
+        187640263,
+        1219349967,
+        1219358717
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:112",
+      "sourceIndex": 112,
+      "sourceAddress": "Գայի պողոտա- Ա.Հովհաննիսյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Ashot Hovhannisyan street",
+        "Gai avenue"
+      ],
+      "lat": 40.1948435,
+      "lon": 44.5693037,
+      "locationKind": "junction_reference",
+      "osmNode": 331479192,
+      "osmWays": [
+        137931082,
+        137997641,
+        1219356029
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:113",
+      "sourceIndex": 113,
+      "sourceAddress": "Գայի պողոտա- Քոչարյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Gai avenue",
+        "Kocharyan street"
+      ],
+      "lat": 40.1905587,
+      "lon": 44.5670914,
+      "locationKind": "junction_reference",
+      "osmNode": 7030642367,
+      "osmWays": [
+        30096229,
+        219148794,
+        533227168,
+        752128883
+      ],
+      "matchSpreadMetres": 19
+    },
+    {
+      "id": "am:mia:surveillance:115",
+      "sourceIndex": 115,
+      "sourceAddress": "Դավիթ Բեկ-Նուբարաշենի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Davit Bek street",
+        "Nubarashen street"
+      ],
+      "lat": 40.1507654,
+      "lon": 44.529686,
+      "locationKind": "junction_reference",
+      "osmNode": 256031398,
+      "osmWays": [
+        618626815,
+        618628010,
+        936344497
+      ],
+      "matchSpreadMetres": 17
+    },
+    {
+      "id": "am:mia:surveillance:116",
+      "sourceIndex": 116,
+      "sourceAddress": "Ռոստովյան-Աթոյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Atoyan Street",
+        "Rostovyan street"
+      ],
+      "lat": 40.1505064,
+      "lon": 44.5184815,
+      "locationKind": "junction_reference",
+      "osmNode": 256031401,
+      "osmWays": [
+        689002025,
+        746993475,
+        1256135925
+      ],
+      "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:117",
+      "sourceIndex": 117,
+      "sourceAddress": "Ռոստովյան-Մուրացանի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Muratsan Street",
+        "Muratsan street",
+        "Rostovyan street"
+      ],
+      "lat": 40.1505109,
+      "lon": 44.516255,
+      "locationKind": "junction_reference",
+      "osmNode": 6989144731,
+      "osmWays": [
+        26282040,
+        750485882,
+        750485885,
+        750485886
+      ],
+      "matchSpreadMetres": 13
+    },
+    {
+      "id": "am:mia:surveillance:118",
+      "sourceIndex": 118,
+      "sourceAddress": "Ռոստովյան փողոց-Արցախի պողոտա խաչմերուկ",
+      "roadNames": [
+        "Artsakh Avenue",
+        "Artsakh avenue",
+        "Rostovyan street"
+      ],
+      "lat": 40.1505184,
+      "lon": 44.5100314,
+      "locationKind": "junction_reference",
+      "osmNode": 287885217,
+      "osmWays": [
+        187640261,
+        374521972,
+        684217840
+      ],
+      "matchSpreadMetres": 24
+    },
+    {
+      "id": "am:mia:surveillance:120",
+      "sourceIndex": 120,
+      "sourceAddress": "Տիգրան Մեծ պողոտա-Ս.Դավիթի փողոց խաչմերուկ",
+      "roadNames": [
+        "Sasuntsi Davit Street",
+        "Tigran Mets avenue"
+      ],
+      "lat": 40.1551285,
+      "lon": 44.5101889,
+      "locationKind": "junction_reference",
+      "osmNode": 5047412849,
+      "osmWays": [
+        187645413,
+        750004943
+      ],
+      "matchSpreadMetres": 16
+    },
+    {
+      "id": "am:mia:surveillance:122",
+      "sourceIndex": 122,
+      "sourceAddress": "Արցախի պողոտա-Արին Բերդի փողոց խաչմերուկ",
+      "roadNames": [
+        "Arin Berd street",
+        "Artsakh avenue"
+      ],
+      "lat": 40.1244595,
+      "lon": 44.5091646,
+      "locationKind": "junction_reference",
+      "osmNode": 7057822886,
+      "osmWays": [
+        26712443,
+        755609090,
+        755609093,
+        1255797100
+      ],
+      "matchSpreadMetres": 19
+    },
+    {
+      "id": "am:mia:surveillance:123",
+      "sourceIndex": 123,
+      "sourceAddress": "Էրեբունի-Ազատամարտիկների փողոցների խաչմերուկ",
+      "roadNames": [
+        "Azatamartikner Avenue",
+        "Erebuni street"
+      ],
+      "lat": 40.1420019,
+      "lon": 44.5219421,
+      "locationKind": "junction_reference",
+      "osmNode": 287887115,
+      "osmWays": [
+        618816104,
+        689002027,
+        1080306953,
+        1256139649
+      ],
+      "matchSpreadMetres": 17
+    },
+    {
+      "id": "am:mia:surveillance:125",
+      "sourceIndex": 125,
+      "sourceAddress": "Էրեբունի-Աթոյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Atoyan Street",
+        "Erebuni street"
+      ],
+      "lat": 40.1420773,
+      "lon": 44.5177724,
+      "locationKind": "junction_reference",
+      "osmNode": 4458309746,
+      "osmWays": [
+        26282047,
+        448857569,
+        689004079,
+        689004080
+      ],
+      "matchSpreadMetres": 16
+    },
+    {
+      "id": "am:mia:surveillance:126",
+      "sourceIndex": 126,
+      "sourceAddress": "Սասունցի Դավիթ-Բելինսկի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Belinsky Street",
+        "Sasuntsi Davit Street"
+      ],
+      "lat": 40.1546461,
+      "lon": 44.5188396,
+      "locationKind": "junction_reference",
+      "osmNode": 287886952,
+      "osmWays": [
+        83710436,
+        319792671,
+        1426378404
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:127",
+      "sourceIndex": 127,
+      "sourceAddress": "Սասունցի Դավիթ-Ազատամարտիկների փողոցների խաչմերուկ",
+      "roadNames": [
+        "Azatamartikner Avenue",
+        "Azatamartikner street",
+        "Sasuntsi Davit Street"
+      ],
+      "lat": 40.154392,
+      "lon": 44.5231489,
+      "locationKind": "junction_reference",
+      "osmNode": 256038004,
+      "osmWays": [
+        813363173,
+        1284136813,
+        1315341144
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:131",
+      "sourceIndex": 131,
+      "sourceAddress": "Գ.Նժդեհ-Մայիսի 9 փողոցների խաչմերուկ",
+      "roadNames": [
+        "Garegin Nzhdeh Street",
+        "Mayis 9 street"
+      ],
+      "lat": 40.1517013,
+      "lon": 44.4929836,
+      "locationKind": "junction_reference",
+      "osmNode": 12972165753,
+      "osmWays": [
+        490733418,
+        490743972,
+        606024788
+      ],
+      "matchSpreadMetres": 9
+    },
+    {
+      "id": "am:mia:surveillance:132",
+      "sourceIndex": 132,
+      "sourceAddress": "Գ.Նժդեհ-Մանթաշյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Garegin Nzhdeh Street",
+        "Mantashyan street"
+      ],
+      "lat": 40.1513475,
+      "lon": 44.4879099,
+      "locationKind": "junction_reference",
+      "osmNode": 4829218248,
+      "osmWays": [
+        288107309,
+        1254736534,
+        1254736535,
+        1254740159
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:133",
+      "sourceIndex": 133,
+      "sourceAddress": "Բագրատունյաց պողոտա- Արտաշիսյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Artashisyan street",
+        "Bagratunyats Avenue"
+      ],
+      "lat": 40.1545476,
+      "lon": 44.4788869,
+      "locationKind": "junction_reference",
+      "osmNode": 7528587135,
+      "osmWays": [
+        376385463,
+        804865252,
+        804865256,
+        1254736532
+      ],
+      "matchSpreadMetres": 15
+    },
+    {
+      "id": "am:mia:surveillance:134",
+      "sourceIndex": 134,
+      "sourceAddress": "Բագրատունյաց պողոտա-Չեխովի փողոց խաչմերուկ",
+      "roadNames": [
+        "Bagratunyats Avenue",
+        "Chekhov street"
+      ],
+      "lat": 40.1531684,
+      "lon": 44.480726,
+      "locationKind": "junction_reference",
+      "osmNode": 3798190191,
+      "osmWays": [
+        376385462,
+        380292807,
+        804886119,
+        1547790355
+      ],
+      "matchSpreadMetres": 10
+    },
+    {
+      "id": "am:mia:surveillance:135",
+      "sourceIndex": 135,
+      "sourceAddress": "Բագրատունյաց պողոտա-Թադևոսյան փողոց խաչմերուկ",
+      "roadNames": [
+        "Bagratunyats Avenue",
+        "Yeghishe Tadevosyan Street"
+      ],
+      "lat": 40.1459305,
+      "lon": 44.490108,
+      "locationKind": "junction_reference",
+      "osmNode": 386579354,
+      "osmWays": [
+        30420786,
+        131834511,
+        288107315,
+        688951526
+      ],
+      "matchSpreadMetres": 11
+    },
+    {
+      "id": "am:mia:surveillance:136",
+      "sourceIndex": 136,
+      "sourceAddress": "Արտաշիսյան -Չեխովի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Artashisyan street",
+        "Chekhov street"
+      ],
+      "lat": 40.1490428,
+      "lon": 44.4715058,
+      "locationKind": "junction_reference",
+      "osmNode": 331556523,
+      "osmWays": [
+        981126608,
+        1255619996,
+        1255620002
+      ],
+      "matchSpreadMetres": 28
+    },
+    {
+      "id": "am:mia:surveillance:137",
+      "sourceIndex": 137,
+      "sourceAddress": "Արտաշիսյան-Շիրակի փողոցների խաչմերուկ",
+      "roadNames": [
+        "Artashisyan street",
+        "Shirak street"
+      ],
+      "lat": 40.1449761,
+      "lon": 44.4618571,
+      "locationKind": "junction_reference",
+      "osmNode": 9567506167,
+      "osmWays": [
+        1038944671,
+        1079783855,
+        1359177574,
+        1359944282,
+        1359944283
+      ],
+      "matchSpreadMetres": 11
+    },
+    {
+      "id": "am:mia:surveillance:138",
+      "sourceIndex": 138,
+      "sourceAddress": "Շիրակ-Արարատյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Araratyan street",
+        "Shirak street"
+      ],
+      "lat": 40.1405631,
+      "lon": 44.4674788,
+      "locationKind": "junction_reference",
+      "osmNode": 11648951429,
+      "osmWays": [
+        1253237143,
+        1253237146,
+        1253237149,
+        1253237152
+      ],
+      "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:139",
+      "sourceIndex": 139,
+      "sourceAddress": "Սեբաստիա-Կուրղինյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Kurghinyan street",
+        "Sebastia Street"
+      ],
+      "lat": 40.1642326,
+      "lon": 44.4642319,
+      "locationKind": "junction_reference",
+      "osmNode": 3791066771,
+      "osmWays": [
+        375717359,
+        667509915,
+        746127094,
+        746127095
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:140",
+      "sourceIndex": 140,
+      "sourceAddress": "Սեբաստիա-Շահումյան 1-ին փողոցների խաչմերուկ",
+      "roadNames": [
+        "Sebastia Street",
+        "Shahumyan 1st street"
+      ],
+      "lat": 40.165264,
+      "lon": 44.4603325,
+      "locationKind": "junction_reference",
+      "osmNode": 1328019968,
+      "osmWays": [
+        746127096,
+        746127097,
+        1137075444
+      ],
+      "matchSpreadMetres": 11
+    },
+    {
+      "id": "am:mia:surveillance:142",
+      "sourceIndex": 142,
+      "sourceAddress": "Սեբաստիա-Ա.Վեգներ փողոցների խաչմերուկ",
+      "roadNames": [
+        "Armin Vegner street",
+        "Sebastia Street"
+      ],
+      "lat": 40.1778032,
+      "lon": 44.4587884,
+      "locationKind": "junction_reference",
+      "osmNode": 4942803665,
+      "osmWays": [
+        504071684,
+        1136284850,
+        1136930285
+      ],
+      "matchSpreadMetres": 10
+    },
+    {
+      "id": "am:mia:surveillance:143",
+      "sourceIndex": 143,
+      "sourceAddress": "Սեբաստիա-Տիչինա փողոցների խաչմերուկ",
+      "roadNames": [
+        "Sebastia Street",
+        "Tichina street"
+      ],
+      "lat": 40.1832216,
+      "lon": 44.4607122,
+      "locationKind": "junction_reference",
+      "osmNode": 5017778459,
+      "osmWays": [
+        88569029,
+        1137194960,
+        1150074735,
+        1245406307
+      ],
+      "matchSpreadMetres": 8
+    },
+    {
+      "id": "am:mia:surveillance:147",
+      "sourceIndex": 147,
+      "sourceAddress": "Անդրանիկ-Օհանով փողոցների խաչմերուկ",
+      "roadNames": [
+        "Ohanov street",
+        "Zoravar Andranik street"
+      ],
+      "lat": 40.1800784,
+      "lon": 44.4471778,
+      "locationKind": "junction_reference",
+      "osmNode": 11687376634,
+      "osmWays": [
+        46770922,
+        1257119194,
+        1257484178,
+        1257484179
+      ],
+      "matchSpreadMetres": 9
+    },
+    {
+      "id": "am:mia:surveillance:149",
+      "sourceIndex": 149,
+      "sourceAddress": "Հ.Շիրազ-Ջանիբեկյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Hovhannes Shiraz street",
+        "Janibekyan Street"
+      ],
+      "lat": 40.2004149,
+      "lon": 44.4620015,
+      "locationKind": "junction_reference",
+      "osmNode": 3831457884,
+      "osmWays": [
+        23634996,
+        189835248
+      ],
+      "matchSpreadMetres": 12
+    },
+    {
+      "id": "am:mia:surveillance:150",
+      "sourceIndex": 150,
+      "sourceAddress": "Մարգարյան-Բաշինջաղյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Bashinjaghyan street",
+        "Margarian street"
+      ],
+      "lat": 40.2043187,
+      "lon": 44.4685811,
+      "locationKind": "junction_reference",
+      "osmNode": 11662988042,
+      "osmWays": [
+        49845347,
+        1351958032
+      ],
+      "matchSpreadMetres": 2
+    },
+    {
+      "id": "am:mia:surveillance:151",
+      "sourceIndex": 151,
+      "sourceAddress": "Մարգարյան-Ֆուչիկ փողոցների խաչմերուկ",
+      "roadNames": [
+        "Fuchik street",
+        "Margarian street"
+      ],
+      "lat": 40.2052958,
+      "lon": 44.4769026,
+      "locationKind": "junction_reference",
+      "osmNode": 11662985041,
+      "osmWays": [
+        688989433,
+        1254618943
+      ],
+      "matchSpreadMetres": 3
+    },
+    {
+      "id": "am:mia:surveillance:152",
+      "sourceIndex": 152,
+      "sourceAddress": "Հալաբյան-Մարգարյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Halabyan Street",
+        "Margarian street"
+      ],
+      "lat": 40.2051049,
+      "lon": 44.4802181,
+      "locationKind": "junction_reference",
+      "osmNode": 11662985049,
+      "osmWays": [
+        483276999,
+        1446370909
+      ],
+      "matchSpreadMetres": 13
+    },
+    {
+      "id": "am:mia:surveillance:153",
+      "sourceIndex": 153,
+      "sourceAddress": "Հալաբյան-Աբելյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Abelian street",
+        "Halabyan Street"
+      ],
+      "lat": 40.1989111,
+      "lon": 44.4793969,
+      "locationKind": "junction_reference",
+      "osmNode": 1980271910,
+      "osmWays": [
+        721632878,
+        1233346292,
+        1377441713
+      ],
+      "matchSpreadMetres": 13
+    },
+    {
+      "id": "am:mia:surveillance:154",
+      "sourceIndex": 154,
+      "sourceAddress": "Հալաբյան-Էստոնական փողոցների խաչմերուկ",
+      "roadNames": [
+        "Estonakan street",
+        "Halabyan Street"
+      ],
+      "lat": 40.1957945,
+      "lon": 44.4789711,
+      "locationKind": "junction_reference",
+      "osmNode": 4228167599,
+      "osmWays": [
+        33814191,
+        422287457,
+        721632878,
+        801931147
+      ],
+      "matchSpreadMetres": 16
+    },
+    {
+      "id": "am:mia:surveillance:155",
+      "sourceIndex": 155,
+      "sourceAddress": "Հալաբյան-Արզումանյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Arzoumanian Street",
+        "Halabyan Street"
+      ],
+      "lat": 40.1926964,
+      "lon": 44.4787325,
+      "locationKind": "junction_reference",
+      "osmNode": 2349516759,
+      "osmWays": [
+        34951496,
+        226095060,
+        1150143592
+      ],
+      "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:157",
+      "sourceIndex": 157,
+      "sourceAddress": "Տ.Պետրոսյան-Փիրումյաններ փողոցների խաչմերուկ",
+      "roadNames": [
+        "Pirumyanner street",
+        "Tigran Petrosyan street"
+      ],
+      "lat": 40.2210895,
+      "lon": 44.4932166,
+      "locationKind": "junction_reference",
+      "osmNode": 11664654987,
+      "osmWays": [
+        1001021706,
+        1393224204,
+        1393224205,
+        1393224206
+      ],
+      "matchSpreadMetres": 4
+    }
+  ],
+  "omitted": [
+    {
+      "sourceIndex": 2,
+      "sourceAddress": "Ծ.Իսակովի պողոտա-Վերֆելի փողոց խաչմերուկ",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 3,
+      "sourceAddress": "Ծիծեռնակաբերդի խճուղի՝ <<Դալմա Մոլ>> առևտրի կենտրոն",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 6,
+      "sourceAddress": "Մ.Մաշտոցի պողոտա-Ամիրյան փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 7,
+      "sourceAddress": "Ամիրյան-Անրի Վեռնոյի փողոցների խաչմերուկ",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 15,
+      "sourceAddress": "Աբովյան փողոց-Հերացի 1 հիվանդանոց ճանապարահատվածում",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 18,
+      "sourceAddress": "Սայաթ-Նովա պողոտա-Խանջյան փողոց-Ա.Պետրոսյան փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 21,
+      "sourceAddress": "Սայաթ-Նովա պողոտա-Տերյան փողոց խաչմերուկ, Տերյան փողոց-Ն.Աղբալյանի դպրոց",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 22,
+      "sourceAddress": "Մ.Բաղրամյան պողոտա-Մոսկովյան փողոց-Իսահակյան փողոց խաչմերուկներ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 23,
+      "sourceAddress": "Մոսկովյան փողոց-Սպենդիարյան փողոց խաչմերուկ",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 24,
+      "sourceAddress": "Մ.Բաղրամյան պողոտա-Չեխովի դպրոց ճանապարհահատված",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 25,
+      "sourceAddress": "Զարոբյան փողոց",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 30,
+      "sourceAddress": "Գր.Լուսավորիչ-Արգիշտիի-Խորհրդարանի փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 32,
+      "sourceAddress": "Արշակունյաց պողոտա-Քրիստափորի փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 36,
+      "sourceAddress": "Տ.Մեծ պողոտա-Խանջյան փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 37,
+      "sourceAddress": "Տ.Մեծ պողոտա-Մ.Մկրտչյան փողոց-Հանրապետության փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 38,
+      "sourceAddress": "Տ.Մեծ պողոտա-Հանրապետության Հրապարակ խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 39,
+      "sourceAddress": "Ամիրյան փողոց-Հանրապետության Հրապարակ խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 40,
+      "sourceAddress": "Ամիրյան-Զաքիյան-Ե․Կողբացի փողոցների խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 41,
+      "sourceAddress": "Մ.Խորենացի-Զաքիյան փողոցների խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 43,
+      "sourceAddress": "Մ.Խորենացի-Մ.Մկրտչյան-Դեղատան փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 45,
+      "sourceAddress": "Վ.Սարգսյան փողոց-Դեղատան փողոց խաչմերուկ",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 46,
+      "sourceAddress": "Աբովյան-Իսահակյան-Մոսկովյան փողոցների խաչմերուկներում",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 48,
+      "sourceAddress": "Աբովյան-Պուշկին փողոցների խաչմերուկ",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 50,
+      "sourceAddress": "Նալբանդյան-Վարդանանց փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 53,
+      "sourceAddress": "Չարենցի փողոց 1 ճանապարհահատված",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 55,
+      "sourceAddress": "Տերյան-Մոսկովյան-Աղայան փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 58,
+      "sourceAddress": "Փ․Բյուզանդ-Ա․Քոչինյան փողոցների խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 59,
+      "sourceAddress": "Հերացի փողոց",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 60,
+      "sourceAddress": "Մյասնիկյանի պողոտա – Հերացի փողոց հատման տեղամասում",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 61,
+      "sourceAddress": "Թումանյան-Հանրապետության-Խանջյան փողոցների խաչմերուկներում",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 69,
+      "sourceAddress": "Խանջյան-Արամի-Փ.Բուզանդի փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 70,
+      "sourceAddress": "Վարդանանց փողոց-Վարդանանց փակուղի խաչմերուկ",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 71,
+      "sourceAddress": "Խանջյան փողոց-Նալբանդյան փողոց խաչմերուկ ՀՀ Ոստիկանության Երևան քաղաքի վարչության շենք ճանապարհահատված",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 73,
+      "sourceAddress": "Կիևյան-Կասյան-Հր.Քոչար-Հ.Հակոբյան փողոցների խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 74,
+      "sourceAddress": "Կասյան-Գյուլբենկյան փողոցների խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 80,
+      "sourceAddress": "Հր.Քոչար-Գյուբենկյան փողոցների խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 84,
+      "sourceAddress": "Ազատության պողոտա-Ա.Տիգրանյան փողոց-Ն.Զարյան փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 85,
+      "sourceAddress": "Ազատության պողոտա-Մամիկոնյան փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 88,
+      "sourceAddress": "Մամիկոնյան-Շիրվանզադեի փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 89,
+      "sourceAddress": "Մամիկոնյան-Գրիբոյեդովի փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 96,
+      "sourceAddress": "Մ.Բաղրամյան պողոտա-Երզնկյան փողոց խաչմերուկ",
+      "reason": "Multiple or extended junction matches"
+    },
+    {
+      "sourceIndex": 97,
+      "sourceAddress": "Մ.Բաղրամյան պողոտա-Օրբելի եղբայրների փողոց",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 98,
+      "sourceAddress": "Թբիլիսյան խճուղի-Թբիլիսյան խճուղու անցուղի խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 99,
+      "sourceAddress": "Թբիլիսյան խճուղի-Զ.Քանաքեռցի փողոց խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 105,
+      "sourceAddress": "Հ.Աճառյան պողոտա- Աճառյան փողոցի 1-ին փակուղի խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 107,
+      "sourceAddress": "Հ.Աճառյան պողոտա- Աճառյան փողոցի 2-րդ փակուղի խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 114,
+      "sourceAddress": "Դավիթ Բեկի փողոց-Հ.Ավետիսյան փողոց խաչմերուկ",
+      "reason": "Multiple or extended junction matches"
+    },
+    {
+      "sourceIndex": 119,
+      "sourceAddress": "Տիգրան Մեծ պողոտա-Մ.Գլինկայի փողոց խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 121,
+      "sourceAddress": "Արցախի պողոտա-Էրեբունի փողոց խաչմերուկ",
+      "reason": "Multiple or extended junction matches"
+    },
+    {
+      "sourceIndex": 124,
+      "sourceAddress": "Էրեբունի-Այվազովսկու փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 128,
+      "sourceAddress": "Տիտոգրադյան փողոց Էրեբունի հիվանդանոց",
+      "reason": "Not solely a named junction"
+    },
+    {
+      "sourceIndex": 129,
+      "sourceAddress": "Արշակունյաց պողոտա–Գ.Նժդեհ-Վերին Շենգավիթ 2-րդ փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 130,
+      "sourceAddress": "Արշակունյաց պողոտա- <<Երևան Մոլլ>> առևտրի կենտրոն-Ն.Բունիաթյան փողոց խաչմերուկ",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 141,
+      "sourceAddress": "Սեբաստիա-Րաֆֆի-Մալաթիա փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 144,
+      "sourceAddress": "Զվարթնոց օդանավակայան",
+      "reason": "No fixed camera explicitly listed"
+    },
+    {
+      "sourceIndex": 145,
+      "sourceAddress": "Էջմիածնի խճուղի- Ի.Գասպարյան փողոց խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 146,
+      "sourceAddress": "Ծ.Իսակովի պողոտա- Ա.Բաբաջանյան փողոց խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 148,
+      "sourceAddress": "Լենինգրադյան-Սեբաստիա փողոցների խաչմերուկ",
+      "reason": "An explicitly named road is unmatched"
+    },
+    {
+      "sourceIndex": 156,
+      "sourceAddress": "Հալաբյան-Կիևյան փողոցների խաչմերուկ",
+      "reason": "Named roads have no shared junction node"
+    },
+    {
+      "sourceIndex": 158,
+      "sourceAddress": "Եղվարդի խճուղի",
+      "reason": "Not solely a named junction"
+    }
+  ]
+}
