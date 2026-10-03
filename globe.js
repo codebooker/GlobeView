@@ -3713,9 +3713,12 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       if (data.status === 'needs_key') {
         placeResults.replaceChildren(textElement('div', 'place-empty', 'Vessel search needs AISSTREAM_API_KEY configured on the server.'));
       } else if (!(data.vessels || []).length) {
-        const message = collectingHere
-          ? 'No recent AIS name match yet. Live vessels is collecting this area now; try again in a few moments.'
-          : 'No recent AIS name match. Search covers ships recently reported in areas the live vessel layer has monitored; zoom to 5+ to collect nearby traffic.';
+        const identifier = /^(?:IMO\s*[:#-]?\s*\d{7}|MMSI\s*[:#-]?\s*\d{9}|\d{7}|\d{9})$/i.test(query.trim());
+        const message = identifier
+          ? 'No recent position for that vessel ID in monitored areas. This AIS feed cannot locate every ship worldwide.'
+          : collectingHere
+            ? 'No recent AIS match here yet. Try again after more vessel reports arrive.'
+            : 'No recent AIS match. Search covers monitored areas; zoom to 5+ to collect nearby traffic.';
         placeResults.replaceChildren(textElement('div', 'place-empty', message));
       } else {
         searchOptions = data.vessels.map(vessel => ({ kind: 'vessel-row', vessel }));
@@ -3727,7 +3730,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
           button.type = 'button'; button.className = 'place-result'; button.id = `place-option-${index}`;
           button.setAttribute('role', 'option'); button.setAttribute('aria-selected', 'false');
           button.append(textElement('span', '', String(vessel.name || `MMSI ${vessel.mmsi}`).trim()),
-            textElement('small', '', `MMSI ${vessel.mmsi} · reported ${age} min ago`));
+            textElement('small', '', `${vessel.imo ? `IMO ${vessel.imo} · ` : ''}MMSI ${vessel.mmsi} · reported ${age} min ago`));
           button.addEventListener('click', () => selectVessel(vessel));
           placeResults.append(button);
         });
@@ -3832,12 +3835,15 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       const raw = placeInput.value.trim().toUpperCase();
       const aircraft = /^[A-Z0-9-]{2,12}$/.test(raw) ? { kind: 'aircraft-query', query: raw } : null;
       const vessel = q.length >= 3 && q.length <= 80 ? { kind: 'vessel-query', query: placeInput.value.trim() } : null;
-      searchOptions = aircraft && /[0-9-]/.test(raw)
+      const vesselId = /^(?:IMO\s*[:#-]?\s*\d{7}|MMSI\s*[:#-]?\s*\d{9}|\d{7}|\d{9})$/.test(raw);
+      searchOptions = vesselId
+        ? [vessel, ...placeMatches].filter(Boolean)
+        : aircraft && /[0-9-]/.test(raw)
         ? [aircraft, ...(vessel ? [vessel] : []), ...placeMatches]
         : [...placeMatches, ...(vessel ? [vessel] : []), ...(aircraft ? [aircraft] : [])];
     }
     if (!searchOptions.length) {
-      const message = placesPromise?.rows ? 'No matching city or port. Try an aircraft callsign, tail number, ICAO hex, vessel name, or coordinates.' : placesPromise?.failed ? 'Place catalog unavailable; enter latitude, longitude.' : 'Loading place catalog…';
+      const message = placesPromise?.rows ? 'No matching city or port. Try an aircraft callsign, tail number, ICAO hex, vessel name, IMO, MMSI, or coordinates.' : placesPromise?.failed ? 'Place catalog unavailable; enter latitude, longitude.' : 'Loading place catalog…';
       placeResults.append(textElement('div', 'place-empty', message));
     } else {
       searchOptions.forEach((option, index) => {
@@ -3845,7 +3851,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         button.type = 'button'; button.className = 'place-result'; button.id = `place-option-${index}`;
         button.setAttribute('role', 'option'); button.setAttribute('aria-selected', 'false');
         if (option.kind === 'aircraft-query') button.append(textElement('span', '', `Find aircraft ${option.query}`), textElement('small', '', 'Callsign / tail / ICAO'));
-        else if (option.kind === 'vessel-query') button.append(textElement('span', '', `Search vessel names for “${option.query}”`), textElement('small', '', 'Recent live AIS reports'));
+        else if (option.kind === 'vessel-query') button.append(textElement('span', '', `Find vessel “${option.query}”`), textElement('small', '', 'Name / IMO / MMSI · recent AIS reports'));
         else button.append(textElement('span', '', `${option.row[0]}, ${option.row[1]}`), textElement('small', '', option.row[5] === 'coordinate' ? 'Coordinate' : option.row[5] === 'port' ? 'Port' : 'City'));
         button.addEventListener('click', () => chooseSearchOption(option));
         placeResults.append(button);

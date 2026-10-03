@@ -194,6 +194,31 @@ class GlobalFeedTests(unittest.TestCase):
         self.assertEqual((vessel['lat'], vessel['lon']), (51.9, 1.2))
         self.assertEqual(vessel['heading'], 87)
 
+    def test_ais_static_imo_is_retained_for_position_search(self):
+        with global_feeds.AIS_LOCK:
+            saved_vessels = global_feeds.AIS_STATE['vessels']
+            saved_static = global_feeds.AIS_STATE['static']
+            global_feeds.AIS_STATE['vessels'] = {}
+            global_feeds.AIS_STATE['static'] = {}
+        try:
+            global_feeds._vessel_message({
+                'MessageType': 'ShipStaticData',
+                'MetaData': {'MMSI': 311020600, 'ShipName': 'OASIS OF THE SEAS'},
+                'Message': {'ShipStaticData': {'ImoNumber': 9383936}},
+            })
+            global_feeds._vessel_message({
+                'MessageType': 'PositionReport',
+                'MetaData': {'MMSI': 311020600, 'latitude': 28.0, 'longitude': -80.0},
+                'Message': {'PositionReport': {'Sog': 10.0}},
+            })
+            with global_feeds.AIS_LOCK:
+                vessel = global_feeds.AIS_STATE['vessels']['311020600']
+            self.assertEqual((vessel['imo'], vessel['name']), ('9383936', 'OASIS OF THE SEAS'))
+        finally:
+            with global_feeds.AIS_LOCK:
+                global_feeds.AIS_STATE['vessels'] = saved_vessels
+                global_feeds.AIS_STATE['static'] = saved_static
+
     def test_ais_vessel_cache_has_hard_limit(self):
         with global_feeds.AIS_LOCK:
             saved = global_feeds.AIS_STATE['vessels']
@@ -219,7 +244,7 @@ class GlobalFeedTests(unittest.TestCase):
             previous_status = global_feeds.AIS_STATE['status']
             global_feeds.AIS_STATE['status'] = 'needs_key'
             global_feeds.AIS_STATE['vessels'] = {
-                '123456789': {'mmsi': '123456789', 'name': 'Ever Given', 'lat': 30.0, 'lon': 32.0, 'updated_at': now},
+                '123456789': {'mmsi': '123456789', 'imo': '9811000', 'name': 'Ever Given', 'lat': 30.0, 'lon': 32.0, 'updated_at': now},
                 '987654321': {'mmsi': '987654321', 'name': 'EVER BRIGHT', 'lat': 31.0, 'lon': 32.0, 'updated_at': now - 1300},
                 '111222333': {'mmsi': '111222333', 'name': 'Maersk Alabama', 'lat': 30.0, 'lon': 32.0, 'updated_at': now},
             }
@@ -227,6 +252,9 @@ class GlobalFeedTests(unittest.TestCase):
             result = global_feeds.vessel_search('  EVER  ')
         self.assertEqual([row['mmsi'] for row in result['vessels']], ['123456789'])
         self.assertEqual(result['status'], 'not_started')
+        with patch.object(global_feeds, '_ais_key', return_value='configured'):
+            for query in ('9811000', 'IMO 9811000', '123456789', 'MMSI 123456789'):
+                self.assertEqual([row['mmsi'] for row in global_feeds.vessel_search(query)['vessels']], ['123456789'])
         with self.assertRaises(ValueError):
             global_feeds.vessel_search('x')
         with global_feeds.AIS_LOCK:
