@@ -32,6 +32,7 @@ from kyrgyzstan_outages import bishkek_planned_outages, issyk_kul_planned_outage
 from azerbaijan_outages import azerishiq_planned_outages
 from armenia_outages import ena_planned_outages
 from kyrgyzstan_roads import bishkek_roadworks
+from armenia_roads import road_notices as armenia_road_notices
 from kyrgyztelecom_cameras import camera_features as kyrgyztelecom_cameras, camera_segment
 
 
@@ -8766,6 +8767,7 @@ _FETCHERS = {
         'kg_elcat_cameras': _elcat_cameras,
         'kg_kyrgyztelecom_cameras': kyrgyztelecom_cameras,
         'kg_bishkek_roadworks': bishkek_roadworks,
+        'am_armroad_notices': armenia_road_notices,
         'kz_qaj_restrictions': _qaj_restrictions,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
