@@ -45,6 +45,67 @@
         134410258
       ],
       "referenceDistanceMetres": 0
+    },
+    {
+      "id": "yeghvard-aragyugh-hartavan",
+      "name": "H4 · Yeghvard–Aragyugh–Hartavan",
+      "aliases": [
+        "Եղվարդ-Արագյուղ-Հարթավան"
+      ],
+      "context": [],
+      "coordinates": [
+        44.5417486,
+        40.4005085
+      ],
+      "osmNode": 925354762,
+      "osmWays": [
+        393119088
+      ],
+      "geonamesId": "616941",
+      "referenceDistanceMetres": 352,
+      "roadRef": "H4",
+      "roadIdentitySource": "https://armroad.am/am/news/inner/News_30.06.2026_1"
+    },
+    {
+      "id": "karadzor-approach",
+      "name": "T5-77 · Karadzor approach",
+      "aliases": [
+        "Քարաձորի ճանապարհ",
+        "Քարաձորի, Ղուրսալ-Նոր Խաչակապ ճանապարհ"
+      ],
+      "context": [],
+      "coordinates": [
+        44.3216537,
+        40.8463533
+      ],
+      "osmNode": 2047944751,
+      "osmWays": [
+        189033982
+      ],
+      "geonamesId": "616587",
+      "referenceDistanceMetres": 52,
+      "roadRef": "T5-77",
+      "roadIdentitySource": "https://armroad.am/am/news/inner/News_25.01.2026_1"
+    },
+    {
+      "id": "ghursal-nor-khachakap",
+      "name": "T5-31 · Ghursal–Nor Khachakap",
+      "aliases": [
+        "Ղուրսալ-Նոր Խաչակապ"
+      ],
+      "context": [],
+      "coordinates": [
+        44.357623,
+        40.8387754
+      ],
+      "osmNode": 5745818431,
+      "osmWays": [
+        670005471
+      ],
+      "geonamesId": "616270",
+      "referenceDistanceMetres": 99,
+      "roadRef": "T5-31",
+      "roadIdentitySource": "https://armroad.am/am/news/inner/News_25.01.2026_1"
     }
   ]
 }
