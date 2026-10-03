@@ -281,6 +281,14 @@ The Interior Ministry's separate [January 2025 inventory](https://gov.uz/oz/iiv/
 
 **Remaining road status work:** the [3 October national road bulletin](https://rescue.mia.gov.am/ճանապարհները-հայաստանում) says roads are passable; it does not establish the status of every local bridge. The government's [road-conditions service](https://english.hartak.am/services/4b6128e1-ce42-41bc-af36-aecdf374e6ae/app/) points to the Road Department's app; this does not by itself establish a reusable public feed. Longer-lived roadworks, precise affected sections, and unsupported text notices still require integration.
 
+### Public highway camera playback
+
+The [Yerevan live camera operator](https://www.youtube.com/@yerevanlivestream2065) has an active [Northern Bus Station / Sevan highway stream](https://www.youtube.com/watch?v=qL4T3FRQbps), started 1 October 2026. On 3 October, browser playback showed moving vehicles and a current camera timestamp. It is mapped under **Public webcams** and plays inside the popup only after a click, using YouTube’s privacy-enhanced iframe. Closing the popup removes the player. Video goes directly from YouTube to the listener; GlobeView does not poll or relay it. This is a public operator’s highway view, not an official nationwide traffic-camera network.
+
+The point is the centre of the named [OSM Northern Bus Station site](https://www.openstreetmap.org/way/1374291625), not a verified camera mount; the popup labels it approximate. The station’s mapped address is 2/14 Yerevan–Dilijan highway. The older video ID `7KN_yPVKoiY` shows “This live stream recording is not available” and is excluded. Stream IDs can change, so this catalog entry records its check date and operator channel for maintenance. The separate Orbeli Street camera is not included until its site and playback are verified.
+
+The [municipal GIS app](https://gis.yerevan.am/portal/apps/experiencebuilder/experience/?id=a9861444fa1940f2b08522c7e5808304) exposes public configuration, but its current-works, utility-permit, and electricity FeatureServers returned `499 Token Required` without credentials. These are not integrated as open feeds. Public listings and camera-directory claims alone do not prove usable streams, readable signs, or live road sensors.
+
 ### Yerevan road-camera inventory
 
 The [Interior Ministry's certificate page](https://mia.gov.am/certificate/) links a 158-site Yerevan surveillance-camera inventory. Its DOCX modification timestamp is 25 May 2026; that is the file date, not a verified installation or last-operating date for each device. GlobeView maps 98 named junction references under **Plate readers & enforcement**, explicitly as road-surveillance inventory. These points do not claim plate-reader capability, exact camera-mount positions, or public video. Each popup links the ministry and identifies the location as an approximate junction reference.

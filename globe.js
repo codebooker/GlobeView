@@ -1254,6 +1254,13 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
   function webcamMedia(camera) {
     try {
       const url = new URL(camera.url);
+      if (url.origin === 'https://www.youtube.com' && url.pathname === '/watch'
+          && !url.username && !url.password && !url.hash) {
+        const ids = url.searchParams.getAll('v');
+        if (ids.length === 1 && /^[A-Za-z0-9_-]{11}$/.test(ids[0])) {
+          return { embedUrl: `https://www.youtube-nocookie.com/embed/${ids[0]}?autoplay=1&mute=1&playsinline=1&rel=0` };
+        }
+      }
       if (camera.source === 'SkylineWebcams' && url.hostname === 'www.skylinewebcams.com') {
         const id = camera.id.match(/-(\d+)$/)?.[1];
         if (id) return { snapshotUrl: `https://embed.skylinewebcams.com/img/${id}.jpg`, refreshMs: 300000,
@@ -2263,7 +2270,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         const lat = Number(camera.lat), lon = Number(camera.lon);
         if (!validCoordinate(lat, lon)) continue;
         const ref = String(camera.id);
-        records.set(ref, { id: ref, title: camera.name, detail: [camera.city, camera.country].filter(Boolean).join(', '),
+        records.set(ref, { id: ref, title: camera.name, detail: [camera.city, camera.country, camera.location_note].filter(Boolean).join(', '),
           source: camera.source || 'Public webcam', url: camera.url, streamUrl: camera.stream_url });
         features.push(feature('webcams', ref, lon, lat));
       }
