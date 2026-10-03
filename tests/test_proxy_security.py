@@ -53,6 +53,26 @@ class ProxySecurityTests(unittest.TestCase):
             with self.subTest(host=host):
                 self.assertIn('https://' + host, image_policy.split())
 
+    def test_elcat_preview_handler_uses_shared_cache_and_a_fixed_camera_allowlist(self):
+        handler = object.__new__(proxy.Handler)
+        handler._write_bytes = mock.Mock()
+        handler.send_error = mock.Mock()
+        with mock.patch.object(proxy.MEDIA_RESPONSE_CACHE, 'get_or_load',
+                               return_value=(b'jpeg', 'image/jpeg', 'HIT')) as cache:
+            handler._handle_elcat_camera(urllib.parse.urlsplit('/elcat-camera/Kemin?v=123'))
+            self.assertEqual(handler._write_bytes.call_args.args, (200, b'jpeg', 'image/jpeg'))
+            self.assertEqual(cache.call_args.args[0], 'elcat-camera:v1:Kemin')
+            self.assertEqual(cache.call_args.kwargs['ttl'], 60)
+            self.assertEqual(cache.call_args.kwargs['stale_ttl'], 0)
+            handler._handle_elcat_camera(urllib.parse.urlsplit('/elcat-camera/../private'))
+            handler.send_error.assert_called_with(404, 'Unknown camera')
+            self.assertEqual(cache.call_count, 1)
+        self.assertEqual(proxy.rate_limit_bucket('/elcat-camera/Kemin'),
+                         proxy.rate_limit_bucket('/elcat-camera/Balykchi'))
+        policy = proxy.SECURITY_HEADERS['Content-Security-Policy']
+        self.assertIn('https://webcam.elcat.kg', policy.split('connect-src ', 1)[1].split(';', 1)[0].split())
+        self.assertNotIn('https://*.elcat.kg', policy)
+
     def test_stream_subpaths_share_a_rate_limit_bucket(self):
         self.assertEqual(
             proxy.rate_limit_bucket('/stream/camera-a/segment-1.ts'),

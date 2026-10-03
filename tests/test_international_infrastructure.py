@@ -3427,6 +3427,88 @@ class InfrastructureTests(unittest.TestCase):
         item['properties'].clear()
         self.assertFalse(feeds._road_feature_in_bbox(item, [70, 42, 70.1, 42.1]))
 
+    def test_elcat_live_playlists_require_recent_program_times(self):
+        stamp = dt.datetime.fromtimestamp(NOW - 20, dt.timezone.utc).isoformat()
+        playlist = f'#EXTM3U\n#EXT-X-PROGRAM-DATE-TIME:{stamp}\n#EXTINF:6,\n1.ts\n#EXTINF:6,\n2.ts\n'
+        self.assertEqual(feeds._elcat_playlist_stamp(playlist, NOW), NOW - 20)
+        for bad in ('<html>error</html>', playlist + '#EXT-X-ENDLIST',
+                    playlist.replace(stamp, 'invalid'),
+                    playlist.replace(stamp, dt.datetime.fromtimestamp(NOW - 181, dt.timezone.utc).isoformat()),
+                    playlist.replace(stamp, dt.datetime.fromtimestamp(NOW + 121, dt.timezone.utc).isoformat()),
+                    playlist.replace('#EXTINF:6,\n2.ts\n', '')):
+            self.assertIsNone(feeds._elcat_playlist_stamp(bad, NOW))
+
+    def test_elcat_camera_locations_and_urls_are_curated_and_expire(self):
+        stamp = dt.datetime.fromtimestamp(NOW - 20, dt.timezone.utc).isoformat()
+        playlist = f'#EXTM3U\n#EXT-X-PROGRAM-DATE-TIME:{stamp}\n#EXTINF:6,\n1.ts\n#EXTINF:6,\n2.ts\n'
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.url = feeds._elcat_url('Kemin', 'tracks-v1/mono.m3u8')
+        response.status = 200
+        response.read.return_value = playlist.encode()
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=response), patch.object(feeds.time, 'time', return_value=NOW):
+            point = feeds._elcat_camera('Kemin')
+            self.assertEqual(point['geometry']['coordinates'], [75.77979012399476, 42.76784564948717])
+            self.assertEqual(point['properties']['valid_until'], NOW + 580)
+            self.assertEqual(point['properties']['snapshot_url'], '/elcat-camera/Kemin')
+            self.assertEqual(point['properties']['source'], '© ElCat')
+            response.url = 'https://private.invalid/other'
+            self.assertIsNone(feeds._elcat_camera('Kemin'))
+        for camera in ('../private', 'Kyrchyn-1', 'AlaArchaPark', 'not-known'):
+            with self.assertRaises(ValueError):
+                feeds._elcat_url(camera, 'preview.mp4')
+        with self.assertRaises(ValueError):
+            feeds._elcat_url('Kemin', 'account')
+
+    def test_elcat_preview_rejects_stale_redirected_and_invalid_media(self):
+        body = b'\x00\x00\x00\x20ftypisom' + bytes(116)
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.url = feeds._elcat_url('Kemin', 'preview.mp4')
+        response.status = 200
+        response.headers = {'Last-Modified': email.utils.formatdate(NOW - 20, usegmt=True),
+                            'Content-Length': str(len(body)), 'Content-Type': 'video/mp4'}
+        response.read.return_value = body
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=response), \
+                patch.object(feeds.time, 'time', return_value=NOW), \
+                patch.object(feeds, '_elcat_snapshot_frame', return_value=b'jpeg') as frame:
+            self.assertEqual(feeds.elcat_camera_snapshot('Kemin'), (b'jpeg', 'image/jpeg'))
+            frame.assert_called_once_with(body)
+            response.headers['Last-Modified'] = email.utils.formatdate(NOW - 181, usegmt=True)
+            with self.assertRaises(FileNotFoundError):
+                feeds.elcat_camera_snapshot('Kemin')
+            response.headers['Last-Modified'] = email.utils.formatdate(NOW, usegmt=True)
+            response.headers['Content-Length'] = str(5 * 1024 * 1024)
+            with self.assertRaises(FileNotFoundError):
+                feeds.elcat_camera_snapshot('Kemin')
+            response.headers['Content-Length'] = str(len(body))
+            response.headers['Content-Type'] = 'text/html'
+            with self.assertRaises(ValueError):
+                feeds.elcat_camera_snapshot('Kemin')
+            response.headers['Content-Type'] = 'video/mp4'
+            response.read.return_value = bytes(len(body))
+            with self.assertRaises(ValueError):
+                feeds.elcat_camera_snapshot('Kemin')
+            response.url = 'https://other.invalid/file.mp4'
+            with self.assertRaises(ValueError):
+                feeds.elcat_camera_snapshot('Kemin')
+
+    def test_elcat_preview_decoding_limits_cpu_and_disallows_network_protocols(self):
+        jpeg = b'\xff\xd8' + bytes(100)
+        with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
+                patch.object(feeds.subprocess, 'run', return_value=MagicMock(stdout=jpeg)) as run:
+            self.assertEqual(feeds._elcat_snapshot_frame(b'input'), jpeg)
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index('-protocol_whitelist') + 1], 'pipe')
+        self.assertEqual(command[command.index('-frames:v') + 1], '1')
+        self.assertEqual(run.call_args.kwargs['timeout'], 12)
+        with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
+                patch.object(feeds.subprocess, 'run', side_effect=subprocess.TimeoutExpired('ffmpeg', 12)):
+            with self.assertRaises(OSError):
+                feeds._elcat_snapshot_frame(b'input')
+        self.assertTrue(feeds._ELCAT_SNAPSHOT_SLOTS.acquire(blocking=False))
+        feeds._ELCAT_SNAPSHOT_SLOTS.release()
+
     def test_kaztoll_hevc_conversion_is_bounded_and_releases_its_slot_on_failure(self):
         clip = b'\x00\x00\x00\x20ftyp' + b'avc1' + b'\x00' * 116
         with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
