@@ -3493,6 +3493,24 @@ class InfrastructureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 feeds.elcat_camera_snapshot('Kemin')
 
+    def test_public_camera_decodes_real_mpeg_ts_frame(self):
+        import imageio_ffmpeg
+        segment = subprocess.run([
+            imageio_ffmpeg.get_ffmpeg_exe(), '-hide_banner', '-loglevel', 'error',
+            '-nostdin', '-f', 'lavfi', '-i', 'color=c=red:s=320x180:r=1',
+            '-frames:v', '1', '-c:v', 'libx264', '-threads', '1',
+            '-f', 'mpegts', 'pipe:1',
+        ], capture_output=True, check=True, timeout=12).stdout
+        self.assertEqual(segment[0], 0x47)
+        jpeg = feeds._public_camera_snapshot_frame(segment)
+        with Image.open(io.BytesIO(jpeg)) as image:
+            self.assertEqual(image.format, 'JPEG')
+            self.assertEqual(image.size, (640, 360))
+            red, green, blue = image.convert('RGB').getpixel((320, 180))
+            self.assertGreater(red, 200)
+            self.assertLess(green, 40)
+            self.assertLess(blue, 40)
+
     def test_elcat_preview_decoding_limits_cpu_and_disallows_network_protocols(self):
         jpeg = b'\xff\xd8' + bytes(100)
         with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
