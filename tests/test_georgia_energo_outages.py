@@ -63,6 +63,8 @@ class EnergoProOutageTests(unittest.TestCase):
         self.assertTrue(out[0]['properties']['status'].startswith('Reported unplanned outage'))
         self.assertEqual(out[0]['properties']['ends_at'], '2026-10-03T15:36:10+00:00')
         self.assertEqual(out[0]['properties']['valid_until'], now.timestamp() + 900)
+        for fraction, microseconds in [('1', 100000), ('12', 120000), ('1234567', 123456)]:
+            self.assertEqual(power._clock('2026-10-03 19:36:10.' + fraction).microsecond, microseconds)
         self.assertEqual(power.parse_notices([row], power._clock(row['reconnectionDate'])), [])
         self.assertEqual(power.parse_notices([row], NOW), [])  # Future unplanned record.
         self.assertEqual(power.parse_notices([notice(disconnectionDate='2026-10-03 23:00',

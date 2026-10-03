@@ -28,6 +28,11 @@ _CITY_IDS = {'615532', '613607', '612287', '612366', '611717'}
 def _clock(value):
     if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2}(?:\.\d{1,7})?)?', value):
         raise ValueError('Unexpected Energo-Pro clock')
+    # Python 3.9 accepts only 3/6 fractional digits. Normalize the source's
+    # variable precision to datetime's microseconds on every supported runtime.
+    if '.' in value:
+        clock, fraction = value.split('.')
+        value = clock + '.' + fraction.ljust(6, '0')[:6]
     return dt.datetime.fromisoformat(value).replace(tzinfo=_ZONE)
 
 
