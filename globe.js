@@ -2407,6 +2407,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       if ([{ minLon: -11, maxLon: 8, minLat: 49, maxLat: 60 },
         { minLon: 74, maxLon: 81, minLat: 42, maxLat: 47 },
         { minLon: 43, maxLon: 47, minLat: 38, maxLat: 42 },
+        { minLon: 40, maxLon: 46.8, minLat: 41, maxLat: 43.8 },
         { minLon: 44, maxLon: 51, minLat: 38, maxLat: 42 }]
         .some(area => regionVisible({ bounds: area }, bounds))) urls.push('/international-power');
       const results = await Promise.allSettled(urls.map(async url => {
@@ -2431,7 +2432,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         records.set(ref, {
           title: p.provider || 'Power outage',
           detail: [p.area_name, p.planned && !impact ? '' : impactLabel, p.outages ? `${p.outages} outages` : '', p.status, p.reason, p.etr ? `ETR ${p.etr}` : '', p.source_updated ? `Source updated ${p.source_updated}` : ''].filter(Boolean).join(' · '),
-          affectedAddress: p.planned ? p.source_address : '',
+          affectedAddress: p.source_address || '',
           source: p.source_label || 'Utility outage feed', sourceUrl: p.source_url
         });
         let position = null;
