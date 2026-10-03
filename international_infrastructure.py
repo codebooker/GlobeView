@@ -29,6 +29,7 @@ from PIL import Image, UnidentifiedImageError
 import shapefile
 
 from kyrgyzstan_outages import bishkek_planned_outages, issyk_kul_planned_outages
+from kyrgyzstan_roads import bishkek_roadworks
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
@@ -8756,6 +8757,7 @@ _FETCHERS = {
         'no_travel_times': _norway_travel_times,
         'kz_kaztoll_cameras': _kaztoll_cameras,
         'kg_elcat_cameras': _elcat_cameras,
+        'kg_bishkek_roadworks': bishkek_roadworks,
         'kz_qaj_restrictions': _qaj_restrictions,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
