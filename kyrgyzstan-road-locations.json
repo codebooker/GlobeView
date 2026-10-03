@@ -1,0 +1,100 @@
+{
+  "source": "OpenStreetMap",
+  "license": "ODbL 1.0",
+  "audited": "2026-10-03",
+  "note": "Audited reference points, not surveyed closure footprints. Road segments follow the named source endpoints on OSM ways; the park location uses the nearest Abdrakhmanov street vertex to the named landmark.",
+  "locations": [
+    {
+      "id": "zhukeev-mederova-karasaeva",
+      "road": "Zhukeev-Pudovkin street",
+      "section": "Mederova → Karasaeva",
+      "pattern": "жукеева?[- ]пудовкина?",
+      "required": [
+        "от улицы медерова до улицы карасаева"
+      ],
+      "coordinates": [
+        74.616378,
+        42.8532767
+      ],
+      "osm": "way/170083666",
+      "road_segments": [
+        [
+          [
+            74.61628,
+            42.8519307
+          ],
+          [
+            74.6162918,
+            42.8521142
+          ],
+          [
+            74.6163284,
+            42.8526849
+          ],
+          [
+            74.616378,
+            42.8532767
+          ],
+          [
+            74.6164747,
+            42.8545487
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "zhukeev-karasaeva-ankara",
+      "road": "Zhukeev-Pudovkin street",
+      "section": "Karasaeva → Ankara",
+      "pattern": "жукеева?[- ]пудовкина?",
+      "required": [
+        "от улицы карасаева до улицы анкара"
+      ],
+      "coordinates": [
+        74.616588,
+        42.8560133
+      ],
+      "osm": "way/192981425",
+      "road_segments": [
+        [
+          [
+            74.6164747,
+            42.8545487
+          ],
+          [
+            74.616588,
+            42.8560133
+          ],
+          [
+            74.6166087,
+            42.8565681
+          ],
+          [
+            74.616609,
+            42.8565756
+          ],
+          [
+            74.6166136,
+            42.8566827
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "abdrakhmanov-friendship-park",
+      "road": "Jusup Abdrakhmanov street",
+      "section": "Kyrgyzstan–Azerbaijan Friendship Park reference",
+      "pattern": "жусупа абдрахманова",
+      "required": [
+        "парка дружбы кыргызстана и азербайджана"
+      ],
+      "coordinates": [
+        74.6065492,
+        42.8232226
+      ],
+      "osm": "way/22775035",
+      "landmark_osm": "way/782184985",
+      "road_segments": []
+    }
+  ]
+}
