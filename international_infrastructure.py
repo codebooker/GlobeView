@@ -132,6 +132,31 @@ AZHK_OUTAGES_SOURCE = 'https://www.azhk.kz/ru/spetsialnye-razdely/avarijnye-otkl
 KAZTOLL_CAMERAS_SOURCE = 'https://kaztoll.kz/'
 QAJ_RESTRICTIONS_URL = 'https://geoportal.kaztoll.kz/adm-layers/features/attrtable'
 QAJ_RESTRICTIONS_SOURCE = 'https://ru.qaj.kz/s/'
+ELCAT_CAMERAS_SOURCE = 'https://kg.camera/ru/'
+# Operator-published road/city views and coordinates, audited 3 October 2026.
+# Park, resort and ski views are excluded from the road-camera layer.
+ELCAT_CAMERAS = {
+    'Too-Ashu_Tunnel_North': (73.815231, 42.356377, 'Тоо-Ашуу тоннель, Северный въезд'),
+    'sulukta': (70.81949463558253, 40.06139369913987, 'г. Баткен'),
+    'Too-Ashu_Tunnel_South_25_11_2019': (73.816799, 42.333043, 'Тоо-Ашуу тоннель, Южный въезд'),
+    'Bishkek_Ala-Too_Square': (74.60415201293377, 42.87423182287145, 'г.Бишкек, Площадь Ала-Тоо'),
+    'Suusamyr': (73.696887, 42.21877, 'Суусамыр, АЗС ГазПром'),
+    'Razzakov-Center': (69.53278529459216, 39.83647649154401, 'г.Раззаков, Центр'),
+    'Kemin': (75.77979012399476, 42.76784564948717, 'Бишкек - Балыкчи, 101км, кольцо'),
+    'Osh-Sulaiman-Too': (72.7904057578351, 40.52780275009203, 'г. Ош, гора Сулайман-Тоо'),
+    'Panorama': (74.56289400548606, 42.87868487498132, 'г. Бишкек, перекрёсток Чуй Фучика'),
+    'Kyzyl-Kiya': (72.133443, 40.271733, 'г. Кызыл-Кия'),
+    'Cholpon-Ata_Center_07_03_2022': (77.0892, 42.65049, 'г. Чолпон-Ата, Центр'),
+    'Karakol_Vezd_25_11_2019': (78.38667, 42.499564, 'Въезд в г. Каракол'),
+    'Jalalbad_Meria': (73.00113353558235, 40.92749203955725, 'г. Манас, Мэрия'),
+    'Kadamjay': (71.722846, 40.129884, 'г. Кадамжай'),
+    'Kok-Art': (73.764563, 41.168792, 'Кок-Арт туннель южный въезд'),
+    'Balykchi': (76.160666, 42.45367, 'Въезд в г. Балыкчи'),
+    'Jalalbad_Administration': (72.98088889708781, 40.929261599945285, 'г. Манас, Новое здание администрации в городе Манас'),
+    'Naryn': (75.99690148465871, 41.4284660309621, 'г. Нарын Центральная Площадь'),
+    'Talas-Center': (72.24887817116468, 42.521249480331875, 'г. Tалас центр'),
+}
+_ELCAT_SNAPSHOT_SLOTS = threading.BoundedSemaphore(2)
 # Published camera names matched to named OSM toll plazas, not town centers.
 # Other KazToll clips lack verified coordinates and remain catalog candidates.
 KAZTOLL_CAMERAS = {
@@ -8307,6 +8332,98 @@ def hong_kong_camera_snapshot(camera_id):
     return image, 'image/jpeg'
 
 
+def _elcat_url(camera_id, asset):
+    if camera_id not in ELCAT_CAMERAS or asset not in {'tracks-v1/mono.m3u8', 'preview.mp4'}:
+        raise ValueError('Unknown ElCat camera or asset')
+    return f'https://webcam.elcat.kg/{camera_id}/{asset}'
+
+
+def _elcat_playlist_stamp(content, now):
+    if not content.startswith('#EXTM3U') or '#EXT-X-ENDLIST' in content or content.count('#EXTINF:') < 2:
+        return None
+    stamps = [_timestamp(line.partition(':')[2]) for line in content.splitlines()
+              if line.startswith('#EXT-X-PROGRAM-DATE-TIME:')]
+    stamps = [stamp for stamp in stamps if stamp is not None]
+    stamp = max(stamps) if stamps else None
+    return stamp if stamp is not None and -120 <= now - stamp <= 180 else None
+
+
+def _elcat_camera(camera_id):
+    url = _elcat_url(camera_id, 'tracks-v1/mono.m3u8')
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public camera reader)'})
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            if response.url != url or response.status != 200:
+                return None
+            body = response.read(256 * 1024 + 1)
+        if len(body) > 256 * 1024:
+            return None
+        stamp = _elcat_playlist_stamp(body.decode('utf-8'), time.time())
+        if stamp is None:
+            return None
+    except (OSError, ValueError):
+        return None
+    lon, lat, title = ELCAT_CAMERAS[camera_id]
+    return _feature([lon, lat], {
+        'key': f'kg:elcat:camera:{camera_id}', 'layer': 'cameras', 'title': title,
+        'detail': 'Live road / city camera · about 20 seconds delayed · operator-published location',
+        'updated_at': dt.datetime.fromtimestamp(stamp, dt.timezone.utc).isoformat(),
+        'valid_until': stamp + 600,
+        'snapshot_url': f'/elcat-camera/{camera_id}', 'snapshot_refresh_ms': 60000,
+        'video_url': url, 'video_format': 'hls',
+        'source': '© ElCat', 'source_url': f'{ELCAT_CAMERAS_SOURCE}camera/{camera_id}',
+    })
+
+
+def _elcat_cameras():
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        return [point for point in executor.map(_elcat_camera, ELCAT_CAMERAS) if point is not None]
+
+
+def _elcat_snapshot_frame(body):
+    """Decode one frame from the operator's short preview, with bounded CPU."""
+    import imageio_ffmpeg
+    if not _ELCAT_SNAPSHOT_SLOTS.acquire(timeout=2):
+        raise OSError('Camera preview conversion is busy')
+    try:
+        result = subprocess.run([
+            imageio_ffmpeg.get_ffmpeg_exe(), '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-protocol_whitelist', 'pipe', '-threads', '1', '-i', 'pipe:0',
+            '-map', '0:v:0', '-an', '-sn', '-dn', '-frames:v', '1',
+            '-vf', 'scale=640:-2', '-c:v', 'mjpeg', '-threads', '1',
+            '-fs', str(2 * 1024 * 1024), '-f', 'image2pipe', 'pipe:1',
+        ], input=body, capture_output=True, check=True, timeout=12)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise OSError('Camera preview conversion failed') from exc
+    finally:
+        _ELCAT_SNAPSHOT_SLOTS.release()
+    image = result.stdout
+    if not 64 <= len(image) <= 2 * 1024 * 1024 or not image.startswith(b'\xff\xd8'):
+        raise ValueError('ElCat preview conversion returned an invalid image')
+    return image
+
+
+def elcat_camera_snapshot(camera_id):
+    url = _elcat_url(camera_id, 'preview.mp4')
+    request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0 (public camera reader)'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if response.url != url or response.status != 200:
+            raise ValueError('ElCat preview redirected or was incomplete')
+        if response.headers.get('Content-Type', '').split(';')[0].lower() != 'video/mp4':
+            raise ValueError('ElCat preview did not return a video')
+        try:
+            stamp = email.utils.parsedate_to_datetime(response.headers['Last-Modified']).timestamp()
+            size = int(response.headers['Content-Length'])
+        except (TypeError, ValueError, KeyError, OverflowError) as exc:
+            raise ValueError('ElCat preview metadata is invalid') from exc
+        if not 64 <= size <= 4 * 1024 * 1024 or not -120 <= time.time() - stamp <= 180:
+            raise FileNotFoundError('ElCat preview is stale or oversized')
+        body = response.read(4 * 1024 * 1024 + 1)
+    if len(body) != size or body[4:8] != b'ftyp':
+        raise ValueError('ElCat preview is invalid')
+    return _elcat_snapshot_frame(body), 'image/jpeg'
+
+
 def _qaj_road_segments(wkt):
     """Read the official map's EPSG:3857 multilines, with bounded geometry."""
     if not isinstance(wkt, str) or len(wkt) > 300000:
@@ -8636,6 +8753,7 @@ _FETCHERS = {
         'no_road_weather': _norway_weather,
         'no_travel_times': _norway_travel_times,
         'kz_kaztoll_cameras': _kaztoll_cameras,
+        'kg_elcat_cameras': _elcat_cameras,
         'kz_qaj_restrictions': _qaj_restrictions,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
