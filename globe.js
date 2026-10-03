@@ -525,6 +525,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         : type === 'nws_alerts' ? ['gm-nws-alerts-area-fill', 'gm-nws-alerts-area-line', 'gm-nws_alerts-points']
         : type === 'world_alerts' ? ['gm-world-alerts-area-fill', 'gm-world-alerts-area-line', 'gm-world_alerts-points']
         : type === 'scans' ? ['gm-scans-density', 'gm-scans-top-points', 'gm-scans-points']
+        : type === 'construction' || type === 'incidents' ? [`gm-${type}-segment-casing`, `gm-${type}-segments`, `gm-${type}-points`]
         : [`gm-${type}-points`];
       for (const id of layerIds) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
       if (type === 'cyclones') for (const id of ['gm-cyclone-ensemble-lines', 'gm-cyclone-model-casing', 'gm-cyclone-model-lines', 'gm-cyclone-consensus-casing', 'gm-cyclone-consensus-line', 'gm-cyclone-official-casing', 'gm-cyclone-official-line']) {
@@ -615,6 +616,18 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
   function setPoints(type, features, records) {
     refs.set(type, records);
     map.getSource(`gm-${type}`)?.setData({ type: 'FeatureCollection', features });
+    if (type === 'construction' || type === 'incidents') {
+      const segments = [];
+      for (const [ref, record] of records) {
+        for (const coordinates of record.roadSegments || []) {
+          if (!Array.isArray(coordinates) || coordinates.length < 2 || coordinates.length > 5000 ||
+              !coordinates.every(point => Array.isArray(point) && validCoordinate(point[1], point[0]))) continue;
+          segments.push({ type: 'Feature', geometry: { type: 'LineString', coordinates },
+            properties: { ref, color: record.segmentColor || POINT[type].color } });
+        }
+      }
+      map.getSource(`gm-${type}-segments`)?.setData({ type: 'FeatureCollection', features: segments });
+    }
     setCount(type, features.length);
     fetchedAt.set(type, Date.now());
     updateToggle(type);
@@ -804,6 +817,27 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       : type === 'ports' ? 'Ports: <a href="https://msi.nga.mil/Publications/WPI">NGA World Port Index, 2024 snapshot</a>'
       : type === 'scans' ? 'Scan reports: <a href="https://isc.sans.edu/">SANS Internet Storm Center</a> / <a href="https://stat.ripe.net/">RIPEstat</a>' : '';
     map.addSource(sourceId, { type: 'geojson', data: EMPTY, attribution });
+    if (type === 'construction' || type === 'incidents') {
+      map.addSource(`${sourceId}-segments`, { type: 'geojson', data: EMPTY,
+        attribution: 'Road restrictions: <a href="https://ru.qaj.kz/s/">QazAvtoJol situation map</a>' });
+      map.addLayer({ id: `${sourceId}-segment-casing`, type: 'line', source: `${sourceId}-segments`,
+        minzoom: cfg.minZoom, layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#12212a', 'line-width': 7, 'line-opacity': 0.85 } });
+      map.addLayer({ id: `${sourceId}-segments`, type: 'line', source: `${sourceId}-segments`,
+        minzoom: cfg.minZoom, layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': 0.95 } });
+      map.on('mouseenter', `${sourceId}-segments`, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', `${sourceId}-segments`, () => { map.getCanvas().style.cursor = ''; });
+      map.on('click', `${sourceId}-segments`, event => {
+        if (window.globalMapTripPicking || window.globalMapDrawing ||
+            (event.originalEvent && aircraftSelectionEvents.has(event.originalEvent))) return;
+        const overlaps = [`${sourceId}-points`, 'gm-govair-points', 'gm-civair-points', 'gm-radio-points']
+          .filter(id => map.getLayer(id));
+        if (map.queryRenderedFeatures(event.point, { layers: overlaps }).length) return;
+        const item = event.features?.[0];
+        if (item) openPopup(type, item.properties.ref, [event.lngLat.lng, event.lngLat.lat]);
+      });
+    }
     iconImage(`${sourceId}-icon`, cfg.color, cfg.glyph);
     if (type === 'civair' || type === 'govair') iconImage(`${sourceId}-sat-icon`, type === 'civair' ? '#f3f5f4' : '#ffe2a0', cfg.glyph);
     if (type === 'civair') for (const [service, aircraftColor] of Object.entries(AIRCRAFT_COLORS)) {
@@ -1547,8 +1581,8 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     if (controller.signal.aborted || requests.get(type) !== controller || !enabled[type]) return;
     for (const item of international?.features || []) {
       const [lon, lat] = item.geometry?.coordinates || [];
-      if (!validCoordinate(lat, lon) || !inBounds(lat, lon, bounds)) continue;
       const p = item.properties || {};
+      if (!validCoordinate(lat, lon) || (!inBounds(lat, lon, bounds) && !p.road_segments?.length)) continue;
       const ref = String(p.key || `abroad:${type}:${lat}:${lon}`);
       if (seen.has(ref)) continue;
       seen.add(ref);
@@ -1569,9 +1603,11 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         snapshotRefreshMs: type === 'cameras' ? Number(p.snapshot_refresh_ms) || 0 : 0,
         videoUrl: type === 'cameras' ? p.video_url || '' : '',
         videoFormat: type === 'cameras' ? p.video_format || '' : '',
-        videoRefreshMs: type === 'cameras' ? Number(p.video_refresh_ms) || 0 : 0
+        videoRefreshMs: type === 'cameras' ? Number(p.video_refresh_ms) || 0 : 0,
+        roadSegments: Array.isArray(p.road_segments) ? p.road_segments : [],
+        segmentColor: p.segment_color || ''
       });
-      features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && (p.alert === true || /warning/i.test(p.title || '')) }));
+      if (inBounds(lat, lon, bounds)) features.push(feature(type, ref, lon, lat, { alert: type === 'signs' && (p.alert === true || /warning/i.test(p.title || '')) }));
     }
     if (international?.sourceErrors?.length) console.warn('Some international road feeds are unavailable:', international.sourceErrors);
     if ((failures || (internationalVisible && !international)) && !features.length) {

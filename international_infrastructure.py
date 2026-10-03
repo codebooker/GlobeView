@@ -130,6 +130,8 @@ LIANDER_OUTAGES_SOURCE = 'https://data.overheid.nl/dataset/storingsdata-liander-
 AZHK_OUTAGES_URL = 'https://www.azhk.kz/Map/get_tp_to_map.txt'
 AZHK_OUTAGES_SOURCE = 'https://www.azhk.kz/ru/spetsialnye-razdely/avarijnye-otklyucheniya'
 KAZTOLL_CAMERAS_SOURCE = 'https://kaztoll.kz/'
+QAJ_RESTRICTIONS_URL = 'https://geoportal.kaztoll.kz/adm-layers/features/attrtable'
+QAJ_RESTRICTIONS_SOURCE = 'https://ru.qaj.kz/s/'
 # Published camera names matched to named OSM toll plazas, not town centers.
 # Other KazToll clips lack verified coordinates and remain catalog candidates.
 KAZTOLL_CAMERAS = {
@@ -8305,6 +8307,135 @@ def hong_kong_camera_snapshot(camera_id):
     return image, 'image/jpeg'
 
 
+def _qaj_road_segments(wkt):
+    """Read the official map's EPSG:3857 multilines, with bounded geometry."""
+    if not isinstance(wkt, str) or len(wkt) > 300000:
+        return []
+    match = re.fullmatch(r'MULTILINESTRING\s*\(\s*(.*?)\s*\)', wkt.strip(), re.S)
+    if not match:
+        return []
+    groups = re.findall(r'\(([^()]+)\)', match[1])
+    if not groups or len(groups) > 40 or re.sub(r'\([^()]+\)', '', match[1]).strip(' ,\r\n\t'):
+        return []
+    segments, total = [], 0
+    for group in groups:
+        coordinates = []
+        pairs = group.split(',')
+        total += len(pairs)
+        if total > 5000:
+            return []
+        for pair in pairs:
+            try:
+                x, y = map(float, pair.split())
+            except (ValueError, TypeError):
+                return []
+            if not math.isfinite(x) or not math.isfinite(y) or abs(x) > 20037509 or abs(y) > 20037509:
+                return []
+            lon = math.degrees(x / 6378137)
+            lat = math.degrees(math.atan(math.sinh(y / 6378137)))
+            if not (46 <= lon <= 88 and 40 <= lat <= 56):
+                return []
+            point = [round(lon, 7), round(lat, 7)]
+            if not coordinates or coordinates[-1] != point:
+                coordinates.append(point)
+        if len(coordinates) < 2:
+            return []
+        segments.append(coordinates)
+    return segments
+
+
+def _qaj_notice_window(message):
+    # A dated "from HH:MM until HH:MM" notice is finite, even if the source
+    # forgot to reset its closed flag. Undated/daily windows are not inferred.
+    if re.search(r'ежедневно|каждый\s+день', message, re.I):
+        return None
+    match = re.match(r'\s*(\d{2}\.\d{2}\.\d{4})\s*г\.?\s*с\s*(\d{2})[.:](\d{2})\s*до\s*(\d{2})[.:](\d{2})', message)
+    if not match:
+        return None
+    try:
+        day = dt.datetime.strptime(match[1], '%d.%m.%Y').replace(tzinfo=ZoneInfo('Asia/Almaty'))
+        start = day.replace(hour=int(match[2]), minute=int(match[3]))
+        end = day.replace(hour=int(match[4]), minute=int(match[5]))
+        if end <= start:
+            end += dt.timedelta(days=1)
+    except ValueError:
+        return None
+    return start.timestamp(), end.timestamp()
+
+
+def _parse_qaj_restrictions(data, now=None):
+    now = time.time() if now is None else now
+    rows = data.get('features') if isinstance(data, dict) else None
+    if not isinstance(rows, list) or len(rows) > 1000:
+        raise ValueError('Unexpected QazAvtoJol restriction catalog')
+    categories = {1: ('All vehicles restricted', '#e07877'),
+                  2: ('Trucks / trailers restricted', '#e3a477'),
+                  3: ('Diesel / public transport restricted', '#e0bc76'),
+                  4: ('Passenger cars restricted', '#71c5e8')}
+    result, seen = [], set()
+    for item in rows:
+        props = item.get('attributes') if isinstance(item, dict) else None
+        if not isinstance(props, dict) or type(props.get('closed')) is not int or props['closed'] not in categories:
+            continue
+        identifier = str(item.get('gid', ''))
+        if not re.fullmatch(r'\d{1,12}', identifier) or identifier in seen:
+            continue
+        start = _timestamp(props.get('start_date'))
+        end = _timestamp(props.get('end_date')) if props.get('end_date') else None
+        if start is None or start > now + 300 or (props.get('end_date') and (end is None or end <= now)):
+            continue
+        message = _clean(props.get('message_ru') or props.get('message_kz') or props.get('message_en'), 1800)
+        if not message:
+            continue
+        window = _qaj_notice_window(message)
+        if window and not window[0] <= now < window[1]:
+            continue
+        segments = _qaj_road_segments(props.get('geom_wkt'))
+        if not segments:
+            continue
+        # Use an actual vertex along the affected road, not a town centroid.
+        longest = max(segments, key=len)
+        position = longest[len(longest) // 2]
+        points = [point for segment in segments for point in segment]
+        bounds = [min(point[0] for point in points), min(point[1] for point in points),
+                  max(point[0] for point in points), max(point[1] for point in points)]
+        category, color = categories[props['closed']]
+        reasons = props.get('reasons')
+        reason_text = reasons.get('value', '') if isinstance(reasons, dict) else ''
+        if not isinstance(reason_text, str) or len(reason_text) > 5000:
+            reason_text = ''
+        repair = bool(re.search(r'ремонт|дорожн\w*\s+работ|строитель|repair|construction|maintenance',
+                                message + ' ' + reason_text, re.I))
+        expires = min([now + 900] + ([end] if end else []) + ([window[1]] if window else []))
+        notice_date = dt.datetime.fromtimestamp(start, ZoneInfo('Asia/Almaty')).strftime('%d %b %Y')
+        result.append(_feature(position, {
+            'key': f'kz:qaj:restriction:{identifier}', 'layer': 'construction' if repair else 'incidents',
+            'title': f"{category} · {_clean(props.get('name_ru') or props.get('name_kz'), 170)}",
+            'detail': f'{message} · Source record: {notice_date}',
+            'restriction': props['closed'], 'road_segments': segments, 'road_segment_bounds': bounds,
+            'segment_color': color, 'valid_until': expires,
+            'source': 'QazAvtoJol situation map', 'source_url': QAJ_RESTRICTIONS_SOURCE,
+        }))
+        seen.add(identifier)
+    return result
+
+
+def _qaj_restrictions():
+    # This is the exact public layer and read-only request used by qaj.kz/s/.
+    body = {'attributes': [], 'criteria': '', 'criteriaParam': [], 'layerId': 447,
+            'layerName': 'worklyrs.closed_roads_weather', 'limit': 1000, 'offset': 0,
+            'orderByColumn': 'end_date'}
+    request = urllib.request.Request(QAJ_RESTRICTIONS_URL, data=json.dumps(body).encode(), headers={
+        'Content-Type': 'application/json', 'Accept': 'application/json',
+        'User-Agent': 'GlobeView/1.0 (public road restriction reader)',
+    })
+    with urllib.request.urlopen(request, timeout=20) as response:
+        content = response.read(6 * 1024 * 1024 + 1)
+    if len(content) > 6 * 1024 * 1024:
+        raise ValueError('QazAvtoJol restriction catalog exceeded size limit')
+    return _parse_qaj_restrictions(json.loads(content))
+
+
 def _kaztoll_camera_url(camera_id):
     if camera_id not in KAZTOLL_CAMERAS:
         raise ValueError('Unknown KazToll camera')
@@ -8505,6 +8636,7 @@ _FETCHERS = {
         'no_road_weather': _norway_weather,
         'no_travel_times': _norway_travel_times,
         'kz_kaztoll_cameras': _kaztoll_cameras,
+        'kz_qaj_restrictions': _qaj_restrictions,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages, 'nie': _nie_outages,
@@ -8564,6 +8696,17 @@ def _snapshot(kind):
                 'loading': cache['refreshing'] and cache['until'] == 0}
 
 
+def _road_feature_in_bbox(item, bbox):
+    west, south, east, north = bbox
+    segment_bounds = item['properties'].get('road_segment_bounds')
+    if (isinstance(segment_bounds, list) and len(segment_bounds) == 4
+            and all(isinstance(value, (int, float)) and math.isfinite(value) for value in segment_bounds)):
+        return (west <= segment_bounds[2] and east >= segment_bounds[0]
+                and south <= segment_bounds[3] and north >= segment_bounds[1])
+    lon, lat = item['geometry']['coordinates']
+    return west <= lon <= east and south <= lat <= north
+
+
 def road_snapshot(layer, bbox=None):
     if layer not in {'signs', 'incidents', 'construction', 'sensors', 'cameras'}:
         raise ValueError('Unknown road layer')
@@ -8595,8 +8738,7 @@ def road_snapshot(layer, bbox=None):
                 except (OSError, ValueError, KeyError, TypeError) as error:
                     errors.append(f'de_autobahn_{service}: {error}')
     if bbox is not None:
-        features = [item for item in features if west <= item['geometry']['coordinates'][0] <= east
-                    and south <= item['geometry']['coordinates'][1] <= north]
+        features = [item for item in features if _road_feature_in_bbox(item, bbox)]
     if layer == 'sensors':
         now = time.time()
         features = [item for item in features if not item['properties']['key'].startswith('hk:td:sensor:')

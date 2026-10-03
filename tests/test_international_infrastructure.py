@@ -3381,6 +3381,52 @@ class InfrastructureTests(unittest.TestCase):
                 patch.object(feeds.time, 'time', return_value=NOW + 601):
             self.assertEqual(feeds.road_snapshot('cameras')['features'], [])
 
+    def test_qaj_restrictions_keep_reported_long_running_work_and_reject_expired_notices(self):
+        stamp = dt.datetime.fromtimestamp(NOW - 60, dt.timezone.utc).isoformat()
+        old = dt.datetime.fromtimestamp(NOW - 120 * 86400, dt.timezone.utc).isoformat()
+        base = {'closed': 2, 'start_date': stamp, 'end_date': '',
+                'name_ru': 'Bridge road', 'message_ru': 'Repair restriction',
+                'geom_wkt': 'MULTILINESTRING((7890000 5270000,7900000 5280000))'}
+        rows = [dict(gid=number, attributes={**base, **overrides}) for number, overrides in (
+            (1, {}), (2, {'closed': 0}), (3, {'end_date': stamp}),
+            (4, {'start_date': old, 'message_ru': '10.06.2026 г. с 06.00 до 18:00 ч. ремонт'}),
+            (5, {'start_date': old}), (6, {'geom_wkt': 'bad WKT'}),
+            (7, {'start_date': dt.datetime.fromtimestamp(NOW + 86400, dt.timezone.utc).isoformat()}),
+            (8, {'closed': True}), (9, {'end_date': 'bad date'}), (1, {}))]
+        result = feeds._parse_qaj_restrictions({'features': rows}, NOW)
+        self.assertEqual([row['properties']['key'] for row in result],
+                         ['kz:qaj:restriction:1', 'kz:qaj:restriction:5'])
+        self.assertTrue(all(row['properties']['layer'] == 'construction' for row in result))
+        self.assertEqual(result[0]['properties']['valid_until'], NOW + 900)
+        props = {**base, 'message_ru': 'Snow restriction'}
+        result = feeds._parse_qaj_restrictions({'features': [{'gid': 10, 'attributes': props}]}, NOW)
+        self.assertEqual(result[0]['properties']['layer'], 'incidents')
+        props['reasons'] = {'value': '[{"nameRu":"ремонт"}]'}
+        result = feeds._parse_qaj_restrictions({'features': [{'gid': 10, 'attributes': props}]}, NOW)
+        self.assertEqual(result[0]['properties']['layer'], 'construction')
+
+    def test_qaj_geometry_and_notice_windows_validate_coordinates_and_almaty_time(self):
+        segments = feeds._qaj_road_segments('MULTILINESTRING((7890000 5270000,7900000 5280000),(7900000 5280000,7910000 5290000))')
+        self.assertEqual(len(segments), 2)
+        self.assertAlmostEqual(segments[0][0][0], 70.8770759, places=6)
+        for value in ('MULTILINESTRING((0 0,1 1))', 'MULTILINESTRING((nan 5270000,7900000 5280000))',
+                      'MULTILINESTRING((7890000 5270000))', 'MULTILINESTRING((7890000 5270000,7900000 5280000))junk',
+                      'MULTILINESTRING((' + ','.join(['7890000 5270000'] * 5001) + '))'):
+            self.assertEqual(feeds._qaj_road_segments(value), [])
+        start, end = feeds._qaj_notice_window('26.09.2026 г. с 23:00 до 02:00 ремонт')
+        self.assertEqual(end - start, 3 * 3600)
+        self.assertEqual(dt.datetime.fromtimestamp(start, dt.timezone.utc).hour, 18)
+        self.assertIsNone(feeds._qaj_notice_window('26.09.2026 г. с 06:00 до 18:00 ежедневно'))
+        self.assertIsNone(feeds._qaj_notice_window('26.09.2026 г. с 99:00 до 18:00'))
+        self.assertIsNone(feeds._qaj_notice_window('26.09.2026 г. открытие дороги 27.09.2026'))
+
+    def test_qaj_road_bounds_include_segments_when_the_marker_is_outside_the_view(self):
+        item = feeds._feature([71, 43], {'road_segment_bounds': [70, 42, 72, 44]})
+        self.assertTrue(feeds._road_feature_in_bbox(item, [70, 42, 70.1, 42.1]))
+        self.assertFalse(feeds._road_feature_in_bbox(item, [75, 42, 76, 43]))
+        item['properties'].clear()
+        self.assertFalse(feeds._road_feature_in_bbox(item, [70, 42, 70.1, 42.1]))
+
     def test_kaztoll_hevc_conversion_is_bounded_and_releases_its_slot_on_failure(self):
         clip = b'\x00\x00\x00\x20ftyp' + b'avc1' + b'\x00' * 116
         with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
