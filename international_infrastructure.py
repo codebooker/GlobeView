@@ -138,6 +138,7 @@ KAZTOLL_CAMERAS = {
     'ttvezd': {'name': 'Темиртау — Въезд', 'road': 'Астана – Темиртау',
                'lon': 72.8984722, 'lat': 50.1488416, 'osm_node': 6273637676},
 }
+_KAZTOLL_TRANSCODE_SLOT = threading.BoundedSemaphore(1)
 WALES_RSS_BASE = 'https://traffic.wales/feeds'
 NATIONAL_HIGHWAYS_ROADWORKS_DATASET = ('https://www.data.gov.uk/dataset/'
                                        '5b3267d8-4307-4eef-a9af-3a4c28224694/'
@@ -8372,7 +8373,34 @@ def kaztoll_camera_clip(camera_id):
         body = response.read(8 * 1024 * 1024 + 1)
     if len(body) != size or body[4:8] != b'ftyp':
         raise ValueError('KazToll camera returned an invalid clip')
+    if b'hvc1' in body or b'hev1' in body:
+        body = _kaztoll_browser_clip(body)
     return body, 'video/mp4'
+
+
+def _kaztoll_browser_clip(body):
+    """Convert HEVC clips once per shared cache fill, with bounded resources."""
+    import imageio_ffmpeg
+    if not _KAZTOLL_TRANSCODE_SLOT.acquire(timeout=1):
+        raise OSError('Camera conversion is busy')
+    try:
+        result = subprocess.run([
+            imageio_ffmpeg.get_ffmpeg_exe(), '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-protocol_whitelist', 'pipe', '-threads', '1', '-i', 'pipe:0',
+            '-map', '0:v:0', '-an', '-sn', '-dn', '-t', '12',
+            '-vf', 'fps=10,scale=640:-2', '-c:v', 'libx264', '-threads', '1',
+            '-preset', 'ultrafast', '-crf', '27', '-pix_fmt', 'yuv420p',
+            '-movflags', 'frag_keyframe+empty_moov', '-fs', str(4 * 1024 * 1024),
+            '-f', 'mp4', 'pipe:1',
+        ], input=body, capture_output=True, check=True, timeout=15)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise OSError('Camera conversion failed') from exc
+    finally:
+        _KAZTOLL_TRANSCODE_SLOT.release()
+    clip = result.stdout
+    if not 64 <= len(clip) <= 4 * 1024 * 1024 or clip[4:8] != b'ftyp' or b'avc1' not in clip:
+        raise ValueError('Camera conversion returned an invalid clip')
+    return clip
 
 
 _FETCHERS = {

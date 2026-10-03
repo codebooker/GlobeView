@@ -5,6 +5,7 @@ import datetime as dt
 import email.utils
 import gzip
 import io
+import subprocess
 import threading
 import time
 import urllib.error
@@ -3379,6 +3380,27 @@ class InfrastructureTests(unittest.TestCase):
                 'sources': {'kz_kaztoll_cameras': [point]}, 'errors': []}), \
                 patch.object(feeds.time, 'time', return_value=NOW + 601):
             self.assertEqual(feeds.road_snapshot('cameras')['features'], [])
+
+    def test_kaztoll_hevc_conversion_is_bounded_and_releases_its_slot_on_failure(self):
+        clip = b'\x00\x00\x00\x20ftyp' + b'avc1' + b'\x00' * 116
+        with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
+                patch.object(feeds.subprocess, 'run', return_value=MagicMock(stdout=clip)) as run:
+            self.assertEqual(feeds._kaztoll_browser_clip(b'input'), clip)
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index('-protocol_whitelist') + 1], 'pipe')
+        self.assertEqual(command[command.index('-t') + 1], '12')
+        self.assertEqual(command[command.index('-fs') + 1], str(4 * 1024 * 1024))
+        self.assertEqual(run.call_args.kwargs['timeout'], 15)
+        with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
+                patch.object(feeds.subprocess, 'run', side_effect=subprocess.TimeoutExpired('ffmpeg', 15)):
+            with self.assertRaises(OSError):
+                feeds._kaztoll_browser_clip(b'input')
+        self.assertTrue(feeds._KAZTOLL_TRANSCODE_SLOT.acquire(blocking=False))
+        feeds._KAZTOLL_TRANSCODE_SLOT.release()
+        with patch('imageio_ffmpeg.get_ffmpeg_exe', return_value='/verified/ffmpeg'), \
+                patch.object(feeds.subprocess, 'run', return_value=MagicMock(stdout=b'bad video')):
+            with self.assertRaises(ValueError):
+                feeds._kaztoll_browser_clip(b'input')
 
     def test_kaztoll_clip_rejects_wrong_types_sizes_redirects_and_file_headers(self):
         body = b'\x00\x00\x00\x20ftypisom' + bytes(116)

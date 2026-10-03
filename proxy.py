@@ -19990,7 +19990,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         try:
             content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
                 f'kaztoll-camera:v1:{camera_id}', lambda: kaztoll_camera_clip(camera_id),
-                ttl=30, stale_ttl=0, persist=False, wait_timeout=25)
+                ttl=30, stale_ttl=0, persist=False, wait_timeout=40)
             headers = {'Accept-Ranges': 'bytes', 'X-GlobeView-Cache': cache_status}
             try:
                 requested = parse_media_range(self.headers.get('Range'), len(content))
