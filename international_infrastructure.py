@@ -29,6 +29,7 @@ from PIL import Image, UnidentifiedImageError
 import shapefile
 
 from kyrgyzstan_outages import bishkek_planned_outages, issyk_kul_planned_outages
+from azerbaijan_outages import azerishiq_planned_outages
 from kyrgyzstan_roads import bishkek_roadworks
 from kyrgyztelecom_cameras import camera_features as kyrgyztelecom_cameras, camera_segment
 
@@ -8770,7 +8771,8 @@ _FETCHERS = {
               'nged': _nged_outages, 'nie': _nie_outages,
               'nl_liander': _liander_outages, 'kz_azhk': _azhk_outages,
               'kg_bipes_planned': bishkek_planned_outages,
-              'kg_ipes_planned': issyk_kul_planned_outages},
+              'kg_ipes_planned': issyk_kul_planned_outages,
+              'az_azerishiq_planned': azerishiq_planned_outages},
 }
 
 
