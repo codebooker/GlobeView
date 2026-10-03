@@ -34,6 +34,9 @@ _WORD_FORMS = {'խորենացու': 'խորենացի', 'հերացու': 'հե
                'էրեբունու': 'էրեբունի', 'րաֆֆու': 'րաֆֆի',
                'դավթի': 'դավիթ', 'լուսավորչի': 'լուսավորիչ',
                'ուլնեցու': 'ուլնեցի', 'քանաքեռցու': 'քանաքեռցի'}
+# Spelling variants in this ministry inventory, retaining all personal initials.
+_INVENTORY_SPELLINGS = {'զաքիյան': 'զաքյան', 'բյուզանդ': 'բուզանդ',
+                      'գյուբենկյան': 'գյուլբենկյան'}
 
 
 def normalize(value):
@@ -49,7 +52,8 @@ def word_root(value):
         value = value[:-2]
     if value.endswith('իի'):
         value = value[:-1]
-    return value[:-1] if len(value) > 3 and value.endswith('ի') else value
+    value = value[:-1] if len(value) > 3 and value.endswith('ի') else value
+    return _INVENTORY_SPELLINGS.get(value, value)
 
 
 def street_descriptor(value):
@@ -94,6 +98,26 @@ def qualified_road(descriptor, road_name):
                for expected, actual in zip(qualifiers, road_qualifiers))
 
 
+def road_names(road):
+    """Use only explicitly mapped Armenian names, including recorded renamings."""
+    names = set()
+    for key in ('name', 'name:hy', 'official_name', 'alt_name', 'old_name'):
+        for name in road['tags'].get(key, '').split(';'):
+            name = name.strip()
+            if (re.search(_UNITS + '|հրապարակ', name)
+                    and not any(part in name for part in ('նրբանցք', 'փակուղի', 'անցում', 'աստիճան', 'թաղամաս'))):
+                names.add(name)
+    return sorted(names)
+
+
+def distinct_ways(groups, used=frozenset()):
+    """Every published road must have its own way at the shared junction."""
+    if not groups:
+        return True
+    return any(distinct_ways(groups[1:], used | {way})
+               for way in groups[0] - used)
+
+
 def read_inventory(path):
     with zipfile.ZipFile(path) as archive:
         for name in ('word/document.xml', 'docProps/core.xml'):
@@ -127,9 +151,7 @@ def read_osm_roads(path):
                 return
             if way.tags['highway'] in ('service', 'path', 'footway', 'steps', 'track'):
                 return
-            name = way.tags['name']
-            if (not re.search(_UNITS, name)
-                    or any(part in name for part in ('նրբանցք', 'փակուղի', 'անցում', 'աստիճան', 'թաղամաս'))):
+            if not road_names({'tags': dict(way.tags)}):
                 return
             nodes = [{'id': n.ref, 'lat': n.lat, 'lon': n.lon}
                      for n in way.nodes if n.location.valid()]
@@ -149,7 +171,8 @@ def read_osm_roads(path):
 def match_inventory(entries, roads):
     by_name = collections.defaultdict(list)
     for road in roads:
-        by_name[street_descriptor(road['tags']['name'])[0]].append(road)
+        for name in road_names(road):
+            by_name[street_descriptor(name)[0]].append((road, name))
     locations, omitted = [], []
     for index, line in enumerate(entries, 1):
         address = line.split('(')[0].strip()
@@ -163,23 +186,27 @@ def match_inventory(entries, roads):
         keys = [part[0] for part in parts]
         if reason is None and (len(keys) < 2 or len(set(keys)) != len(keys) or not all(keys)):
             reason = 'Unrecognized junction address'
-        matched = [[road for road in by_name[key] if qualified_road(part, road['tags']['name'])]
+        matched = [[(road, name) for road, name in by_name[key] if qualified_road(part, name)]
                    for key, part in zip(keys, parts)] if reason is None else []
         if reason is None and not all(matched):
             reason = 'An explicitly named road is unmatched'
         candidates = {}
         if reason is None:
             for key, rows in zip(keys, matched):
-                for road in rows:
+                for road, matched_name in rows:
                     for node in road['nodes']:
                         if not (40.08 <= node['lat'] <= 40.28 and 44.40 <= node['lon'] <= 44.63):
                             continue
                         item = candidates.setdefault(node['id'], {
-                            **node, 'keys': set(), 'ways': set(), 'names': set()})
+                            **node, 'keys': set(), 'ways': set(), 'names': set(), 'matched_names': set(),
+                            'key_ways': collections.defaultdict(set)})
                         item['keys'].add(key)
                         item['ways'].add(road['id'])
+                        item['key_ways'][key].add(road['id'])
                         item['names'].add(road['tags'].get('name:en') or road['tags']['name'])
-            candidates = [item for item in candidates.values() if len(item['keys']) == len(keys)]
+                        item['matched_names'].add(matched_name)
+            candidates = [item for item in candidates.values() if len(item['keys']) == len(keys)
+                          and distinct_ways([item['key_ways'][key] for key in keys])]
             if not candidates:
                 reason = 'Named roads have no shared junction node'
         spread = 0
@@ -199,6 +226,7 @@ def match_inventory(entries, roads):
             'sourceAddress': address, 'roadNames': sorted(node['names']),
             'lat': node['lat'], 'lon': node['lon'], 'locationKind': 'junction_reference',
             'osmNode': node['id'], 'osmWays': sorted(node['ways']),
+            'matchedRoadNames': sorted(node['matched_names']),
             'matchSpreadMetres': round(spread),
         })
     return locations, omitted

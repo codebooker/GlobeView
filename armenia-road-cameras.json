@@ -27,6 +27,10 @@
         1164686883,
         1164686884
       ],
+      "matchedRoadNames": [
+        "Ադմիրալ Իսակովի պողոտա",
+        "Աթենքի փողոց"
+      ],
       "matchSpreadMetres": 50
     },
     {
@@ -44,6 +48,10 @@
       "osmWays": [
         1164558544,
         1164558551
+      ],
+      "matchedRoadNames": [
+        "Արգիշտի փողոց",
+        "Մեսրոպ Մաշտոցի պողոտա"
       ],
       "matchSpreadMetres": 23
     },
@@ -64,7 +72,35 @@
         1254517562,
         1293796777
       ],
+      "matchedRoadNames": [
+        "Մեսրոպ Մաշտոցի պողոտա",
+        "Մովսես Խորենացու փողոց"
+      ],
       "matchSpreadMetres": 7
+    },
+    {
+      "id": "am:mia:surveillance:6",
+      "sourceIndex": 6,
+      "sourceAddress": "Մ.Մաշտոցի պողոտա-Ամիրյան փողոց խաչմերուկ",
+      "roadNames": [
+        "King Pap Street",
+        "Mesrop Mashtots Avenue"
+      ],
+      "lat": 40.1810048,
+      "lon": 44.5076844,
+      "locationKind": "junction_reference",
+      "osmNode": 3830401745,
+      "osmWays": [
+        186129405,
+        380346222,
+        1253189632,
+        1444772129
+      ],
+      "matchedRoadNames": [
+        "Ամիրյան փողոց",
+        "Մեսրոպ Մաշտոցի պողոտա"
+      ],
+      "matchSpreadMetres": 12
     },
     {
       "id": "am:mia:surveillance:8",
@@ -83,6 +119,10 @@
         379702358,
         379706687,
         1446599693
+      ],
+      "matchedRoadNames": [
+        "Մեսրոպ Մաշտոցի պողոտա",
+        "Պուշկինի փողոց"
       ],
       "matchSpreadMetres": 11
     },
@@ -104,6 +144,10 @@
         288103367,
         1259284236
       ],
+      "matchedRoadNames": [
+        "Թումանյան փողոց",
+        "Մեսրոպ Մաշտոցի պողոտա"
+      ],
       "matchSpreadMetres": 11
     },
     {
@@ -123,6 +167,10 @@
         291974727,
         291974730
       ],
+      "matchedRoadNames": [
+        "Մեսրոպ Մաշտոցի պողոտա",
+        "Սայաթ-Նովայի պողոտա"
+      ],
       "matchSpreadMetres": 19
     },
     {
@@ -141,6 +189,10 @@
         133126013,
         1285232023,
         1318793174
+      ],
+      "matchedRoadNames": [
+        "Մեսրոպ Մաշտոցի պողոտա",
+        "Մոսկովյան փողոց"
       ],
       "matchSpreadMetres": 12
     },
@@ -162,6 +214,10 @@
         1318793173,
         1318793175
       ],
+      "matchedRoadNames": [
+        "Ավետիք Իսահակյան փողոց",
+        "Մեսրոպ Մաշտոցի պողոտա"
+      ],
       "matchSpreadMetres": 11
     },
     {
@@ -181,6 +237,10 @@
         1328470931,
         1450352409,
         1450352410
+      ],
+      "matchedRoadNames": [
+        "Կորյունի փողոց",
+        "Տերյան փողոց"
       ],
       "matchSpreadMetres": 15
     },
@@ -202,6 +262,10 @@
         423956932,
         748955839
       ],
+      "matchedRoadNames": [
+        "Աբովյան փողոց",
+        "Կորյունի փողոց"
+      ],
       "matchSpreadMetres": 19
     },
     {
@@ -221,6 +285,10 @@
         809937916,
         809937917,
         809937919
+      ],
+      "matchedRoadNames": [
+        "Չարենցի փողոց",
+        "Սայաթ-Նովայի պողոտա"
       ],
       "matchSpreadMetres": 30
     },
@@ -242,6 +310,10 @@
         1446582187,
         1446582188
       ],
+      "matchedRoadNames": [
+        "Ալեք Մանուկյանի փողոց",
+        "Սայաթ-Նովայի պողոտա"
+      ],
       "matchSpreadMetres": 13
     },
     {
@@ -261,6 +333,10 @@
         1042623942,
         1328664744,
         1446125442
+      ],
+      "matchedRoadNames": [
+        "Նալբանդյան փողոց",
+        "Սայաթ-Նովայի պողոտա"
       ],
       "matchSpreadMetres": 13
     },
@@ -282,6 +358,10 @@
         671338013,
         1328664748
       ],
+      "matchedRoadNames": [
+        "Աբովյան փողոց",
+        "Սայաթ-Նովայի պողոտա"
+      ],
       "matchSpreadMetres": 10
     },
     {
@@ -302,6 +382,10 @@
         1261815394,
         1366763356
       ],
+      "matchedRoadNames": [
+        "Մարշալ Բաղրամյան պողոտա",
+        "Պռոշյան փողոց"
+      ],
       "matchSpreadMetres": 15
     },
     {
@@ -320,6 +404,10 @@
         25919004,
         34956963,
         366072278
+      ],
+      "matchedRoadNames": [
+        "Հակոբ Պարոնյան փողոց",
+        "Ձորափի փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -340,6 +428,10 @@
         721763319,
         1254516002
       ],
+      "matchedRoadNames": [
+        "Լեոյի փողոց",
+        "Հակոբ Պարոնյան փողոց"
+      ],
       "matchSpreadMetres": 10
     },
     {
@@ -357,6 +449,10 @@
       "osmWays": [
         134193884,
         1172070607
+      ],
+      "matchedRoadNames": [
+        "Գրիգոր Լուսավորչի փողոց",
+        "Հակոբ Պարոնյան փողոց"
       ],
       "matchSpreadMetres": 15
     },
@@ -378,6 +474,10 @@
         1545256097,
         1547959761
       ],
+      "matchedRoadNames": [
+        "Արշակունյաց պողոտա",
+        "Գրիգոր Լուսավորչի փողոց"
+      ],
       "matchSpreadMetres": 62
     },
     {
@@ -398,6 +498,10 @@
         577391101,
         1126943596
       ],
+      "matchedRoadNames": [
+        "Տիգրան Մեծի պողոտա",
+        "Քրիստափորի փողոց"
+      ],
       "matchSpreadMetres": 12
     },
     {
@@ -417,6 +521,10 @@
         572868791,
         577400441,
         1366077342
+      ],
+      "matchedRoadNames": [
+        "Նար-Դոսի փողոց",
+        "Տիգրան Մեծի պողոտա"
       ],
       "matchSpreadMetres": 12
     },
@@ -440,7 +548,82 @@
         577391102,
         727208643
       ],
+      "matchedRoadNames": [
+        "Երվանդ Քոչարի փողոց",
+        "Մովսես Խորենացու փողոց",
+        "Տիգրան Մեծի պողոտա"
+      ],
       "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:38",
+      "sourceIndex": 38,
+      "sourceAddress": "Տ.Մեծ պողոտա-Հանրապետության Հրապարակ խաչմերուկ",
+      "roadNames": [
+        "Republic Square",
+        "Tigran Mets avenue"
+      ],
+      "lat": 40.1773399,
+      "lon": 44.5131721,
+      "locationKind": "junction_reference",
+      "osmNode": 406386251,
+      "osmWays": [
+        349244299,
+        380633461,
+        688974809
+      ],
+      "matchedRoadNames": [
+        "Հանրապետության հրապարակ",
+        "Տիգրան Մեծի պողոտա"
+      ],
+      "matchSpreadMetres": 30
+    },
+    {
+      "id": "am:mia:surveillance:39",
+      "sourceIndex": 39,
+      "sourceAddress": "Ամիրյան փողոց-Հանրապետության Հրապարակ խաչմերուկ",
+      "roadNames": [
+        "King Pap Street",
+        "Republic Square"
+      ],
+      "lat": 40.1778516,
+      "lon": 44.5119717,
+      "locationKind": "junction_reference",
+      "osmNode": 354684574,
+      "osmWays": [
+        133082163,
+        424578114,
+        688970721
+      ],
+      "matchedRoadNames": [
+        "Ամիրյան փողոց",
+        "Հանրապետության հրապարակ"
+      ],
+      "matchSpreadMetres": 37
+    },
+    {
+      "id": "am:mia:surveillance:41",
+      "sourceIndex": 41,
+      "sourceAddress": "Մ.Խորենացի-Զաքիյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Movses Khorenatsi street",
+        "Zakian street"
+      ],
+      "lat": 40.1774177,
+      "lon": 44.5075748,
+      "locationKind": "junction_reference",
+      "osmNode": 632031875,
+      "osmWays": [
+        1434301347,
+        1450356946,
+        1450356956,
+        1450356958
+      ],
+      "matchedRoadNames": [
+        "Զաքյան փողոց",
+        "Մովսես Խորենացու փողոց"
+      ],
+      "matchSpreadMetres": 7
     },
     {
       "id": "am:mia:surveillance:42",
@@ -460,6 +643,10 @@
         1434301343,
         1434301344
       ],
+      "matchedRoadNames": [
+        "Մովսես Խորենացու փողոց",
+        "Վազգեն Սարգսյանի փողոց"
+      ],
       "matchSpreadMetres": 65
     },
     {
@@ -478,6 +665,10 @@
         119027068,
         380363607,
         689004081
+      ],
+      "matchedRoadNames": [
+        "Ագաթանգեղոսի փողոց",
+        "Մովսես Խորենացու փողոց"
       ],
       "matchSpreadMetres": 19
     },
@@ -499,6 +690,10 @@
         1253192546,
         1534661984
       ],
+      "matchedRoadNames": [
+        "Աբովյան փողոց",
+        "Թումանյան փողոց"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -518,6 +713,10 @@
         1181288638,
         1364266511,
         1531851468
+      ],
+      "matchedRoadNames": [
+        "Աբովյան փողոց",
+        "Արամի փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -539,6 +738,10 @@
         1446370918,
         1534661989
       ],
+      "matchedRoadNames": [
+        "Թումանյան փողոց",
+        "Նալբանդյան փողոց"
+      ],
       "matchSpreadMetres": 4
     },
     {
@@ -557,6 +760,10 @@
         186409193,
         189240001,
         430416184
+      ],
+      "matchedRoadNames": [
+        "Ավետիք Իսահակյան փողոց",
+        "Նալբանդյան փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -578,6 +785,10 @@
         1328467333,
         1369578052
       ],
+      "matchedRoadNames": [
+        "Ավետիք Իսահակյան փողոց",
+        "Տերյան փողոց"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -598,6 +809,10 @@
         1253209808,
         1534661983
       ],
+      "matchedRoadNames": [
+        "Թումանյան փողոց",
+        "Տերյան փողոց"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -617,7 +832,34 @@
         330131717,
         380206933
       ],
+      "matchedRoadNames": [
+        "Հին Երևանցու փողոց",
+        "Տերյան փողոց"
+      ],
       "matchSpreadMetres": 50
+    },
+    {
+      "id": "am:mia:surveillance:58",
+      "sourceIndex": 58,
+      "sourceAddress": "Փ․Բյուզանդ-Ա․Քոչինյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Anton Kochinyan street",
+        "Pavstos Buzand street"
+      ],
+      "lat": 40.1802878,
+      "lon": 44.5113105,
+      "locationKind": "junction_reference",
+      "osmNode": 3130166152,
+      "osmWays": [
+        119037152,
+        304455525,
+        307793489
+      ],
+      "matchedRoadNames": [
+        "Անտոն Քոչինյանի փողոց",
+        "Փավստոս Բուզանդի փողոց"
+      ],
+      "matchSpreadMetres": 0
     },
     {
       "id": "am:mia:surveillance:62",
@@ -634,6 +876,10 @@
       "osmWays": [
         1252771427,
         1271670444
+      ],
+      "matchedRoadNames": [
+        "Թումանյան փողոց",
+        "Սարյանի փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -656,6 +902,11 @@
         1416109177,
         1416109180
       ],
+      "matchedRoadNames": [
+        "Արամի փողոց",
+        "Կարեն Դեմիրճյանի փողոց",
+        "Սարյանի փողոց"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -673,6 +924,10 @@
       "osmWays": [
         134193891,
         727219110
+      ],
+      "matchedRoadNames": [
+        "Մովսես Խորենացու փողոց",
+        "Քրիստափորի փողոց"
       ],
       "matchSpreadMetres": 8
     },
@@ -694,6 +949,10 @@
         577400442,
         1366077343
       ],
+      "matchedRoadNames": [
+        "Մովսես Խորենացու փողոց",
+        "Նար-Դոսի փողոց"
+      ],
       "matchSpreadMetres": 4
     },
     {
@@ -713,6 +972,10 @@
         1254157399,
         1254157400
       ],
+      "matchedRoadNames": [
+        "Ալեք Մանուկյանի փողոց",
+        "Վարդանանց փողոց"
+      ],
       "matchSpreadMetres": 7
     },
     {
@@ -731,6 +994,10 @@
         135473760,
         380593303,
         1121013282
+      ],
+      "matchedRoadNames": [
+        "Ավետիք Իսահակյան փողոց",
+        "Թամանյանի փողոց"
       ],
       "matchSpreadMetres": 45
     },
@@ -753,6 +1020,10 @@
         737061571,
         1536949154
       ],
+      "matchedRoadNames": [
+        "Արմենակ Արմենակյան փողոց",
+        "Սարալանջի խճուղի"
+      ],
       "matchSpreadMetres": 9
     },
     {
@@ -771,6 +1042,33 @@
         309864023,
         1137190850,
         1150872603
+      ],
+      "matchedRoadNames": [
+        "Կիևյան փողոց",
+        "Օրբելի եղբայրների փողոց"
+      ],
+      "matchSpreadMetres": 0
+    },
+    {
+      "id": "am:mia:surveillance:74",
+      "sourceIndex": 74,
+      "sourceAddress": "Կասյան-Գյուլբենկյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Gyulbenkyan street",
+        "Vazgen I street"
+      ],
+      "lat": 40.2013523,
+      "lon": 44.4952038,
+      "locationKind": "junction_reference",
+      "osmNode": 3824795269,
+      "osmWays": [
+        379112826,
+        533153976,
+        1215051837
+      ],
+      "matchedRoadNames": [
+        "Գյուլբենկյան փողոց",
+        "Կասյան փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -792,6 +1090,10 @@
         515004000,
         1292696867
       ],
+      "matchedRoadNames": [
+        "Կոմիտասի պողոտա",
+        "Վաղարշ Վաղարշյան փողոց"
+      ],
       "matchSpreadMetres": 13
     },
     {
@@ -811,6 +1113,10 @@
         515003994,
         1149127548,
         1215050536
+      ],
+      "matchedRoadNames": [
+        "Կոմիտասի պողոտա",
+        "Վահրամ Փափազյան փողոց"
       ],
       "matchSpreadMetres": 10
     },
@@ -832,6 +1138,10 @@
         580483183,
         580483187
       ],
+      "matchedRoadNames": [
+        "Կոմիտասի պողոտա",
+        "Վրացական փողոց"
+      ],
       "matchSpreadMetres": 11
     },
     {
@@ -851,6 +1161,10 @@
         1292615903,
         1292615905,
         1292615906
+      ],
+      "matchedRoadNames": [
+        "Գրիբոյեդով փողոց",
+        "Կոմիտասի պողոտա"
       ],
       "matchSpreadMetres": 12
     },
@@ -873,7 +1187,35 @@
         481327571,
         1136468903
       ],
+      "matchedRoadNames": [
+        "Կոմիտասի պողոտա",
+        "Նիկողայոս Տիգրանյան փողոց"
+      ],
       "matchSpreadMetres": 14
+    },
+    {
+      "id": "am:mia:surveillance:80",
+      "sourceIndex": 80,
+      "sourceAddress": "Հր.Քոչար-Գյուբենկյան փողոցների խաչմերուկ",
+      "roadNames": [
+        "Gyulbenkyan street",
+        "Hrachya Kochar Street",
+        "Hrachya Kochar street"
+      ],
+      "lat": 40.1992536,
+      "lon": 44.4966468,
+      "locationKind": "junction_reference",
+      "osmNode": 626138274,
+      "osmWays": [
+        579004584,
+        579004588,
+        1221379130
+      ],
+      "matchedRoadNames": [
+        "Գյուլբենկյան փողոց",
+        "Հրաչյա Քոչար փողոց"
+      ],
+      "matchSpreadMetres": 8
     },
     {
       "id": "am:mia:surveillance:81",
@@ -890,6 +1232,10 @@
       "osmWays": [
         579004585,
         1292696870
+      ],
+      "matchedRoadNames": [
+        "Հրաչյա Քոչար փողոց",
+        "Վաղարշ Վաղարշյան փողոց"
       ],
       "matchSpreadMetres": 12
     },
@@ -911,6 +1257,10 @@
         579004587,
         1330613124
       ],
+      "matchedRoadNames": [
+        "Հրաչյա Քոչար փողոց",
+        "Վահրամ Փափազյան փողոց"
+      ],
       "matchSpreadMetres": 8
     },
     {
@@ -931,6 +1281,10 @@
         1178182370,
         1219750107
       ],
+      "matchedRoadNames": [
+        "Ազատության պողոտա",
+        "Բաբայան փողոց"
+      ],
       "matchSpreadMetres": 17
     },
     {
@@ -950,6 +1304,10 @@
         1291260897,
         1292622970
       ],
+      "matchedRoadNames": [
+        "Ազատության պողոտա",
+        "Նիկողայոս Ադոնցի փողոց"
+      ],
       "matchSpreadMetres": 17
     },
     {
@@ -968,6 +1326,10 @@
         132959941,
         1189195008
       ],
+      "matchedRoadNames": [
+        "Ազատության պողոտա",
+        "Թբիլիսյան խճուղի"
+      ],
       "matchSpreadMetres": 17
     },
     {
@@ -985,6 +1347,10 @@
       "osmWays": [
         1215271094,
         1215271096
+      ],
+      "matchedRoadNames": [
+        "Արամ Խաչատրյանի փողոց",
+        "Վահրամ Փափազյան փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -1006,6 +1372,10 @@
         1215271102,
         1292695710
       ],
+      "matchedRoadNames": [
+        "Արամ Խաչատրյանի փողոց",
+        "Վաղարշ Վաղարշյան փողոց"
+      ],
       "matchSpreadMetres": 9
     },
     {
@@ -1025,6 +1395,10 @@
         530388624,
         744217384,
         1155227816
+      ],
+      "matchedRoadNames": [
+        "Հովսեփ Էմինի փողոց",
+        "Վահրամ Փափազյան փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -1048,6 +1422,10 @@
         1292695718,
         1385409338
       ],
+      "matchedRoadNames": [
+        "Ավետ Ավետիսյան փողոց",
+        "Վաղարշ Վաղարշյան փողոց"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -1066,6 +1444,10 @@
         690579190,
         1385409352,
         1535728478
+      ],
+      "matchedRoadNames": [
+        "Ավետ Ավետիսյան փողոց",
+        "Վահրամ Փափազյան փողոց"
       ],
       "matchSpreadMetres": 9
     },
@@ -1086,6 +1468,10 @@
         380870528,
         480268880
       ],
+      "matchedRoadNames": [
+        "Ավետ Ավետիսյան փողոց",
+        "Մարշալ Բաղրամյան պողոտա"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -1105,6 +1491,10 @@
         1342963964,
         1342963965,
         1446371968
+      ],
+      "matchedRoadNames": [
+        "Կարապետ Ուլնեցու փողոց",
+        "Պարույր Սևակի փողոց"
       ],
       "matchSpreadMetres": 10
     },
@@ -1127,6 +1517,10 @@
         1342963967,
         1342963969
       ],
+      "matchedRoadNames": [
+        "Պարույր Սևակի փողոց",
+        "Ռուբինյանց փողոց"
+      ],
       "matchSpreadMetres": 14
     },
     {
@@ -1146,6 +1540,10 @@
         1446370911,
         1446370912,
         1446370914
+      ],
+      "matchedRoadNames": [
+        "Դավիթ Անհաղթի փողոց",
+        "Կարապետ Ուլնեցու փողոց"
       ],
       "matchSpreadMetres": 15
     },
@@ -1170,6 +1568,10 @@
         1291273493,
         1393221937
       ],
+      "matchedRoadNames": [
+        "Դրոյի փողոց",
+        "Պարույր Սևակի փողոց"
+      ],
       "matchSpreadMetres": 6
     },
     {
@@ -1190,6 +1592,10 @@
         497473170,
         605818758
       ],
+      "matchedRoadNames": [
+        "Հրաչյա Աճառյան փողոց",
+        "Մարշալ Բաբաջանյանի փողոց"
+      ],
       "matchSpreadMetres": 14
     },
     {
@@ -1209,6 +1615,10 @@
         976814349,
         1453039158
       ],
+      "matchedRoadNames": [
+        "Ծարավ Աղբյուրի փողոց",
+        "Հրաչյա Աճառյան փողոց"
+      ],
       "matchSpreadMetres": 14
     },
     {
@@ -1227,6 +1637,10 @@
         118943859,
         138001998,
         689053770
+      ],
+      "matchedRoadNames": [
+        "Գայի պողոտա",
+        "Դավիթ Մալյան փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -1248,6 +1662,10 @@
         579006656,
         1553925662
       ],
+      "matchedRoadNames": [
+        "Գայի պողոտա",
+        "Մոլդովական փողոց"
+      ],
       "matchSpreadMetres": 13
     },
     {
@@ -1266,6 +1684,10 @@
         484164965,
         795660305,
         1219349964
+      ],
+      "matchedRoadNames": [
+        "Գայի պողոտա",
+        "Նանսենի փողոց"
       ],
       "matchSpreadMetres": 87
     },
@@ -1286,6 +1708,10 @@
         1219349967,
         1219358717
       ],
+      "matchedRoadNames": [
+        "Գայի պողոտա",
+        "Նելսոն Ստեփանյան փողոց"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -1304,6 +1730,10 @@
         137931082,
         137997641,
         1219356029
+      ],
+      "matchedRoadNames": [
+        "Աշոտ Հովհաննիսյան փողոց",
+        "Գայի պողոտա"
       ],
       "matchSpreadMetres": 0
     },
@@ -1325,6 +1755,10 @@
         533227168,
         752128883
       ],
+      "matchedRoadNames": [
+        "Գայի պողոտա",
+        "Քոչարյան փողոց"
+      ],
       "matchSpreadMetres": 19
     },
     {
@@ -1344,6 +1778,10 @@
         618628010,
         936344497
       ],
+      "matchedRoadNames": [
+        "Դավիթ Բեկի փողոց",
+        "Նուբարաշենի փողոց"
+      ],
       "matchSpreadMetres": 17
     },
     {
@@ -1362,6 +1800,10 @@
         689002025,
         746993475,
         1256135925
+      ],
+      "matchedRoadNames": [
+        "Աթոյան փողոց",
+        "Ռոստովյան փողոց"
       ],
       "matchSpreadMetres": 14
     },
@@ -1384,6 +1826,10 @@
         750485885,
         750485886
       ],
+      "matchedRoadNames": [
+        "Մուրացանի փողոց",
+        "Ռոստովյան փողոց"
+      ],
       "matchSpreadMetres": 13
     },
     {
@@ -1404,6 +1850,10 @@
         374521972,
         684217840
       ],
+      "matchedRoadNames": [
+        "Արցախի պողոտա",
+        "Ռոստովյան փողոց"
+      ],
       "matchSpreadMetres": 24
     },
     {
@@ -1421,6 +1871,10 @@
       "osmWays": [
         187645413,
         750004943
+      ],
+      "matchedRoadNames": [
+        "Սասունցի Դավիթ փողոց",
+        "Տիգրան Մեծի պողոտա"
       ],
       "matchSpreadMetres": 16
     },
@@ -1442,6 +1896,10 @@
         755609093,
         1255797100
       ],
+      "matchedRoadNames": [
+        "Արին Բերդի փողոց",
+        "Արցախի պողոտա"
+      ],
       "matchSpreadMetres": 19
     },
     {
@@ -1461,6 +1919,10 @@
         689002027,
         1080306953,
         1256139649
+      ],
+      "matchedRoadNames": [
+        "Ազատամարտիկների պողոտա",
+        "Էրեբունու փողոց"
       ],
       "matchSpreadMetres": 17
     },
@@ -1482,6 +1944,10 @@
         689004079,
         689004080
       ],
+      "matchedRoadNames": [
+        "Աթոյան փողոց",
+        "Էրեբունու փողոց"
+      ],
       "matchSpreadMetres": 16
     },
     {
@@ -1500,6 +1966,10 @@
         83710436,
         319792671,
         1426378404
+      ],
+      "matchedRoadNames": [
+        "Բելինսկու փողոց",
+        "Սասունցի Դավիթ փողոց"
       ],
       "matchSpreadMetres": 0
     },
@@ -1521,6 +1991,11 @@
         1284136813,
         1315341144
       ],
+      "matchedRoadNames": [
+        "Ազատամարտիկների պողոտա",
+        "Ազատամարտիկների փողոց",
+        "Սասունցի Դավիթ փողոց"
+      ],
       "matchSpreadMetres": 0
     },
     {
@@ -1539,6 +2014,10 @@
         490733418,
         490743972,
         606024788
+      ],
+      "matchedRoadNames": [
+        "Գարեգին Նժդեհի փողոց",
+        "Մայիսի 9-ի փողոց"
       ],
       "matchSpreadMetres": 9
     },
@@ -1560,6 +2039,10 @@
         1254736535,
         1254740159
       ],
+      "matchedRoadNames": [
+        "Գարեգին Նժդեհի փողոց",
+        "Մանթաշյան փողոց"
+      ],
       "matchSpreadMetres": 12
     },
     {
@@ -1579,6 +2062,10 @@
         804865252,
         804865256,
         1254736532
+      ],
+      "matchedRoadNames": [
+        "Արտաշիսյան փողոց",
+        "Բագրատունյաց պողոտա"
       ],
       "matchSpreadMetres": 15
     },
@@ -1600,6 +2087,10 @@
         804886119,
         1547790355
       ],
+      "matchedRoadNames": [
+        "Բագրատունյաց պողոտա",
+        "Չեխովի փողոց"
+      ],
       "matchSpreadMetres": 10
     },
     {
@@ -1620,6 +2111,10 @@
         288107315,
         688951526
       ],
+      "matchedRoadNames": [
+        "Բագրատունյաց պողոտա",
+        "Եղիշե Թադևոսյան փողոց"
+      ],
       "matchSpreadMetres": 11
     },
     {
@@ -1638,6 +2133,10 @@
         981126608,
         1255619996,
         1255620002
+      ],
+      "matchedRoadNames": [
+        "Արտաշիսյան փողոց",
+        "Չեխովի փողոց"
       ],
       "matchSpreadMetres": 28
     },
@@ -1660,6 +2159,10 @@
         1359944282,
         1359944283
       ],
+      "matchedRoadNames": [
+        "Արտաշիսյան փողոց",
+        "Շիրակի փողոց"
+      ],
       "matchSpreadMetres": 11
     },
     {
@@ -1679,6 +2182,10 @@
         1253237146,
         1253237149,
         1253237152
+      ],
+      "matchedRoadNames": [
+        "Արարատյան փողոց",
+        "Շիրակի փողոց"
       ],
       "matchSpreadMetres": 14
     },
@@ -1700,6 +2207,10 @@
         746127094,
         746127095
       ],
+      "matchedRoadNames": [
+        "Կուրղինյան փողոց",
+        "Սեբաստիայի փողոց"
+      ],
       "matchSpreadMetres": 12
     },
     {
@@ -1719,6 +2230,10 @@
         746127097,
         1137075444
       ],
+      "matchedRoadNames": [
+        "Շահումյան 1-ին փողոց",
+        "Սեբաստիայի փողոց"
+      ],
       "matchSpreadMetres": 11
     },
     {
@@ -1737,6 +2252,10 @@
         504071684,
         1136284850,
         1136930285
+      ],
+      "matchedRoadNames": [
+        "Արմին Վեգների փողոց",
+        "Սեբաստիայի փողոց"
       ],
       "matchSpreadMetres": 10
     },
@@ -1758,6 +2277,10 @@
         1150074735,
         1245406307
       ],
+      "matchedRoadNames": [
+        "Սեբաստիայի փողոց",
+        "Տիչինայի փողոց"
+      ],
       "matchSpreadMetres": 8
     },
     {
@@ -1778,7 +2301,33 @@
         1257484178,
         1257484179
       ],
+      "matchedRoadNames": [
+        "Զորավար Անդրանիկի փողոց",
+        "Օհանովի փողոց"
+      ],
       "matchSpreadMetres": 9
+    },
+    {
+      "id": "am:mia:surveillance:148",
+      "sourceIndex": 148,
+      "sourceAddress": "Լենինգրադյան-Սեբաստիա փողոցների խաչմերուկ",
+      "roadNames": [
+        "Kirk Kerkorian street",
+        "Sebastia Street"
+      ],
+      "lat": 40.1906406,
+      "lon": 44.4622883,
+      "locationKind": "junction_reference",
+      "osmNode": 10599896608,
+      "osmWays": [
+        116984293,
+        380284817
+      ],
+      "matchedRoadNames": [
+        "Լենինգրադյան փողոց",
+        "Սեբաստիայի փողոց"
+      ],
+      "matchSpreadMetres": 16
     },
     {
       "id": "am:mia:surveillance:149",
@@ -1795,6 +2344,10 @@
       "osmWays": [
         23634996,
         189835248
+      ],
+      "matchedRoadNames": [
+        "Հովհաննես Շիրազի փողոց",
+        "Ջանիբեկյան փողոց"
       ],
       "matchSpreadMetres": 12
     },
@@ -1814,6 +2367,10 @@
         49845347,
         1351958032
       ],
+      "matchedRoadNames": [
+        "Բաշինջաղյան փողոց",
+        "Մարգարյան փողոց"
+      ],
       "matchSpreadMetres": 2
     },
     {
@@ -1831,6 +2388,10 @@
       "osmWays": [
         688989433,
         1254618943
+      ],
+      "matchedRoadNames": [
+        "Մարգարյան փողոց",
+        "Ֆուչիկի փողոց"
       ],
       "matchSpreadMetres": 3
     },
@@ -1850,6 +2411,10 @@
         483276999,
         1446370909
       ],
+      "matchedRoadNames": [
+        "Հալաբյան փողոց",
+        "Մարգարյան փողոց"
+      ],
       "matchSpreadMetres": 13
     },
     {
@@ -1868,6 +2433,10 @@
         721632878,
         1233346292,
         1377441713
+      ],
+      "matchedRoadNames": [
+        "Աբելյան փողոց",
+        "Հալաբյան փողոց"
       ],
       "matchSpreadMetres": 13
     },
@@ -1889,6 +2458,10 @@
         721632878,
         801931147
       ],
+      "matchedRoadNames": [
+        "Էստոնական փողոց",
+        "Հալաբյան փողոց"
+      ],
       "matchSpreadMetres": 16
     },
     {
@@ -1907,6 +2480,10 @@
         34951496,
         226095060,
         1150143592
+      ],
+      "matchedRoadNames": [
+        "Արզումանյան փողոց",
+        "Հալաբյան փողոց"
       ],
       "matchSpreadMetres": 14
     },
@@ -1928,6 +2505,10 @@
         1393224205,
         1393224206
       ],
+      "matchedRoadNames": [
+        "Տիգրան Պետրոսյանի փողոց",
+        "Փիրումյանների փողոց"
+      ],
       "matchSpreadMetres": 4
     }
   ],
@@ -1941,11 +2522,6 @@
       "sourceIndex": 3,
       "sourceAddress": "Ծիծեռնակաբերդի խճուղի՝ <<Դալմա Մոլ>> առևտրի կենտրոն",
       "reason": "Not solely a named junction"
-    },
-    {
-      "sourceIndex": 6,
-      "sourceAddress": "Մ.Մաշտոցի պողոտա-Ամիրյան փողոց խաչմերուկ",
-      "reason": "Named roads have no shared junction node"
     },
     {
       "sourceIndex": 7,
@@ -2008,23 +2584,8 @@
       "reason": "Named roads have no shared junction node"
     },
     {
-      "sourceIndex": 38,
-      "sourceAddress": "Տ.Մեծ պողոտա-Հանրապետության Հրապարակ խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
-    },
-    {
-      "sourceIndex": 39,
-      "sourceAddress": "Ամիրյան փողոց-Հանրապետության Հրապարակ խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
-    },
-    {
       "sourceIndex": 40,
       "sourceAddress": "Ամիրյան-Զաքիյան-Ե․Կողբացի փողոցների խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
-    },
-    {
-      "sourceIndex": 41,
-      "sourceAddress": "Մ.Խորենացի-Զաքիյան փողոցների խաչմերուկ",
       "reason": "An explicitly named road is unmatched"
     },
     {
@@ -2063,11 +2624,6 @@
       "reason": "Named roads have no shared junction node"
     },
     {
-      "sourceIndex": 58,
-      "sourceAddress": "Փ․Բյուզանդ-Ա․Քոչինյան փողոցների խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
-    },
-    {
       "sourceIndex": 59,
       "sourceAddress": "Հերացի փողոց",
       "reason": "No fixed camera explicitly listed"
@@ -2100,17 +2656,7 @@
     {
       "sourceIndex": 73,
       "sourceAddress": "Կիևյան-Կասյան-Հր.Քոչար-Հ.Հակոբյան փողոցների խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
-    },
-    {
-      "sourceIndex": 74,
-      "sourceAddress": "Կասյան-Գյուլբենկյան փողոցների խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
-    },
-    {
-      "sourceIndex": 80,
-      "sourceAddress": "Հր.Քոչար-Գյուբենկյան փողոցների խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
+      "reason": "Named roads have no shared junction node"
     },
     {
       "sourceIndex": 84,
@@ -2216,11 +2762,6 @@
       "sourceIndex": 146,
       "sourceAddress": "Ծ.Իսակովի պողոտա- Ա.Բաբաջանյան փողոց խաչմերուկ",
       "reason": "Named roads have no shared junction node"
-    },
-    {
-      "sourceIndex": 148,
-      "sourceAddress": "Լենինգրադյան-Սեբաստիա փողոցների խաչմերուկ",
-      "reason": "An explicitly named road is unmatched"
     },
     {
       "sourceIndex": 156,
