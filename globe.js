@@ -1365,7 +1365,8 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       });
       root.append(button);
     }
-    if (meta.url) appendLink(root, media.snapshotUrl && !media.embedUrl ? 'Watch live at operator site ↗' : 'Open camera at operator site ↗', meta.url);
+    if (meta.operatorSourceUrl) appendLink(root, 'Camera operator ↗', meta.operatorSourceUrl);
+    else if (meta.url) appendLink(root, media.snapshotUrl && !media.embedUrl ? 'Watch live at operator site ↗' : 'Open camera at operator site ↗', meta.url);
   }
 
   function openPopup(type, ref, coordinates) {
@@ -2272,7 +2273,8 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         if (!validCoordinate(lat, lon)) continue;
         const ref = String(camera.id);
         records.set(ref, { id: ref, title: camera.name, detail: [camera.city, camera.country, camera.location_note].filter(Boolean).join(', '),
-          source: camera.source || 'Public webcam', url: camera.url, streamUrl: camera.stream_url });
+          source: camera.source || 'Public webcam', url: camera.url, streamUrl: camera.stream_url,
+          operatorSourceUrl: camera.operator_source_url });
         features.push(feature('webcams', ref, lon, lat));
       }
       setPoints('webcams', features, records);
