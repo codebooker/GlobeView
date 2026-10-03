@@ -4,7 +4,7 @@ from unittest import mock
 
 import armenia_roads as roads
 import international_infrastructure as infrastructure
-from scripts.update_armenia_named_road_locations import build_references
+from scripts.update_armenia_named_road_locations import REPORTED_ROADS, build_references, build_reported_roads
 from tests.test_armenia_roads import article
 
 
@@ -19,6 +19,40 @@ GYUMRI = ('Գյումրու մի շարք փողոցներում իրականա�
 
 
 class ArmeniaConstructionTests(unittest.TestCase):
+    def test_september_30_report_maps_all_verified_named_roads(self):
+        body = ('Կոտայքի և Լոռու մարզերի ճանապարհաշինական տեղամասեր։ '
+                'Եղվարդ-Արագյուղ-Հարթավան մոտ 12.5կմ ճանապարհին տեղադրվում է ասֆալտբետոնե ծածկը։ '
+                'Քարաձորի, Ղուրսալ-Նոր Խաչակապ ճանապարհներին, Պուշկինյան լեռնանցքում (13.3կմ) '
+                'ընթացքի մեջ է արհեստական կառույցների, հողային պաստառի կառուցումը։')
+        rows = roads.parse_news_roadworks(article(body, '30-09-2026'),
+                                         roads.BASE + '/am/news/inner/News_30.09.2026', NOW)
+        self.assertEqual({r['properties']['key'].removeprefix('am:armroad:works:') for r in rows},
+                         {'yeghvard-aragyugh-hartavan', 'karadzor-approach',
+                          'ghursal-nor-khachakap', 'pushkin-pass'})
+        self.assertTrue(all(r['properties']['reported_at'] == '2026-09-30' for r in rows))
+        unrelated = 'Քարաձորի դպրոցը կառուցվում է։ Ճանապարհաշինական աշխատանքների այց։'
+        self.assertEqual(roads.parse_news_roadworks(article(unrelated, '30-09-2026'),
+                                                  roads.BASE + '/am/news/inner/News_30.09.2026', NOW), [])
+
+    def test_numbered_road_references_require_exact_route_and_place(self):
+        places, ways = [], []
+        for index, spec in enumerate(REPORTED_ROADS):
+            place = {'id': spec[3], 'name': spec[4], 'coordinates': [44.4, 40.8 + index * .1]}
+            places.append(place)
+            ways.append({'id': index + 10, 'tags': {'ref': spec[5][0] + '-' + spec[5][1:]},
+                         'nodes': [{'id': index + 20, 'coordinates': place['coordinates']}]})
+        references = build_reported_roads(ways, places)
+        self.assertEqual([r['roadRef'] for r in references], ['H4', 'T5-77', 'T5-31'])
+        self.assertEqual([r['osmNode'] for r in references], [20, 21, 22])
+        for candidate_ways, candidate_places in ((ways[1:], places), (ways, places[1:]),
+                                                (ways, places + [places[0]])):
+            with self.assertRaises(ValueError):
+                build_reported_roads(candidate_ways, candidate_places)
+        far_ways = [{**w, 'nodes': [{'id': 80 + i, 'coordinates': [45.5, 39.5]}]}
+                    for i, w in enumerate(ways)]
+        with self.assertRaises(ValueError):
+            build_reported_roads(far_ways, places)
+
     def test_current_reports_keep_source_dates_and_reference_points(self):
         for body, url, date, name, point in (
                 (PASS, PASS_URL, '25-09-2026', 'Pushkin Pass', [44.4319955, 40.9107079]),
