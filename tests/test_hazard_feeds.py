@@ -1,6 +1,7 @@
 import datetime as dt
 import email.utils
 import io
+import json
 import threading
 import time
 import unittest
@@ -13,6 +14,44 @@ import hazard_feeds
 
 
 class HazardFeedTests(unittest.TestCase):
+    def test_cached_weather_alerts_expire_even_during_provider_backoff(self):
+        now = dt.datetime(2026, 10, 6, 19, tzinfo=dt.timezone.utc)
+        payload = {'source': 'Official weather', 'countries': ['Tajikistan'],
+                   'unavailable': [], 'items': [
+                       {'id': 'expired', 'ends': '2026-10-07T00:00:00+05:00'},
+                       {'id': 'active', 'ends': '2026-10-07T01:00:00+05:00'},
+                       {'id': 'no-expiry'}]}
+        body = json.dumps(payload).encode()
+        class Clock(dt.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+        for layer in ('world_alerts', 'nws_alerts'):
+            for state in ('fresh', 'retry-backoff', 'loader-failure', 'new-snapshot'):
+                with self.subTest(layer=layer, state=state):
+                    cache = {} if state == 'new-snapshot' else {layer: {
+                        'body': body, 'expires': 200 if state == 'fresh' else 90,
+                        'stale': 300}}
+                    loader = unittest.mock.Mock(return_value=payload)
+                    if state == 'loader-failure':
+                        loader.side_effect = RuntimeError('Provider unavailable')
+                    with patch.dict(hazard_feeds._CACHE, cache, clear=True), \
+                            patch.dict(hazard_feeds._RETRY_AFTER,
+                                       {layer: 200} if state == 'retry-backoff' else {}, clear=True), \
+                            patch.dict(hazard_feeds._INFLIGHT, {}, clear=True), \
+                            patch.dict(hazard_feeds.FEEDS, {layer: {
+                                'loader': loader, 'ttl': 180, 'stale': 600}}), \
+                            patch.object(hazard_feeds.time, 'monotonic', return_value=100), \
+                            patch.object(hazard_feeds.dt, 'datetime', Clock):
+                        result = json.loads(hazard_feeds.hazard_snapshot(layer))
+                        self.assertEqual([item['id'] for item in result['items']],
+                                         ['active', 'no-expiry'])
+                        self.assertEqual(result['countries'], ['Tajikistan'])
+                        self.assertEqual(result['unavailable'], [])
+                        self.assertEqual(json.loads(hazard_feeds._CACHE[layer]['body']), payload)
+                    self.assertEqual(loader.call_count,
+                                     int(state in ('loader-failure', 'new-snapshot')))
+
     def test_gdelt_export_maps_action_geo_and_filters_event_codes(self):
         row = [''] * 61
         row[0], row[27], row[28], row[30] = 'event-1', '141', '14', '-5.0'
@@ -252,6 +291,7 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_malaysia_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_kazakhstan_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_kyrgyzstan_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_tajikistan_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])
