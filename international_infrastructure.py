@@ -129,6 +129,15 @@ LIANDER_OUTAGES_URL = ('https://services1.arcgis.com/v6W5HAVrpgSg3vts/ArcGIS/res
 LIANDER_OUTAGES_SOURCE = 'https://data.overheid.nl/dataset/storingsdata-liander-actuele-storingen'
 AZHK_OUTAGES_URL = 'https://www.azhk.kz/Map/get_tp_to_map.txt'
 AZHK_OUTAGES_SOURCE = 'https://www.azhk.kz/ru/spetsialnye-razdely/avarijnye-otklyucheniya'
+KAZTOLL_CAMERAS_SOURCE = 'https://kaztoll.kz/'
+# Published camera names matched to named OSM toll plazas, not town centers.
+# Other KazToll clips lack verified coordinates and remain catalog candidates.
+KAZTOLL_CAMERAS = {
+    'jjvezd': {'name': 'Жибек жолы — Въезд', 'road': 'Астана – Темиртау',
+               'lon': 71.8074804, 'lat': 51.0573963, 'osm_node': 6273637658},
+    'ttvezd': {'name': 'Темиртау — Въезд', 'road': 'Астана – Темиртау',
+               'lon': 72.8984722, 'lat': 50.1488416, 'osm_node': 6273637676},
+}
 WALES_RSS_BASE = 'https://traffic.wales/feeds'
 NATIONAL_HIGHWAYS_ROADWORKS_DATASET = ('https://www.data.gov.uk/dataset/'
                                        '5b3267d8-4307-4eef-a9af-3a4c28224694/'
@@ -8295,6 +8304,77 @@ def hong_kong_camera_snapshot(camera_id):
     return image, 'image/jpeg'
 
 
+def _kaztoll_camera_url(camera_id):
+    if camera_id not in KAZTOLL_CAMERAS:
+        raise ValueError('Unknown KazToll camera')
+    return f'https://kaztoll.kz/livestream/{camera_id}.mp4'
+
+
+def _kaztoll_clip_info(response, camera_id, now):
+    if response.url != _kaztoll_camera_url(camera_id):
+        raise ValueError('KazToll clip redirected away from the published file')
+    headers = response.headers
+    if headers.get('Content-Type', '').split(';')[0].lower() != 'video/mp4':
+        raise ValueError('KazToll camera did not return an MP4 clip')
+    try:
+        modified = email.utils.parsedate_to_datetime(headers['Last-Modified']).timestamp()
+        size = int(headers['Content-Length'])
+        if response.status == 206:
+            match = re.fullmatch(r'bytes 0-31/(\d{1,10})', headers.get('Content-Range', ''))
+            if not match or size != 32:
+                raise ValueError('Invalid clip probe range')
+            size = int(match[1])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError('KazToll camera has invalid clip metadata') from exc
+    if not 64 <= size <= 8 * 1024 * 1024 or not -300 <= now - modified <= 600:
+        raise FileNotFoundError('KazToll camera clip is stale or oversized')
+    return modified, size
+
+
+def _kaztoll_camera(camera_id):
+    request = urllib.request.Request(_kaztoll_camera_url(camera_id), headers={
+        'User-Agent': 'GlobeView/1.0 (public road camera reader)', 'Range': 'bytes=0-31',
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            modified, _ = _kaztoll_clip_info(response, camera_id, time.time())
+            prefix = response.read(32)
+            if len(prefix) != 32 or prefix[4:8] != b'ftyp':
+                raise ValueError('KazToll camera did not return an MP4 file')
+    except (OSError, ValueError):
+        return None
+    camera = KAZTOLL_CAMERAS[camera_id]
+    return _feature([camera['lon'], camera['lat']], {
+        'key': f'kz:kaztoll:{camera_id}', 'layer': 'cameras',
+        'title': camera['name'],
+        'detail': f"{camera['road']} · Recent video clip · Toll-plaza location; camera position approximate",
+        'video_url': f'/kaztoll-camera/{camera_id}', 'video_format': 'mp4',
+        'video_refresh_ms': 60000, 'updated_at': modified, 'valid_until': modified + 600,
+        'source': 'KazToll / © OpenStreetMap contributors',
+        'source_url': KAZTOLL_CAMERAS_SOURCE,
+        'location_source_url': f"https://www.openstreetmap.org/node/{camera['osm_node']}",
+    })
+
+
+def _kaztoll_cameras():
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        return [point for point in executor.map(_kaztoll_camera, KAZTOLL_CAMERAS) if point]
+
+
+def kaztoll_camera_clip(camera_id):
+    request = urllib.request.Request(_kaztoll_camera_url(camera_id), headers={
+        'User-Agent': 'GlobeView/1.0 (public road camera reader)',
+    })
+    with urllib.request.urlopen(request, timeout=18) as response:
+        _, size = _kaztoll_clip_info(response, camera_id, time.time())
+        if response.status != 200:
+            raise ValueError('KazToll returned an incomplete clip')
+        body = response.read(8 * 1024 * 1024 + 1)
+    if len(body) != size or body[4:8] != b'ftyp':
+        raise ValueError('KazToll camera returned an invalid clip')
+    return body, 'video/mp4'
+
+
 _FETCHERS = {
     'roads': {
         'ie_dublin_closures': _dublin_closures,
@@ -8396,6 +8476,7 @@ _FETCHERS = {
         'no_road_cameras': _norway_cameras,
         'no_road_weather': _norway_weather,
         'no_travel_times': _norway_travel_times,
+        'kz_kaztoll_cameras': _kaztoll_cameras,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
               'nged': _nged_outages, 'nie': _nie_outages,
@@ -8463,7 +8544,9 @@ def road_snapshot(layer, bbox=None):
         if not (-180 <= west <= east <= 180 and -90 <= south <= north <= 90):
             raise ValueError('Invalid road bounds')
     snapshot = _snapshot('roads')
-    features = [item for rows in snapshot['sources'].values() for item in rows if item['properties']['layer'] == layer]
+    now = time.time()
+    features = [item for rows in snapshot['sources'].values() for item in rows
+                if item['properties']['layer'] == layer and item['properties'].get('valid_until', float('inf')) > now]
     errors = list(snapshot['errors'])
     sources = list(snapshot['sources'])
     if layer == 'construction' and bbox is not None:

@@ -3349,6 +3349,63 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual([item['properties']['key'] for item in result['features']], ['uk:ukpn:1'])
         self.assertEqual(result['sourceErrors'], snapshot['errors'])
 
+    def test_kaztoll_camera_probes_require_recent_mp4_files_and_named_plazas(self):
+        prefix = b'\x00\x00\x00\x20ftypisom' + bytes(20)
+        def response(camera_id):
+            result = MagicMock()
+            result.url = feeds._kaztoll_camera_url(camera_id)
+            result.status = 206
+            result.headers = {'Content-Type': 'video/mp4', 'Content-Length': '32',
+                              'Content-Range': 'bytes 0-31/5000',
+                              'Last-Modified': email.utils.formatdate(NOW, usegmt=True)}
+            result.read.return_value = prefix
+            result.__enter__.return_value = result
+            return result
+        fresh, stale = response('jjvezd'), response('ttvezd')
+        stale.headers['Last-Modified'] = email.utils.formatdate(NOW - 601, usegmt=True)
+        with patch.object(feeds.urllib.request, 'urlopen', side_effect=[fresh, stale]), \
+                patch.object(feeds.time, 'time', return_value=NOW):
+            point = feeds._kaztoll_camera('jjvezd')
+            self.assertIsNone(feeds._kaztoll_camera('ttvezd'))
+        self.assertEqual(point['geometry']['coordinates'], [71.8074804, 51.0573963])
+        self.assertEqual(point['properties']['video_url'], '/kaztoll-camera/jjvezd')
+        self.assertEqual(point['properties']['video_format'], 'mp4')
+        self.assertEqual(point['properties']['valid_until'], NOW + 600)
+        self.assertIn('camera position approximate', point['properties']['detail'])
+        self.assertIn('/node/6273637658', point['properties']['location_source_url'])
+        with self.assertRaisesRegex(ValueError, 'Unknown'):
+            feeds._kaztoll_camera_url('../private')
+        with patch.object(feeds, '_snapshot', return_value={
+                'sources': {'kz_kaztoll_cameras': [point]}, 'errors': []}), \
+                patch.object(feeds.time, 'time', return_value=NOW + 601):
+            self.assertEqual(feeds.road_snapshot('cameras')['features'], [])
+
+    def test_kaztoll_clip_rejects_wrong_types_sizes_redirects_and_file_headers(self):
+        body = b'\x00\x00\x00\x20ftypisom' + bytes(116)
+        response = MagicMock()
+        response.url = feeds._kaztoll_camera_url('jjvezd')
+        response.status = 200
+        response.headers = {'Content-Type': 'video/mp4', 'Content-Length': str(len(body)),
+                            'Last-Modified': email.utils.formatdate(NOW, usegmt=True)}
+        response.read.return_value = body
+        response.__enter__.return_value = response
+        with patch.object(feeds.urllib.request, 'urlopen', return_value=response), \
+                patch.object(feeds.time, 'time', return_value=NOW):
+            self.assertEqual(feeds.kaztoll_camera_clip('jjvezd'), (body, 'video/mp4'))
+            response.read.return_value = b'<html>' + bytes(122)
+            with self.assertRaisesRegex(ValueError, 'invalid clip'):
+                feeds.kaztoll_camera_clip('jjvezd')
+        response.url = 'http://127.0.0.1/private'
+        with self.assertRaisesRegex(ValueError, 'redirected'):
+            feeds._kaztoll_clip_info(response, 'jjvezd', NOW)
+        response.url = feeds._kaztoll_camera_url('jjvezd')
+        response.headers['Content-Type'] = 'text/html'
+        with self.assertRaisesRegex(ValueError, 'MP4'):
+            feeds._kaztoll_clip_info(response, 'jjvezd', NOW)
+        response.headers.update({'Content-Type': 'video/mp4', 'Content-Length': '9000000'})
+        with self.assertRaisesRegex(FileNotFoundError, 'oversized'):
+            feeds._kaztoll_clip_info(response, 'jjvezd', NOW)
+
     def test_scottish_archive_maps_current_work_and_bounds_response(self):
         fields = ['ActivityStatus', 'Category', 'Longitude', 'Latitude', 'StartDateTimeUTC',
                   'EndDateTimeUTC', 'ActivityReference', 'Street', 'Town', 'TrafficManagement',
