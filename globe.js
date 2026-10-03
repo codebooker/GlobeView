@@ -2354,7 +2354,8 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         { bounds: { minLon: 4, maxLon: 32, minLat: 57, maxLat: 72 } },
         { bounds: { minLon: -25, maxLon: -13, minLat: 63, maxLat: 67.5 } },
         { bounds: { minLon: 14, maxLon: 24.3, minLat: 48.8, maxLat: 55.2 } },
-        { bounds: { minLon: 119, maxLon: 123, minLat: 21, maxLat: 26 } } // Taiwan highways
+        { bounds: { minLon: 119, maxLon: 123, minLat: 21, maxLat: 26 } }, // Taiwan highways
+        { bounds: { minLon: 44, maxLon: 64, minLat: 25, maxLat: 40 } } // Iran traffic counters
       ].some(region => regionVisible(region, currentBounds()));
       const northAmericaSensorsVisible = type !== 'sensors' || regionVisible({ bounds: {
         minLon: -170, maxLon: -50, minLat: 15, maxLat: 72 } }, currentBounds());

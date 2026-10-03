@@ -328,7 +328,7 @@ These mapped nodes are a separate source from the ministry's nationwide speed-ca
 
 | Category | Evidence and next work |
 | --- | --- |
-| Power outages | Telasi planned windows and Energo-Pro public planned/reported unplanned notices integrated; see below for date, location and public-list limits. Telasi unplanned notices still need independent checks. Customer accounts are not used. |
+| Power outages | Telasi planned windows and Energo-Pro public planned/reported unplanned notices integrated. Telasi's separate current interruption list was checked and empty on 3 October; its archived unplanned notices are not treated as live faults. Customer accounts are not used. |
 | Road incidents / construction | Batumi bypass night-work restrictions integrated under Construction; current published snow/ice restrictions on Pshaveli–Abano–Omalo appear under Road incidents at an approximate pass reference. Other road identities and notice formats still need verified location joins. The 1 October restored Tsalenjikha–Obuji–Jikhaskari km 11, 25 September restored Dariali Gorge and 24 September restored Samtredia–Grigoleti Lot 3 records clear older restrictions and are not mapped as current closures. |
 | Emergency calls / reports | [112’s official service description](https://112.gov.ge/?lang=en&page_id=1715) explains call handling. The Emergency Management Service publishes weekly regional totals and occasional rescue news; the current news list does not establish a current located dispatch feed. See the audit below. |
 | Traffic cameras | Three verified Batumi public webcams are integrated under Public webcams, with approximate site references. These are privately published views, not an official road-camera network. Official traffic-camera streams remain unverified. |
@@ -403,3 +403,27 @@ The point `41.65975575, 41.6787097` is the original map reference for the exact 
 The existing static catalog now holds 207 entries. Playback connects directly to the operator's published embed only when Play is pressed, and closing the popup removes the player. No stream relay, per-viewer catalog scraper, new media origin or background decoder is added. Public webcam popups with a published operator reference now link the actual operator page while continuing to play their existing embed.
 
 The separately published PMC/ICAM Batumi stream `4sBHNkR5` played at 1280×720 for more than nine minutes and shows a roundabout, but neither inspected directory supplies its exact road/site reference; it remains excluded pending location verification. Other CMG views have not been independently playback-checked and are not imported as working streams. Georgia's dispatch, official traffic-camera, readable-sign, sensor/flow and other road-reference gaps remain open.
+
+
+### Telasi unplanned-list check — 3 October 2026
+
+The public Telasi outage page exposes both planned and unplanned tabs. Its anonymous `getPoweroutages?contentType=poweroutage&pageNumber=1&perPage=50&selectedlan=en` response has a separate `api` current collection and `content` notice archive. The current collection returned `listCount: 0`; the visible street search likewise showed no current records. Archived category `2770` contains unplanned notices, distinct from planned `2769`. The latest Gldani notice, ID 5901, was published on 2 October at 03:09 local time and gives estimated restoration at 04:32 that same day. It is not imported as an ongoing outage. No account or private operational endpoints were queried. The current operational schema still needs a live nonempty primary-source sample before mapping it.
+
+## Iran — first integration, 3 October 2026
+
+**Road sensors integrated:** Iran's official [141 road map](https://141.ir/) provides a public **traffic counter** layer (`ترددشمار`). Its own client sends anonymous bounded POST queries to `https://api.141.ir/api/otfs/bbox`, with `min_lon`, `min_lat`, `max_lon`, `max_lat` and `zoom`. The live national query returned **2,896 located counters** in approximately 1.05 MB, with publisher timestamps around 16:50–16:51 UTC. The actual website displays average speed in **km/h** and congestion categories; the public Tehran/Karaj list was independently checked in the browser. Original Persian directional road names and province names are retained. The five congestion labels are translated into English; missing speed is never replaced with zero.
+
+`iran_roads.py` uses one fixed national query, shared across viewers for five minutes. It retains only public counter ID, published point coordinates, road/province names, average speed, congestion and timestamp. Responses are bounded to two MB and 5,000 records; redirects, API errors, invalid coordinates, conflicting duplicate IDs, invalid speeds and unknown status values are rejected. Readings expire fifteen minutes after their own UTC timestamp, including when held in the outer shared cache. Rows with both missing speed and unknown status are omitted. **Road sensors** displays the remaining points at zoom 10+, with direct links to 141. There is no per-viewer upstream query, credential, vehicle record or guessed road geometry. The public API briefly returned HTTP 502 from the production server; the same anonymous request subsequently succeeded. The existing source cache isolates transient failures. No explicit open-data reuse licence was found; publisher attribution and source links are preserved.
+
+| Category | Evidence and remaining work |
+| --- | --- |
+| Road sensors / traffic | Current located counter speed and congestion integrated. Continuous road-coloured traffic-flow geometry remains unverified. |
+| Road cameras | The actual 141 camera button explicitly reports that camera data is unavailable under current conditions. No camera inventories are imported as playable feeds. |
+| Road incidents / closures | Anonymous `obstructions/bbox` returned 12 closure references, including closures started years ago but updated today. The endpoint returned records outside the requested box; their ongoing status, detailed instructions and map identity require independent checks before integration. |
+| Construction | `road_workshops/bbox` returned an empty Tehran-area collection. The visible news ticker publishes current work notices, including Manjil–Rudbar lighting work and Tehran-area road resurfacing. News/detail joins, Persian calendar handling and located work windows remain to be verified. |
+| Emergency calls / reports | Located current dispatch/report feeds remain under investigation; social/news summaries are not dispatch records. |
+| Power outages | Public utility sources and located interruption schedules remain to be checked. |
+| Plate readers / enforcement | Located public inventories remain to be checked; traffic counters are not relabelled as plate readers. |
+| Readable digital signs | No verified current sign-message feed yet. |
+
+Iran, Georgia and the broader Europe/Asia rollout remain incomplete. This integration verifies one actual operational source while preserving the remaining categories for further work.
