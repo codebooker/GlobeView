@@ -1368,15 +1368,23 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     const verticalAnchor = point.y < map.getCanvas().clientHeight * (type === 'webcams' || type === 'cameras' ? 0.6 : 0.5)
       ? 'top' : 'bottom';
     const mobileWidth = map.getCanvas().clientWidth;
-    const mobileAnchor = point.x < 174 ? `${verticalAnchor}-left`
-      : point.x > mobileWidth - 174 ? `${verticalAnchor}-right` : verticalAnchor;
-    const anchor = mobileWidth < 600 ? mobileAnchor
+    const mobilePopup = mobileWidth < 600;
+    const anchor = mobilePopup ? verticalAnchor
       : point.x < visibleLeft + 180 ? 'left' : point.x > map.getCanvas().clientWidth - 180 ? 'right'
         : verticalAnchor;
-    const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '315px', offset: 14, anchor })
+    // A side anchor can push a 315px card out of a narrow viewport. Center the
+    // selected point in the space left of the map controls instead.
+    const cameraPadding = map.getPadding();
+    if (mobilePopup) map.easeTo({ center: coordinates,
+      offset: [-32, point.y - (map.getCanvas().clientHeight + cameraPadding.top - cameraPadding.bottom) / 2],
+      duration: 300, essential: true });
+    const popup = new maplibregl.Popup({ closeButton: true,
+      maxWidth: `${mobilePopup ? Math.min(315, mobileWidth - 90) : 315}px`, offset: 14, anchor })
       .setLngLat(coordinates).setDOMContent(root).addTo(map);
-    if (type === 'cameras' && (anchor.startsWith('top') || anchor.startsWith('bottom'))) {
-      const room = anchor.startsWith('top') ? map.getCanvas().clientHeight - point.y : point.y;
+    if ((mobilePopup || type === 'cameras') && (anchor.startsWith('top') || anchor.startsWith('bottom'))) {
+      const room = anchor.startsWith('top')
+        ? map.getCanvas().clientHeight - point.y - (mobilePopup ? 56 : 0)
+        : point.y - (mobilePopup ? cameraPadding.top : 0);
       popup.getElement().querySelector('.maplibregl-popup-content').style.maxHeight = `${Math.max(150, Math.floor(room - 30))}px`;
     }
     activePointPopup = popup;
