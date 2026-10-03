@@ -1,0 +1,3037 @@
+{
+  "sourceUrl": "https://download.geofabrik.de/europe/georgia.html",
+  "boundarySource": "https://download.geofabrik.de/europe/georgia.poly",
+  "osmLicence": "ODbL 1.0",
+  "osmDataThrough": "2026-10-02T20:21:34Z",
+  "checkedDate": "2026-10-03",
+  "osmInputSha256": "622a8b9f7fc1afb5fb4cbc95c6a55498ae29bb0da4f4862ae063d735d3c2b447",
+  "boundaryInputSha256": "7d377c2747d6bca2abbd04d61405337631f280ee509052017161aa83423b70ba",
+  "boundaryBounds": [
+    39.88093,
+    41.05117,
+    46.73959,
+    43.5899
+  ],
+  "sourceNodes": 259,
+  "locations": [
+    {
+      "osmNode": 220729275,
+      "lat": 41.8492115,
+      "lon": 44.7319077,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 220734883,
+      "lat": 41.8423539,
+      "lon": 44.7304348,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 220752256,
+      "lat": 41.8271001,
+      "lon": 44.7359098,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 220993269,
+      "lat": 41.7519462,
+      "lon": 44.7777786,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 221144118,
+      "lat": 41.7857529,
+      "lon": 44.7999637,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 221473700,
+      "lat": 41.6598777,
+      "lon": 44.8886561,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 279301128,
+      "lat": 41.6785564,
+      "lon": 44.8283125,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 279333112,
+      "lat": 41.7855836,
+      "lon": 44.8000478,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 280061723,
+      "lat": 41.7407203,
+      "lon": 44.7717334,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 287831094,
+      "lat": 41.752054,
+      "lon": 44.7776826,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 288608896,
+      "lat": 41.8930034,
+      "lon": 44.7150233,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 288609488,
+      "lat": 42.0384582,
+      "lon": 43.515197,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 288610083,
+      "lat": 42.103558,
+      "lon": 43.2401615,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 312947830,
+      "lat": 41.7479959,
+      "lon": 44.7717732,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": [
+        180.0
+      ]
+    },
+    {
+      "osmNode": 313196810,
+      "lat": 41.8948926,
+      "lon": 41.7732581,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 313454739,
+      "lat": 42.0765371,
+      "lon": 41.9111079,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 313454779,
+      "lat": 42.0632303,
+      "lon": 41.8716744,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 444738603,
+      "lat": 41.5587033,
+      "lon": 44.9680484,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 444749474,
+      "lat": 41.572575,
+      "lon": 44.9718947,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": [
+        130.0
+      ]
+    },
+    {
+      "osmNode": 444802657,
+      "lat": 41.5499293,
+      "lon": 44.9931565,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": [
+        120.0
+      ]
+    },
+    {
+      "osmNode": 715336653,
+      "lat": 41.670896,
+      "lon": 44.8713403,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 771201267,
+      "lat": 41.7407068,
+      "lon": 44.7598973,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": [
+        211.0
+      ]
+    },
+    {
+      "osmNode": 778955315,
+      "lat": 41.6875646,
+      "lon": 44.8977224,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        80.0
+      ]
+    },
+    {
+      "osmNode": 790334036,
+      "lat": 41.7305795,
+      "lon": 44.7749471,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": [
+        0.0
+      ]
+    },
+    {
+      "osmNode": 852419242,
+      "lat": 41.8268668,
+      "lon": 44.7351564,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 877625195,
+      "lat": 41.7552719,
+      "lon": 44.775595,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 919358548,
+      "lat": 41.7136917,
+      "lon": 44.7686941,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        80.0
+      ]
+    },
+    {
+      "osmNode": 921378584,
+      "lat": 41.6143367,
+      "lon": 44.790131,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 928838762,
+      "lat": 41.7135993,
+      "lon": 44.7685934,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        280.0
+      ]
+    },
+    {
+      "osmNode": 1059341045,
+      "lat": 41.8910423,
+      "lon": 44.7168122,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 1080186496,
+      "lat": 41.6894417,
+      "lon": 41.7153488,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1164442192,
+      "lat": 42.2356814,
+      "lon": 42.7122095,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 1169963400,
+      "lat": 41.8957531,
+      "lon": 45.8260733,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 1169966146,
+      "lat": 41.863406,
+      "lon": 45.8154742,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 1172131604,
+      "lat": 41.9234545,
+      "lon": 45.4042602,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 1172236345,
+      "lat": 41.862333,
+      "lon": 45.6318245,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1172312093,
+      "lat": 41.9379464,
+      "lon": 45.5100401,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1172336474,
+      "lat": 41.9574283,
+      "lon": 45.5250338,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1174193231,
+      "lat": 41.8066008,
+      "lon": 45.7386648,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 1174659094,
+      "lat": 41.6915738,
+      "lon": 45.8611767,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 1176868051,
+      "lat": 42.0282016,
+      "lon": 43.5351926,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1176870404,
+      "lat": 42.0287451,
+      "lon": 43.5462168,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1177965379,
+      "lat": 41.999813,
+      "lon": 43.6588063,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 1178094246,
+      "lat": 42.03963,
+      "lon": 43.8147587,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1184282542,
+      "lat": 42.0241517,
+      "lon": 44.2235864,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 1185666905,
+      "lat": 41.8396965,
+      "lon": 43.3872065,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 1202894052,
+      "lat": 42.614281,
+      "lon": 44.5948105,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera",
+        "plate_reader"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1203110648,
+      "lat": 42.3444892,
+      "lon": 44.694506,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        160.0
+      ]
+    },
+    {
+      "osmNode": 1203113623,
+      "lat": 42.3626635,
+      "lon": 44.6840411,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        140.0
+      ]
+    },
+    {
+      "osmNode": 1203234590,
+      "lat": 42.0082618,
+      "lon": 44.752692,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1203249816,
+      "lat": 41.9793014,
+      "lon": 44.7489999,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 1276866404,
+      "lat": 41.8829794,
+      "lon": 41.7747727,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 1304540599,
+      "lat": 41.7862907,
+      "lon": 41.7661639,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 1330799579,
+      "lat": 41.6838858,
+      "lon": 41.7004008,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 1398437080,
+      "lat": 41.6869913,
+      "lon": 44.8557533,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        100.0
+      ]
+    },
+    {
+      "osmNode": 1472419971,
+      "lat": 42.009989,
+      "lon": 44.0472783,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 1472419999,
+      "lat": 42.010256,
+      "lon": 44.0469205,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 1472420030,
+      "lat": 42.0130779,
+      "lon": 44.0553176,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 1472420032,
+      "lat": 42.0133972,
+      "lon": 44.0550494,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 1612189959,
+      "lat": 41.7987701,
+      "lon": 44.7994075,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 1847906782,
+      "lat": 41.5724974,
+      "lon": 44.9718386,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": [
+        300.0
+      ]
+    },
+    {
+      "osmNode": 2083053552,
+      "lat": 41.6880716,
+      "lon": 44.8188379,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 2121617343,
+      "lat": 43.3161087,
+      "lon": 40.2468875,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 2250245514,
+      "lat": 42.1860308,
+      "lon": 42.7280476,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 2379653461,
+      "lat": 41.806003,
+      "lon": 44.7716593,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 2502667016,
+      "lat": 41.5911317,
+      "lon": 41.6457872,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3006219126,
+      "lat": 41.2265098,
+      "lon": 44.8576768,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3008209460,
+      "lat": 41.6387291,
+      "lon": 41.6112925,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 3008209461,
+      "lat": 41.6387833,
+      "lon": 41.6112231,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 3008219551,
+      "lat": 41.9735185,
+      "lon": 43.5483757,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3650615148,
+      "lat": 42.1849049,
+      "lon": 42.6929037,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 3680263143,
+      "lat": 41.7116083,
+      "lon": 44.8647129,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 3688981741,
+      "lat": 41.8469576,
+      "lon": 44.7316009,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 3688981743,
+      "lat": 41.8939887,
+      "lon": 44.6621064,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 3688981744,
+      "lat": 41.9024808,
+      "lon": 44.5815029,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 3696546192,
+      "lat": 41.3357312,
+      "lon": 44.8081925,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": [
+        25.0,
+        205.0
+      ]
+    },
+    {
+      "osmNode": 3702906257,
+      "lat": 41.8072517,
+      "lon": 44.7710807,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 3702929627,
+      "lat": 41.9076676,
+      "lon": 44.5726911,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 3708933317,
+      "lat": 41.9842853,
+      "lon": 43.5885659,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3711551258,
+      "lat": 41.6436823,
+      "lon": 41.6179165,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 3711579203,
+      "lat": 42.0873674,
+      "lon": 42.1400422,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3711582873,
+      "lat": 42.0427516,
+      "lon": 41.7349859,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": [
+        60.0
+      ]
+    },
+    {
+      "osmNode": 3711597389,
+      "lat": 42.0775736,
+      "lon": 42.0862894,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 3711605881,
+      "lat": 41.5992276,
+      "lon": 41.6033982,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 3918292675,
+      "lat": 41.6957781,
+      "lon": 45.0946382,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 4143979294,
+      "lat": 41.5462132,
+      "lon": 45.0032419,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": [
+        280.0
+      ]
+    },
+    {
+      "osmNode": 4189663422,
+      "lat": 41.5698343,
+      "lon": 44.9643149,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 4254263064,
+      "lat": 41.5679917,
+      "lon": 44.9619356,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 4254263073,
+      "lat": 41.5678935,
+      "lon": 44.9617868,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 4254281769,
+      "lat": 41.5884009,
+      "lon": 44.9482112,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 4386786989,
+      "lat": 41.7561634,
+      "lon": 44.8094173,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4407175818,
+      "lat": 41.6868264,
+      "lon": 44.855731,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 4713355485,
+      "lat": 41.6774874,
+      "lon": 44.829158,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 4745483535,
+      "lat": 41.777004,
+      "lon": 44.7895965,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 5568663465,
+      "lat": 42.1868035,
+      "lon": 42.6408148,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 5877954713,
+      "lat": 41.8904417,
+      "lon": 44.7171289,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 5877954714,
+      "lat": 41.8467181,
+      "lon": 44.7317112,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877954715,
+      "lat": 41.8940996,
+      "lon": 44.6626867,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877954716,
+      "lat": 41.904044,
+      "lon": 44.5790593,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877954717,
+      "lat": 41.9045006,
+      "lon": 44.5778625,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877961787,
+      "lat": 41.9658997,
+      "lon": 44.4654506,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877961788,
+      "lat": 41.9655884,
+      "lon": 44.4668628,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877961789,
+      "lat": 41.9884329,
+      "lon": 44.4204364,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877961790,
+      "lat": 41.9891985,
+      "lon": 44.4196347,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877968299,
+      "lat": 42.0234549,
+      "lon": 44.2484591,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877968300,
+      "lat": 42.0233157,
+      "lon": 44.2471353,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877968301,
+      "lat": 42.0174247,
+      "lon": 44.145006,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5877968302,
+      "lat": 42.017724,
+      "lon": 44.1453964,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 5924690286,
+      "lat": 41.8912494,
+      "lon": 44.7168084,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 6129200087,
+      "lat": 41.8985539,
+      "lon": 45.5715782,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6193776836,
+      "lat": 41.8492122,
+      "lon": 44.7317485,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": []
+    },
+    {
+      "osmNode": 6277102163,
+      "lat": 41.9197265,
+      "lon": 45.5014193,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6277102164,
+      "lat": 41.9169395,
+      "lon": 45.5341669,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6283966273,
+      "lat": 41.9198176,
+      "lon": 45.5013917,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6307859022,
+      "lat": 41.6877643,
+      "lon": 44.8980117,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": [
+        80.0
+      ]
+    },
+    {
+      "osmNode": 6307906777,
+      "lat": 41.6991169,
+      "lon": 44.8523398,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        180.0
+      ]
+    },
+    {
+      "osmNode": 6307906853,
+      "lat": 41.6963519,
+      "lon": 44.8555369,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        90.0
+      ]
+    },
+    {
+      "osmNode": 6307909653,
+      "lat": 41.7014434,
+      "lon": 44.8507639,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 30,
+      "directions": [
+        140.0
+      ]
+    },
+    {
+      "osmNode": 6307913341,
+      "lat": 41.7037583,
+      "lon": 44.8495622,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        170.0
+      ]
+    },
+    {
+      "osmNode": 6307917048,
+      "lat": 41.7057837,
+      "lon": 44.8528853,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": [
+        235.0
+      ]
+    },
+    {
+      "osmNode": 6307919621,
+      "lat": 41.7079578,
+      "lon": 44.857339,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": [
+        250.0
+      ]
+    },
+    {
+      "osmNode": 6307920378,
+      "lat": 41.7153221,
+      "lon": 44.8725793,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 55,
+      "directions": [
+        250.0
+      ]
+    },
+    {
+      "osmNode": 6307934044,
+      "lat": 41.7148484,
+      "lon": 44.8712548,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 55,
+      "directions": [
+        80.0
+      ]
+    },
+    {
+      "osmNode": 6307934045,
+      "lat": 41.713109,
+      "lon": 44.8678386,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 45,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 6307934046,
+      "lat": 41.7109087,
+      "lon": 44.863269,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 35,
+      "directions": [
+        55.0
+      ]
+    },
+    {
+      "osmNode": 6307934048,
+      "lat": 41.709287,
+      "lon": 44.859893,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 6307934049,
+      "lat": 41.7073663,
+      "lon": 44.8557634,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 6307934050,
+      "lat": 41.7045964,
+      "lon": 44.8497215,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 6307934051,
+      "lat": 41.7037605,
+      "lon": 44.8494542,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": []
+    },
+    {
+      "osmNode": 6307934053,
+      "lat": 41.6991228,
+      "lon": 44.8522672,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 30,
+      "directions": []
+    },
+    {
+      "osmNode": 6307934054,
+      "lat": 41.6965826,
+      "lon": 44.8536453,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 6307934055,
+      "lat": 41.6955893,
+      "lon": 44.8571375,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 75,
+      "directions": []
+    },
+    {
+      "osmNode": 6312404042,
+      "lat": 41.6904804,
+      "lon": 44.8528798,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        92.0
+      ]
+    },
+    {
+      "osmNode": 6312404043,
+      "lat": 41.6880938,
+      "lon": 44.8499271,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        89.0
+      ]
+    },
+    {
+      "osmNode": 6312404044,
+      "lat": 41.6897196,
+      "lon": 44.8427001,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        120.0
+      ]
+    },
+    {
+      "osmNode": 6312404045,
+      "lat": 41.6916008,
+      "lon": 44.8345294,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        105.0
+      ]
+    },
+    {
+      "osmNode": 6312404047,
+      "lat": 41.691455,
+      "lon": 44.831331,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        105.0
+      ]
+    },
+    {
+      "osmNode": 6312404048,
+      "lat": 41.6920996,
+      "lon": 44.8219039,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        90.0
+      ]
+    },
+    {
+      "osmNode": 6312404049,
+      "lat": 41.6936435,
+      "lon": 44.8112865,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 30,
+      "directions": [
+        150.0
+      ]
+    },
+    {
+      "osmNode": 6312409520,
+      "lat": 41.6930837,
+      "lon": 44.854811,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        152.0
+      ]
+    },
+    {
+      "osmNode": 6312409521,
+      "lat": 41.6931161,
+      "lon": 44.8547869,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": []
+    },
+    {
+      "osmNode": 6335135927,
+      "lat": 41.9258104,
+      "lon": 45.4532585,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6335440710,
+      "lat": 41.5701051,
+      "lon": 44.9646756,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 6355371421,
+      "lat": 41.6560246,
+      "lon": 44.8984935,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 6579735849,
+      "lat": 41.8396185,
+      "lon": 41.7782647,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 6579740199,
+      "lat": 41.8413684,
+      "lon": 41.7784803,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788487,
+      "lat": 42.1609039,
+      "lon": 42.3817183,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788488,
+      "lat": 42.1627092,
+      "lon": 42.4600774,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788489,
+      "lat": 42.1713109,
+      "lon": 42.583704,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788490,
+      "lat": 42.1713545,
+      "lon": 42.5939274,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788491,
+      "lat": 42.1835524,
+      "lon": 42.6331979,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788492,
+      "lat": 42.1873542,
+      "lon": 42.6755214,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788493,
+      "lat": 42.1877928,
+      "lon": 42.7379919,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6579788494,
+      "lat": 42.2108273,
+      "lon": 42.8142973,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 6581304152,
+      "lat": 42.2521847,
+      "lon": 42.6559366,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6602323086,
+      "lat": 42.658494,
+      "lon": 44.6409262,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 6602323087,
+      "lat": 42.6503085,
+      "lon": 44.6411879,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6602323088,
+      "lat": 42.6208312,
+      "lon": 44.6035751,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera",
+        "plate_reader"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6605059313,
+      "lat": 42.6257619,
+      "lon": 44.6123384,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": [
+        150.0
+      ]
+    },
+    {
+      "osmNode": 6605059315,
+      "lat": 42.6023093,
+      "lon": 44.5767703,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6605059316,
+      "lat": 42.6064838,
+      "lon": 44.5836135,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 6616213604,
+      "lat": 41.8953753,
+      "lon": 44.7190218,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 6616213605,
+      "lat": 41.9195871,
+      "lon": 44.7279766,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 6616213606,
+      "lat": 42.0329312,
+      "lon": 44.7460353,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 6616213607,
+      "lat": 41.9466027,
+      "lon": 44.7403709,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 6640365377,
+      "lat": 41.779768,
+      "lon": 45.7720505,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 6816836441,
+      "lat": 41.5886438,
+      "lon": 44.9484426,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 6895611576,
+      "lat": 42.5550411,
+      "lon": 44.4985886,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 6895611577,
+      "lat": 41.9927403,
+      "lon": 44.7515877,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7062899978,
+      "lat": 41.9909418,
+      "lon": 45.5849054,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565946316,
+      "lat": 42.3710204,
+      "lon": 41.8201603,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565946317,
+      "lat": 42.3617024,
+      "lon": 41.834855,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565946318,
+      "lat": 42.3255852,
+      "lon": 41.8865592,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565970953,
+      "lat": 42.3217316,
+      "lon": 41.892587,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565970954,
+      "lat": 42.2225586,
+      "lon": 41.7969904,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565970955,
+      "lat": 42.1859579,
+      "lon": 41.7054598,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565970956,
+      "lat": 42.1719322,
+      "lon": 41.6774572,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7565970957,
+      "lat": 42.1574119,
+      "lon": 41.6853391,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 7895109551,
+      "lat": 41.8163907,
+      "lon": 44.8548709,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 7895109552,
+      "lat": 41.7490521,
+      "lon": 45.0125434,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 7973934152,
+      "lat": 41.9277897,
+      "lon": 45.4174847,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 7973934153,
+      "lat": 41.9252041,
+      "lon": 45.4100371,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 7973934155,
+      "lat": 41.9289382,
+      "lon": 45.4280733,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 7973934156,
+      "lat": 41.9236196,
+      "lon": 45.4366,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 7973934157,
+      "lat": 41.9215867,
+      "lon": 45.4432119,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 8325261151,
+      "lat": 41.9199474,
+      "lon": 45.516371,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 8325280817,
+      "lat": 41.8988012,
+      "lon": 45.5711219,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 8481732582,
+      "lat": 41.7199524,
+      "lon": 45.1768929,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 8481732583,
+      "lat": 41.7131759,
+      "lon": 45.1584295,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 8752185652,
+      "lat": 41.9703385,
+      "lon": 45.5580765,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 9116112796,
+      "lat": 41.7502259,
+      "lon": 45.8159545,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 9279192372,
+      "lat": 41.6383877,
+      "lon": 43.0014204,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 9599183031,
+      "lat": 41.7130699,
+      "lon": 45.1579975,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 9643008729,
+      "lat": 41.7027217,
+      "lon": 45.870872,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 9643008730,
+      "lat": 41.7519027,
+      "lon": 45.8137098,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 9852615851,
+      "lat": 41.6727639,
+      "lon": 44.8834047,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        300.0
+      ]
+    },
+    {
+      "osmNode": 9852615852,
+      "lat": 41.6728655,
+      "lon": 44.8837357,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        110.0
+      ]
+    },
+    {
+      "osmNode": 9852615853,
+      "lat": 41.6798786,
+      "lon": 44.8713017,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        115.0
+      ]
+    },
+    {
+      "osmNode": 9852615854,
+      "lat": 41.6797109,
+      "lon": 44.87117,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        305.0
+      ]
+    },
+    {
+      "osmNode": 10179038077,
+      "lat": 41.6462976,
+      "lon": 41.6492537,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 10292821888,
+      "lat": 42.039378,
+      "lon": 41.7781451,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 10292821889,
+      "lat": 42.039281,
+      "lon": 41.77823,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 10648644059,
+      "lat": 41.5721039,
+      "lon": 41.5719059,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 10650781202,
+      "lat": 41.5723322,
+      "lon": 41.5719261,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 10657955096,
+      "lat": 41.6369058,
+      "lon": 41.6134831,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": [
+        61.0
+      ]
+    },
+    {
+      "osmNode": 10982425233,
+      "lat": 41.8341729,
+      "lon": 41.7774463,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 11181276812,
+      "lat": 41.6483332,
+      "lon": 41.6379134,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 11305261909,
+      "lat": 41.6251822,
+      "lon": 42.1786192,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 11549345522,
+      "lat": 41.5461346,
+      "lon": 45.0031842,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": [
+        310.0
+      ]
+    },
+    {
+      "osmNode": 11916893969,
+      "lat": 42.106184,
+      "lon": 43.0521254,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 11948016559,
+      "lat": 41.5498397,
+      "lon": 44.9931364,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": [
+        110.0
+      ]
+    },
+    {
+      "osmNode": 12165160543,
+      "lat": 41.8723704,
+      "lon": 44.7273854,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 60,
+      "directions": []
+    },
+    {
+      "osmNode": 12251144057,
+      "lat": 41.6350402,
+      "lon": 41.6830967,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 90,
+      "directions": []
+    },
+    {
+      "osmNode": 12542362232,
+      "lat": 41.7070548,
+      "lon": 44.8554506,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 20,
+      "directions": [
+        235.0
+      ]
+    },
+    {
+      "osmNode": 12810151067,
+      "lat": 41.7354127,
+      "lon": 44.8389026,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": []
+    },
+    {
+      "osmNode": 13899236702,
+      "lat": 42.2737998,
+      "lon": 42.6462695,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": []
+    },
+    {
+      "osmNode": 13899236703,
+      "lat": 42.2826347,
+      "lon": 42.6178125,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": [
+        125.0
+      ]
+    },
+    {
+      "osmNode": 13899236704,
+      "lat": 42.3011123,
+      "lon": 42.5958972,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": [
+        155.0
+      ]
+    },
+    {
+      "osmNode": 13899242901,
+      "lat": 42.2666734,
+      "lon": 42.6919824,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 50,
+      "directions": []
+    },
+    {
+      "osmNode": 13899242902,
+      "lat": 42.2832428,
+      "lon": 42.6161522,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": [
+        310.0
+      ]
+    },
+    {
+      "osmNode": 13899243001,
+      "lat": 42.3323902,
+      "lon": 42.599677,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 13910515687,
+      "lat": 42.128808,
+      "lon": 43.0072653,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        285.0
+      ]
+    },
+    {
+      "osmNode": 13910533302,
+      "lat": 42.0317426,
+      "lon": 43.7873795,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        70.0
+      ]
+    },
+    {
+      "osmNode": 13910572301,
+      "lat": 42.011153,
+      "lon": 43.7074354,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        75.0
+      ]
+    },
+    {
+      "osmNode": 13910572302,
+      "lat": 42.0137095,
+      "lon": 43.691999,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        105.0
+      ]
+    },
+    {
+      "osmNode": 13910572303,
+      "lat": 42.099366,
+      "lon": 43.3929085,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 13910572304,
+      "lat": 42.1274305,
+      "lon": 43.0165782,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        110.0
+      ]
+    },
+    {
+      "osmNode": 13910572401,
+      "lat": 42.0284162,
+      "lon": 43.5685028,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        110.0
+      ]
+    },
+    {
+      "osmNode": 13910572402,
+      "lat": 42.1160963,
+      "lon": 43.0478889,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        105.0
+      ]
+    },
+    {
+      "osmNode": 13910572403,
+      "lat": 42.1373525,
+      "lon": 42.9816027,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        115.0
+      ]
+    },
+    {
+      "osmNode": 13910572501,
+      "lat": 42.0421295,
+      "lon": 43.5379689,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": []
+    },
+    {
+      "osmNode": 13910572502,
+      "lat": 42.1577016,
+      "lon": 42.9522211,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        120.0
+      ]
+    },
+    {
+      "osmNode": 13910572601,
+      "lat": 42.1108332,
+      "lon": 43.2963554,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        95.0
+      ]
+    },
+    {
+      "osmNode": 13910572602,
+      "lat": 42.1020257,
+      "lon": 43.0690452,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        115.0
+      ]
+    },
+    {
+      "osmNode": 13910572603,
+      "lat": 42.3062183,
+      "lon": 42.5947207,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 13910572701,
+      "lat": 42.1072212,
+      "lon": 43.2600957,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        70.0
+      ]
+    },
+    {
+      "osmNode": 13910572702,
+      "lat": 42.0992966,
+      "lon": 43.0738521,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        145.0
+      ]
+    },
+    {
+      "osmNode": 13910572703,
+      "lat": 42.1419211,
+      "lon": 42.9721067,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": [
+        125.0
+      ]
+    },
+    {
+      "osmNode": 13910572704,
+      "lat": 42.2710779,
+      "lon": 42.6698268,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 13910597473,
+      "lat": 42.1621008,
+      "lon": 42.9450364,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        310.0
+      ]
+    },
+    {
+      "osmNode": 13914922701,
+      "lat": 43.0422346,
+      "lon": 42.7169706,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 40,
+      "directions": []
+    },
+    {
+      "osmNode": 13927250512,
+      "lat": 42.6562425,
+      "lon": 42.7718605,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": [
+        40.0
+      ]
+    },
+    {
+      "osmNode": 13945986501,
+      "lat": 42.0923905,
+      "lon": 43.096495,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        255.0
+      ]
+    },
+    {
+      "osmNode": 13945986502,
+      "lat": 42.0278106,
+      "lon": 43.5695689,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        305.0
+      ]
+    },
+    {
+      "osmNode": 13945986503,
+      "lat": 42.0316311,
+      "lon": 43.7874159,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        260.0
+      ]
+    },
+    {
+      "osmNode": 13945986504,
+      "lat": 41.8325257,
+      "lon": 44.731955,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        325.0
+      ]
+    },
+    {
+      "osmNode": 13945986601,
+      "lat": 42.1041006,
+      "lon": 43.21132,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        290.0
+      ]
+    },
+    {
+      "osmNode": 13945986602,
+      "lat": 42.0179648,
+      "lon": 44.0993368,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        260.0
+      ]
+    },
+    {
+      "osmNode": 13945986701,
+      "lat": 42.1083152,
+      "lon": 43.2709823,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        270.0
+      ]
+    },
+    {
+      "osmNode": 13945986801,
+      "lat": 42.1106961,
+      "lon": 43.2963636,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        270.0
+      ]
+    },
+    {
+      "osmNode": 13945986802,
+      "lat": 42.1059595,
+      "lon": 43.3525224,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        265.0
+      ]
+    },
+    {
+      "osmNode": 13945986901,
+      "lat": 42.1082867,
+      "lon": 43.3043263,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        295.0
+      ]
+    },
+    {
+      "osmNode": 13945986902,
+      "lat": 42.0135857,
+      "lon": 43.6919527,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        290.0
+      ]
+    },
+    {
+      "osmNode": 13945987001,
+      "lat": 42.0110237,
+      "lon": 43.7074735,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        260.0
+      ]
+    },
+    {
+      "osmNode": 13945987101,
+      "lat": 42.0198182,
+      "lon": 44.0093126,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        285.0
+      ]
+    },
+    {
+      "osmNode": 13945987102,
+      "lat": 42.0180663,
+      "lon": 44.1304982,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 110,
+      "directions": [
+        290.0
+      ]
+    },
+    {
+      "osmNode": 13948380701,
+      "lat": 42.1012582,
+      "lon": 43.070714,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 80,
+      "directions": [
+        305.0
+      ]
+    },
+    {
+      "osmNode": 13948380702,
+      "lat": 42.0992281,
+      "lon": 43.0737086,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": null,
+      "directions": [
+        325.0
+      ]
+    },
+    {
+      "osmNode": 14169002477,
+      "lat": 41.731474,
+      "lon": 44.7744155,
+      "locationKind": "osm_mapped_node",
+      "mappedKinds": [
+        "speed_camera"
+      ],
+      "mappedLimitKmh": 70,
+      "directions": [
+        180.0
+      ]
+    }
+  ],
+  "omitted": []
+}
