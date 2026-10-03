@@ -8922,4 +8922,4 @@ def power_snapshot():
     features = [item for rows in snapshot['sources'].values() for item in rows
                 if item['properties'].get('valid_until', float('inf')) > now]
     return {'type': 'FeatureCollection', 'features': features, 'sourceErrors': snapshot['errors'],
-            'sources': list(snapshot['sources'])}
+            'sources': list(snapshot['sources']), 'loading': snapshot.get('loading', False)}

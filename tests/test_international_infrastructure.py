@@ -3350,6 +3350,42 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual([item['properties']['key'] for item in result['features']], ['uk:ukpn:1'])
         self.assertEqual(result['sourceErrors'], snapshot['errors'])
 
+    def test_cold_power_snapshot_exposes_loading_then_shared_completed_sources(self):
+        release_slow = threading.Event()
+        calls = []
+        point = feeds._feature([44.50312, 40.18147], {
+            'key': 'am:ena:planned:example', 'valid_until': time.time() + 60})
+
+        def fast_source():
+            calls.append('fast')
+            return [point]
+
+        def slow_source():
+            calls.append('slow')
+            release_slow.wait(2)
+            return []
+
+        fresh_cache = {'until': 0, 'sources': {}, 'source_times': {},
+                       'errors': [], 'refreshing': False}
+        try:
+            with patch.dict(feeds._CACHE, {'power': fresh_cache}), \
+                    patch.dict(feeds._FETCHERS, {'power': {
+                        'fast': fast_source, 'slow': slow_source}}), \
+                    patch.object(feeds, '_COLD_WAIT_SECONDS', 0.15):
+                first = feeds.power_snapshot()
+                self.assertTrue(first['loading'])
+                self.assertEqual(first['features'], [point])
+                self.assertTrue(feeds.power_snapshot()['loading'])
+                release_slow.set()
+                self.assertTrue(feeds._REFRESH_DONE['power'].wait(2))
+                completed = feeds.power_snapshot()
+                self.assertFalse(completed['loading'])
+                self.assertEqual(completed['features'], [point])
+                self.assertCountEqual(completed['sources'], ['fast', 'slow'])
+                self.assertCountEqual(calls, ['fast', 'slow'])
+        finally:
+            release_slow.set()
+
     def test_kaztoll_camera_probes_require_recent_mp4_files_and_named_plazas(self):
         prefix = b'\x00\x00\x00\x20ftypisom' + bytes(20)
         def response(camera_id):
