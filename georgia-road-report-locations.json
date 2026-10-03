@@ -1,0 +1,22 @@
+{
+  "source": "https://www.openstreetmap.org/copyright",
+  "licence": "ODbL 1.0",
+  "locationKind": "approximate_named_road_reference",
+  "dataThrough": "2026-10-02T20:21:34Z",
+  "osmSha256": "6c2a21887226d3e2682c80e85d26d46a3fa6f7e34df35e6cb9d58c0affaee09d",
+  "locations": [
+    {
+      "id": "pshaveli-abano-omalo",
+      "name": "Pshaveli–Abano–Omalo · Abano Pass",
+      "coordinates": [
+        45.5084719,
+        42.2780088
+      ],
+      "osmNode": 824101262,
+      "osmRoadWay": 779659168,
+      "osmRoadRelation": 19687627,
+      "identitySource": "https://georgia.travel/the-most-beautiful-road-passes-of-georgia",
+      "referenceNote": "Named pass on the road; not the published kilometre limits"
+    }
+  ]
+}

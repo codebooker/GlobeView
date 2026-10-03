@@ -23,6 +23,11 @@ _START = re.compile(r'\bfrom (' + '|'.join(_MONTHS) + r') (\d{1,2})(?:, (20\d{2}
 _WEEKDAY = re.compile(r'\bfrom Monday through Friday, between (\d{2}):(\d{2}) and (\d{2}):(\d{2})\b', re.I)
 _WEEKEND = re.compile(r'\bon weekends, between (\d{2}):(\d{2}) and (\d{2}):(\d{2})\b', re.I)
 _DURATION = re.compile(r'\b(?:This traffic regime will remain in effect|for) (?:for )?(one|two|three) months?\b', re.I)
+REPORT_LOCATION_PATH = Path(__file__).with_name('georgia-road-report-locations.json')
+REPORT_MAX_AGE_DAYS = 7
+_TUSHETI_ROAD = re.compile(r'(?:Pshaveli\s*[-–—]\s*Abano\s*[-–—]\s*Omalo|'
+                          r'ფშაველი\s*[-–—]\s*აბანო\s*[-–—]\s*ომალო)', re.I)
+_KM_RANGE = re.compile(r'კმ\s*(\d{1,3})\s*[-–—]\s*კმ\s*(\d{1,3})')
 
 
 class _Text(HTMLParser):
@@ -136,7 +141,7 @@ def _schedule(text, published):
     return start, end, weekdays, weekends
 
 
-def parse_restrictions(rows, now=None, refs=None):
+def _parse_batumi_restrictions(rows, now=None, refs=None):
     now = now or dt.datetime.now(_ZONE)
     if now.tzinfo is None:
         raise ValueError('Georgia road clock must be timezone aware')
@@ -208,6 +213,96 @@ def parse_restrictions(rows, now=None, refs=None):
                             'road_segments': location['roadSegments'], 'road_segment_bounds': bounds,
                             'segment_color': '#ed7770' if active else '#edb965',
                             'valid_until': min(now.timestamp() + 900, transition.timestamp(), end.timestamp())}}]
+
+
+@functools.lru_cache(maxsize=1)
+def report_catalog():
+    data = json.loads(REPORT_LOCATION_PATH.read_text(encoding='utf-8'))
+    if (data.get('licence') != 'ODbL 1.0'
+            or data.get('source') != 'https://www.openstreetmap.org/copyright'
+            or data.get('locationKind') != 'approximate_named_road_reference'
+            or not re.fullmatch(r'[0-9a-f]{64}', str(data.get('osmSha256', '')))):
+        raise ValueError('Georgia road-report provenance changed')
+    rows = data.get('locations')
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise ValueError('Georgia road-report reference missing')
+    row = rows[0]
+    point = row.get('coordinates')
+    if (row.get('id') != 'pshaveli-abano-omalo' or row.get('osmNode') != 824101262
+            or row.get('osmRoadWay') != 779659168 or row.get('osmRoadRelation') != 19687627
+            or not isinstance(point, list) or len(point) != 2
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in point)
+            or not 45.49 <= point[0] <= 45.53 or not 42.26 <= point[1] <= 42.30):
+        raise ValueError('Invalid Abano Pass road reference')
+    return {row['id']: row}
+
+
+def _parse_tusheti_restrictions(rows, now, refs):
+    location = refs.get('pshaveli-abano-omalo')
+    if location is None:
+        return []
+    notices = []
+    for row in rows:
+        record = _record(row)
+        if record is None:
+            continue
+        published, title, text = record
+        if (0 <= (now - published).total_seconds() < REPORT_MAX_AGE_DAYS * 86400
+                and _TUSHETI_ROAD.search(title)):
+            notices.append((published, row['id'], str(row.get('restriction_status')), title, text))
+    if not notices:
+        return []
+    latest = max(n[0] for n in notices)
+    candidates = {n for n in notices if n[0] == latest}
+    if len(candidates) != 1:
+        return []
+    published, record_id, status, title, text = candidates.pop()
+    # A newer reopening or unsupported change invalidates the previous report.
+    if (status not in {'1', '3'} or re.search(r'აღდგა|აღდგენილია|restored|reopened', title, re.I)
+            or not _TUSHETI_ROAD.search(text)
+            or not all(phrase in text for phrase in ('ინტენსიური თოვის', 'ლიპყინულის',
+                       'მაღალი გამავლობის', 'მოცურების საწინააღმდეგო ჯაჭვების გამოყენებით',
+                       'მოძრაობა თავისუფალია'))
+            or re.search(r'აკრძალულ|prohibited|closed', text, re.I)):
+        return []
+    clauses = re.split(r'(?<!\w)ხოლო(?!\w)', text)
+    if len(clauses) != 2 or text.count('მაღალი გამავლობის') != 2:
+        return []
+    first_ranges = _KM_RANGE.findall(clauses[0])
+    last_ranges = _KM_RANGE.findall(clauses[1])
+    if len(first_ranges) != 1 or len(last_ranges) != 3:
+        return []
+    chains, high_first, high_last, unrestricted = [tuple(map(int, pair))
+                                                for pair in first_ranges + last_ranges]
+    if (not all(1 <= a < b <= 150 for a, b in (chains, high_first, high_last, unrestricted))
+            or not unrestricted[1] <= high_first[0] < high_first[1] < chains[0] < chains[1] < high_last[0]):
+        return []
+    km = lambda pair: f'{pair[0]}–{pair[1]}'
+    detail = (f'High clearance + chains: km {km(chains)}. High clearance only: '
+              f'km {km(high_first)} and {km(high_last)}. Unrestricted: km {km(unrestricted)}. '
+              f'Reported {published:%d %b, %H:%M} UTC+4. Approximate Abano Pass road reference.')
+    expiry = published + dt.timedelta(days=REPORT_MAX_AGE_DAYS)
+    return [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': location['coordinates']},
+             'properties': {'key': 'ge:georoad:pshaveli-abano-omalo', 'layer': 'incidents',
+                            'title': 'Abano Pass road · Snow & ice restrictions', 'detail': detail,
+                            'source': 'Georgia Roads Department · translated from Georgian · OSM (ODbL)',
+                            'source_url': SOURCE_URL + '/' + str(record_id),
+                            'location_kind': 'approximate_named_road_reference',
+                            'location_source_url': 'https://www.openstreetmap.org/node/' + str(location['osmNode']),
+                            'record_kind': 'published_road_restriction', 'reported_at': published.isoformat(),
+                            'source_language': 'ka', 'chains_km': list(chains),
+                            'high_clearance_km': [list(high_first), list(high_last)],
+                            'unrestricted_km': list(unrestricted),
+                            'valid_until': min(now.timestamp() + 900, expiry.timestamp())}}]
+
+
+def parse_restrictions(rows, now=None, refs=None):
+    now = now or dt.datetime.now(_ZONE)
+    if now.tzinfo is None:
+        raise ValueError('Georgia road clock must be timezone aware')
+    now = now.astimezone(_ZONE)
+    return (_parse_batumi_restrictions(rows, now, refs)
+            + _parse_tusheti_restrictions(rows, now, report_catalog() if refs is None else refs))
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
