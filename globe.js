@@ -2390,6 +2390,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     requests.get('power')?.abort();
     const controller = new AbortController();
     requests.set('power', controller);
+    requestStartedAt.set('power', Date.now());
     try {
       const bounds = currentBounds();
       const urls = [];
@@ -2435,12 +2436,17 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       refs.set('power', records);
       map.getSource('gm-power')?.setData({ type: 'FeatureCollection', features });
       setCount('power', features.length);
-      fetchedAt.set('power', Date.now());
+      // Pick up sources still filling the shared snapshot after a restart.
+      // The normal refresh loop retries; each viewer reuses the server cache.
+      fetchedAt.set('power', Date.now() - (feeds.some(feed => feed.loading)
+        ? POINT.power.refreshMs - 10000 : 0));
       updateToggle('power');
     } catch (error) {
       if (controller.signal.aborted) return;
       console.warn(error);
       showStatus('Power outage feed is unavailable.', true);
+    } finally {
+      if (requests.get('power') === controller) requestStartedAt.delete('power');
     }
   }
 
