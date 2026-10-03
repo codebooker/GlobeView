@@ -1,0 +1,50 @@
+{
+  "osmSource": "https://download.geofabrik.de/asia/armenia.html",
+  "osmLicence": "ODbL 1.0",
+  "osmDataThrough": "2026-10-02T20:21:34Z",
+  "osmSha256": "d2d357184142c7dfaf2a1476f9bbbe44af9881b8bbe62843cd8627505e93607f",
+  "gazetteerSource": "https://download.geonames.org/export/dump/AM.zip",
+  "gazetteerLicence": "CC BY 4.0",
+  "gazetteerSha256": "df15036907b38381c812664b9fea1863673f43917218f11baac3ccaefe25cd49",
+  "locationKind": "approximate_named_road_reference",
+  "locations": [
+    {
+      "id": "gyumri-shahumyan",
+      "name": "Shahumyan Street · Gyumri",
+      "aliases": [
+        "Շահումյան փողոց"
+      ],
+      "context": [
+        "Գյումր"
+      ],
+      "coordinates": [
+        43.843727,
+        40.7941569
+      ],
+      "osmNode": 7669467231,
+      "osmWays": [
+        86299491
+      ],
+      "geonamesId": "616635",
+      "referenceDistanceMetres": 253
+    },
+    {
+      "id": "pushkin-pass",
+      "name": "Pushkin Pass",
+      "aliases": [
+        "Պուշկինի լեռնանցք",
+        "Պուշկինյան լեռնանցք"
+      ],
+      "context": [],
+      "coordinates": [
+        44.4319955,
+        40.9107079
+      ],
+      "osmNode": 1477918468,
+      "osmWays": [
+        134410258
+      ],
+      "referenceDistanceMetres": 0
+    }
+  ]
+}
