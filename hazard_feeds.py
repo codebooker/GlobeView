@@ -76,7 +76,9 @@ def _point(coordinates):
 
 def _cyclones():
     data = _get_json('https://eonet.gsfc.nasa.gov/api/v3/events?category=severeStorms&status=open&limit=100')
-    cutoff = dt.datetime.now(_UTC) - dt.timedelta(days=7)
+    # EONET can leave ended storms marked open for days. Keep only storms with
+    # a recent position so selecting a marker is likely to find current guidance.
+    cutoff = dt.datetime.now(_UTC) - dt.timedelta(hours=72)
     items = []
     for event in data.get('events', []):
         title = event.get('title') or ''

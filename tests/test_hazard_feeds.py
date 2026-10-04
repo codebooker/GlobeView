@@ -110,6 +110,15 @@ class HazardFeedTests(unittest.TestCase):
         self.assertEqual(items[0]['track'], [(130, 10), (131, 11)])
         self.assertEqual(items[0]['sourceUrl'], 'https://www.metoc.navy.mil/jtwc/products/wp2526.tcw')
 
+    def test_cyclones_hide_stale_open_events(self):
+        stale = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=4)).isoformat().replace('+00:00', 'Z')
+        payload = {'events': [{
+            'id': 'ended-storm', 'title': 'Hurricane Example',
+            'geometry': [{'type': 'Point', 'coordinates': [-70, 20], 'date': stale}],
+        }]}
+        with patch.object(hazard_feeds, '_get_json', return_value=payload):
+            self.assertEqual(hazard_feeds._cyclones()['items'], [])
+
     def test_earthquakes_reject_invalid_coordinates(self):
         payload = {'features': [
             {'id': 'ok', 'geometry': {'coordinates': [170, -20, 12]}, 'properties': {'mag': 5.1, 'time': 123}},
