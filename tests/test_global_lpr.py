@@ -213,6 +213,36 @@ class GlobalPlateReaderTests(unittest.TestCase):
         self.assertIn('Via dei Bardi', payload['elements'][0]['title'])
         self.assertTrue(payload['sourceErrors'])
 
+    def test_luxembourg_maps_fixed_and_section_radars_without_claiming_plate_reads(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'properties': {'ID': '68', 'TRANCON': 'A6'},
+             'geometry': {'type': 'Point', 'coordinates': [6.12, 49.61]}},
+            {'type': 'Feature', 'properties': {'ID': '22', 'TRANCON': 'N11'},
+             'geometry': {'type': 'LineString', 'coordinates': [[6.19, 49.66], [6.20, 49.67], [6.21, 49.68]]}},
+            {'type': 'Feature', 'properties': {'ID': '68', 'TRANCON': 'duplicate'},
+             'geometry': {'type': 'Point', 'coordinates': [6.12, 49.61]}},
+            {'type': 'Feature', 'properties': {'ID': '69', 'TRANCON': 'outside'},
+             'geometry': {'type': 'Point', 'coordinates': [8.0, 49.61]}}]}
+        rows = proxy.luxembourg_speed_radars(catalog, (6.0, 49.5, 6.3, 49.8))
+        self.assertEqual([row['id'] for row in rows], ['lu:pch:radar:68', 'lu:pch:radar:22'])
+        self.assertIn('Section speed radar', rows[1]['title'])
+        self.assertIn('Representative section midpoint', rows[1]['detail'])
+        self.assertTrue(all('plate reading not confirmed' in row['detail'] for row in rows))
+
+    def test_luxembourg_radars_survive_deflock_outage(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'properties': {'ID': '68', 'TRANCON': 'A6'},
+             'geometry': {'type': 'Point', 'coordinates': [6.12, 49.61]}}]}
+        def cached(url, key, ttl=900):
+            if key == 'deflock-index:v1': raise OSError('index unavailable')
+            if key == 'lu-pch-speed-radars:v1': return catalog
+            raise AssertionError(key)
+        with patch.object(proxy, 'cached_deflock_json', side_effect=cached), \
+                patch.object(proxy, 'france_gantries_for_bbox', return_value=[]):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((6.0, 49.5, 6.3, 49.8)))
+        self.assertEqual([row['id'] for row in payload['elements']], ['lu:pch:radar:68'])
+        self.assertTrue(payload['sourceErrors'])
+
 
 if __name__ == '__main__':
     unittest.main()
