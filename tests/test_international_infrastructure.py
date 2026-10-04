@@ -852,6 +852,32 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_florence_tram_works({**publication, 'totalFeatures': 4}, now)
 
+    def test_bologna_roadworks_require_current_traffic_effect_and_fresh_complete_feed(self):
+        now = dt.datetime(2026, 10, 4, 9, tzinfo=dt.timezone.utc).timestamp()
+        metadata = {'metas': {'default': {'license': 'CC BY 4.0', 'records_count': 5,
+                    'data_processed': '2026-10-04T05:01:28+00:00'}}}
+        def work(identifier, start='2026-10-01T00:00:00+00:00',
+                 end='2026-10-08T00:00:00+00:00', impact='Lane narrowed'):
+            return {'id': identifier, 'status': 'In corso', 'address': 'VIA ROMA',
+                    'pinpoint': {'lon': 11.34, 'lat': 44.50}, 'effectivestartdate': start,
+                    'effectiveenddate': end, 'trafficchangesmeasure': impact}
+        rows = [work(1), work(2, end='2026-10-03T00:00:00+00:00'),
+                work(3, start='2026-10-06T00:00:00+00:00'),
+                work(4, impact=''), work(5, end=None)]
+        publication = {'total_count': len(rows), 'results': rows}
+        features = feeds._parse_bologna_roadworks(metadata, publication, now)
+        self.assertEqual([item['properties']['key'] for item in features],
+                         ['it:bologna:works:1', 'it:bologna:works:5'])
+        self.assertIn('Lane narrowed', features[0]['properties']['detail'])
+        self.assertEqual(features[0]['properties']['layer'], 'construction')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_bologna_roadworks(metadata, publication, now + 3 * 86400)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_bologna_roadworks(metadata, {'total_count': 5, 'results': rows[:-1]}, now)
+        with self.assertRaisesRegex(ValueError, 'invalid'):
+            feeds._parse_bologna_roadworks({'metas': {'default': {**metadata['metas']['default'],
+                'license': 'unknown'}}}, publication, now)
+
     def test_ukpn_streetworks_require_current_approved_work_and_fresh_export(self):
         now = dt.datetime(2026, 9, 28, 18, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'metas': {'default': {'data_processed': '2026-09-28T17:00:00+00:00',

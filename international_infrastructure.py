@@ -117,6 +117,9 @@ SOUTH_TYROL_ROADS_URL = ('https://datex.api.opendatahub.com/datex/2/'
 SOUTH_TYROL_SOURCE = 'https://docs.opendatahub.com/use-data/datexii-api/reference/'
 A22_ANNOUNCEMENTS_URL = 'https://tourism.api.opendatahub.com/v1/Announcement'
 A22_ANNOUNCEMENTS_SOURCE = 'https://databrowser.opendatahub.com/'
+BOLOGNA_WORKS_BASE = ('https://opendata.comune.bologna.it/api/explore/v2.1/catalog/'
+                      'datasets/lavori-pubblici')
+BOLOGNA_WORKS_SOURCE = 'https://opendata.comune.bologna.it/explore/dataset/lavori-pubblici/'
 BERLIN_ROADS_URL = 'https://api.viz.berlin.de/tic3/baustellen_sperrungen_tic.json'
 BERLIN_ROADS_SOURCE = ('https://daten.berlin.de/datensaetze/'
                        'baustellen-sperrungen-und-sonstige-storungen-von-besonderem-verkehrlichem-interesse')
@@ -2273,6 +2276,64 @@ def _parse_florence_tram_works(publication, now=None):
 
 def _florence_tram_works():
     return _parse_florence_tram_works(_get_json(FLORENCE_TRAM_WORKS_URL))
+
+
+def _parse_bologna_roadworks(metadata, publication, now=None):
+    now = time.time() if now is None else now
+    details = (metadata.get('metas') or {}).get('default') if isinstance(metadata, dict) else None
+    if not isinstance(details, dict) or details.get('license') != 'CC BY 4.0':
+        raise ValueError('Bologna roadworks metadata is invalid')
+    processed = _timestamp(details.get('data_processed'))
+    if processed is None or not -300 <= now - processed <= 48 * 3600:
+        raise ValueError('Bologna roadworks publication is stale')
+    rows = publication.get('results') if isinstance(publication, dict) else None
+    total = publication.get('total_count') if isinstance(publication, dict) else None
+    if (not isinstance(rows, list) or not isinstance(total, int) or not 0 < total <= 1000
+            or len(rows) != total or details.get('records_count') != total):
+        raise ValueError('Bologna roadworks publication is incomplete')
+    features = []
+    for row in rows:
+        if not isinstance(row, dict) or str(row.get('status') or '').casefold() != 'in corso':
+            continue
+        start = _timestamp(row.get('effectivestartdate'))
+        end_value = row.get('effectiveenddate')
+        end = _timestamp(end_value) if end_value else None
+        if start is None or start > now or (end_value and (end is None or end < now)):
+            continue
+        impact = _clean(row.get('trafficchangesmeasure'), 220)
+        street = _clean(row.get('address'), 100)
+        point = row.get('pinpoint') or {}
+        try:
+            identifier = int(row['id'])
+            lon, lat = float(point['lon']), float(point['lat'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (identifier > 0 and street and impact and 11.2 <= lon <= 11.5 and 44.4 <= lat <= 44.6):
+            continue
+        detail = f'City reports work in progress · {impact}'
+        if end:
+            detail += f' · Scheduled through {dt.datetime.fromtimestamp(end - 1, ZoneInfo("Europe/Rome")):%d %b %Y}'
+        features.append(_feature([lon, lat], {
+            'key': f'it:bologna:works:{identifier}', 'layer': 'construction',
+            'title': f'Roadworks · {street}', 'detail': detail,
+            'source': 'Comune di Bologna · CC BY 4.0',
+            'source_url': BOLOGNA_WORKS_SOURCE, 'updated_at': details['data_processed'],
+        }))
+    return features
+
+
+def _bologna_roadworks():
+    metadata = _get_json(BOLOGNA_WORKS_BASE)
+    publication = _get_json(f'{BOLOGNA_WORKS_BASE}/records?limit=100')
+    total = publication.get('total_count') if isinstance(publication, dict) else None
+    if not isinstance(total, int) or not 0 < total <= 1000:
+        raise ValueError('Bologna roadworks publication is invalid')
+    for offset in range(100, total, 100):
+        page = _get_json(f'{BOLOGNA_WORKS_BASE}/records?limit=100&offset={offset}')
+        if not isinstance(page, dict) or page.get('total_count') != total:
+            raise ValueError('Bologna roadworks publication changed during download')
+        publication['results'].extend(page.get('results') or [])
+    return _parse_bologna_roadworks(metadata, publication)
 
 
 def _parse_paris_traffic_events(metadata, rows, now=None):
@@ -8867,6 +8928,7 @@ _FETCHERS = {
         'it_south_tyrol_roads': _south_tyrol_roads,
         'it_a22_announcements': _a22_announcements,
         'it_florence_tram_works': _florence_tram_works,
+        'it_bologna_roadworks': _bologna_roadworks,
         'pl_gddkia_roads': _poland_roads,
         'cy_nap_events': _cyprus_roads,
         'cy_waze_alerts': _cyprus_waze_alerts,
