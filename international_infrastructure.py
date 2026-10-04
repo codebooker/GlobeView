@@ -121,6 +121,7 @@ BOLOGNA_WORKS_BASE = ('https://opendata.comune.bologna.it/api/explore/v2.1/catal
                       'datasets/lavori-pubblici')
 BOLOGNA_WORKS_SOURCE = 'https://opendata.comune.bologna.it/explore/dataset/lavori-pubblici/'
 BERLIN_ROADS_URL = 'https://api.viz.berlin.de/tic3/baustellen_sperrungen_tic.json'
+BERLIN_CURATED_ROADS_URL = 'https://api.viz.berlin.de/daten/baustellen_sperrungen_viz.json'
 BERLIN_ROADS_SOURCE = ('https://daten.berlin.de/datensaetze/'
                        'baustellen-sperrungen-und-sonstige-storungen-von-besonderem-verkehrlichem-interesse')
 GDYNIA_ROADS_BASE = 'https://api.zdiz.gdynia.pl/ri/rest/'
@@ -5793,13 +5794,16 @@ def _berlin_local_time(value):
     if not value:
         return None
     try:
-        return dt.datetime.strptime(value, '%d.%m.%Y %H:%M').replace(
-            tzinfo=ZoneInfo('Europe/Berlin')).timestamp()
+        try:
+            parsed = dt.datetime.strptime(value, '%d.%m.%Y %H:%M')
+        except ValueError:
+            parsed = dt.datetime.fromisoformat(value)
+        return parsed.replace(tzinfo=ZoneInfo('Europe/Berlin')).timestamp() if parsed.tzinfo is None else parsed.timestamp()
     except (TypeError, ValueError):
         return None
 
 
-def _parse_berlin_roads(payload, published, now=None):
+def _parse_berlin_roads(payload, published, now=None, curated=False):
     now = time.time() if now is None else now
     if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection':
         raise ValueError('Berlin road publication is invalid')
@@ -5814,11 +5818,13 @@ def _parse_berlin_roads(payload, published, now=None):
         if not isinstance(item, dict):
             continue
         props = item.get('properties') or {}
+        # Curated reports may share an agency ID but describe different lanes
+        # or directions, so retain each editorial ID separately.
         identifier = str(props.get('id') or '')
         if not 1 <= len(identifier) <= 100 or identifier in seen or props.get('objectState') == 'deleted':
             continue
         kind = props.get('subtype')
-        if kind not in {'Baustelle', 'Sperrung', 'Gefahr'}:
+        if kind not in {'Baustelle', 'Bauarbeiten', 'Sperrung', 'Gefahr', 'Störung'}:
             continue
         geometry = item.get('geometry') or {}
         if geometry.get('type') == 'GeometryCollection':
@@ -5842,23 +5848,32 @@ def _parse_berlin_roads(payload, published, now=None):
         if end is None and now - reported > 7 * 86400:
             continue
         seen.add(identifier)
-        title = {'Baustelle': 'Berlin roadworks', 'Sperrung': 'Berlin road closure',
-                 'Gefahr': 'Berlin road alert'}[kind]
-        detail = ' · '.join(filter(None, [_clean(props.get('street'), 170),
+        title = {'Baustelle': 'Berlin roadworks', 'Bauarbeiten': 'Berlin roadworks',
+                 'Sperrung': 'Berlin road closure', 'Gefahr': 'Berlin road alert',
+                 'Störung': 'Berlin road disruption'}[kind]
+        street = _clean(props.get('street'), 170)
+        section = _clean(props.get('section'), 170)
+        detail = ' · '.join(filter(None, [street, section if section != street else '',
+                                          _clean(props.get('severity'), 80),
                                           _clean(props.get('content'), 190)]))
-        rows.append(_feature(point, {
-            'key': 'de:berlin:road:' + hashlib.sha1(identifier.encode()).hexdigest()[:16],
-            'layer': 'construction' if kind == 'Baustelle' else 'incidents',
+        row = _feature(point, {
+            'key': ('de:berlin:curated:' if curated else 'de:berlin:road:')
+                   + hashlib.sha1(identifier.encode()).hexdigest()[:16],
+            'layer': 'construction' if kind in {'Baustelle', 'Bauarbeiten'} else 'incidents',
             'title': title, 'detail': detail,
             'source': ('Digitale Plattform Stadtverkehr Berlin / Baustellen, Sperrungen und '
                        'sonstige Störungen von besonderem verkehrlichem Interesse · DL-DE/BY 2.0'),
             'source_url': BERLIN_ROADS_SOURCE, 'updated_at': props['tstore'],
-        }))
+        })
+        if curated and isinstance(props.get('lms_id'), str) and 1 <= len(props['lms_id']) <= 100:
+            row['properties']['agency_key'] = ('de:berlin:road:'
+                                               + hashlib.sha1(props['lms_id'].encode()).hexdigest()[:16])
+        rows.append(row)
     return rows
 
 
-def _berlin_roads():
-    request = urllib.request.Request(BERLIN_ROADS_URL, headers={
+def _read_berlin_roads(url):
+    request = urllib.request.Request(url, headers={
         'User-Agent': 'GlobeView/1.0 (public road feed reader)', 'Accept': 'application/json'})
     with urllib.request.urlopen(request, timeout=15) as response:
         modified = response.headers.get('Last-Modified')
@@ -5869,7 +5884,36 @@ def _berlin_roads():
         published = email.utils.parsedate_to_datetime(modified).timestamp() if modified else None
     except (TypeError, ValueError):
         published = None
-    return _parse_berlin_roads(json.loads(body), published)
+    return _parse_berlin_roads(json.loads(body), published, curated=url == BERLIN_CURATED_ROADS_URL)
+
+
+def _berlin_roads():
+    # Berlin publishes parallel agency and curated feeds. Prefer the curated
+    # record when both refer to the same agency ID, while retaining unique rows.
+    rows = {}
+    curated_agency_keys = set()
+    errors = []
+    successful = False
+    for url in (BERLIN_CURATED_ROADS_URL, BERLIN_ROADS_URL):
+        try:
+            feed_rows = _read_berlin_roads(url)
+            successful = True
+        except (OSError, ValueError, KeyError) as error:
+            errors.append(error)
+            continue
+        for row in feed_rows:
+            if url == BERLIN_CURATED_ROADS_URL:
+                agency_key = row['properties'].get('agency_key')
+                if agency_key:
+                    curated_agency_keys.add(agency_key)
+            elif row['properties']['key'] in curated_agency_keys:
+                continue
+            rows.setdefault(row['properties']['key'], row)
+    if not successful:
+        raise ValueError('Berlin road publications unavailable') from errors[0]
+    for row in rows.values():
+        row['properties'].pop('agency_key', None)
+    return list(rows.values())
 
 
 def _parse_autobahn_items(service, road, payload, now=None):
