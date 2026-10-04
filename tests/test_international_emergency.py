@@ -383,6 +383,28 @@ class InternationalEmergencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds.parse_upper_austria(payload, now + dt.timedelta(minutes=30))
 
+    def test_lower_austria_maps_current_anonymized_municipality_dispatches(self):
+        page = ('Datenauszug mit Stand Sonntag, 4. Oktober 2026 um 14:14:02 '
+                '<iframe src="/codepages/wastl/wastlmain/Land_EinsatzAktuell.asp?04.10.2026">')
+        def row(place, dispatch, date='04.10.2026'):
+            return (f'<tr><td></td><td>BAZ Krems/Donau</td><td>{place}</td>'
+                    f'<td>{dispatch}</td><td>{date} &lt; 1 std.</td></tr>')
+        table = ('<title>Zeige Einsatzüberblick in NÖ</title><table id="table2">'
+                 + row('Krems an der Donau', 'T1 Auspumparbeiten')
+                 + row('Klosterneuburg', 'B0 Gelöschter Brand')
+                 + row('St. Oswald', 'U3 Übung')
+                 + row('Unknown hamlet', 'T1 Hilfeleistung')
+                 + row('Langenlois', 'T2 Menschenrettung', '01.10.2026') + '</table>')
+        now = dt.datetime(2026, 10, 4, 12, 15, tzinfo=dt.timezone.utc)
+        items = feeds.parse_lower_austria(page, table, now)
+        self.assertEqual(len(items), 2)
+        self.assertEqual([item['category'] for item in items], ['warning', 'fire'])
+        self.assertEqual((items[0]['lon'], items[0]['lat']), (15.6101, 48.4116))
+        self.assertEqual(items[0]['observed'], '2026-10-04T12:14:02Z')
+        self.assertIn('approximate municipality center', items[0]['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds.parse_lower_austria(page, table, now + dt.timedelta(minutes=30))
+
     def test_iceland_cap_maps_active_polygon_and_excludes_cleared_alerts(self):
         now = dt.datetime(2026, 9, 27, 8, tzinfo=dt.timezone.utc)
         row = {'identifier': 'imo-1', 'area_id': 14, 'msgtype': 'Alert',
