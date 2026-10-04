@@ -264,6 +264,8 @@ TOULOUSE_WORKS_BASE = ('https://data.toulouse-metropole.fr/api/explore/v2.1/cata
 TOULOUSE_WORKS_SOURCE = 'https://data.toulouse-metropole.fr/explore/dataset/chantiers-en-cours/'
 FLORENCE_TRAM_WORKS_URL = 'https://datigis.comune.fi.it/json/tram_cantieri_321_now.json'
 FLORENCE_TRAM_WORKS_SOURCE = 'https://opendata.comune.fi.it/page_dataset_show?id=tramvia-cantieri-321-odierna'
+FLORENCE_TRAM_ROADS_URL = 'https://datigis.comune.fi.it/json/tram_viabilita_mod_321_now.json'
+FLORENCE_TRAM_ROADS_SOURCE = 'https://opendata.comune.fi.it/page_dataset_show?id=tramvia-modifiche-viabilita-321-odierna'
 PARIS_EVENTS_BASE = ('https://opendata.paris.fr/api/explore/v2.1/catalog/'
                      'datasets/circulation_evenement')
 PARIS_EVENTS_SOURCE = 'https://opendata.paris.fr/explore/dataset/circulation_evenement/'
@@ -2276,6 +2278,87 @@ def _parse_florence_tram_works(publication, now=None):
 
 def _florence_tram_works():
     return _parse_florence_tram_works(_get_json(FLORENCE_TRAM_WORKS_URL))
+
+
+def _parse_florence_tram_roads(publication, now=None):
+    now = time.time() if now is None else now
+    if (not isinstance(publication, dict) or publication.get('type') != 'FeatureCollection'
+            or publication.get('crs', {}).get('properties', {}).get('name')
+            != 'urn:ogc:def:crs:EPSG::3003'):
+        raise ValueError('Florence tram traffic publication is invalid')
+    published = _timestamp(publication.get('timeStamp'))
+    if published is None or not -300 <= now - published <= 36 * 3600:
+        raise ValueError('Florence tram traffic publication is stale')
+    rows = publication.get('features')
+    if (not isinstance(rows, list) or not 0 < len(rows) <= 1000
+            or publication.get('numberReturned') != len(rows)
+            or publication.get('totalFeatures') != len(rows)):
+        raise ValueError('Florence tram traffic publication is incomplete')
+    today = dt.datetime.fromtimestamp(now, ZoneInfo('Europe/Rome')).date()
+    grouped = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('properties') or {}
+        geometry = row.get('geometry') or {}
+        if geometry.get('type') != 'LineString':
+            continue
+        try:
+            start = dt.date.fromisoformat(props['data_ini'])
+            end = dt.date.fromisoformat(props['data_fine'])
+            if not start <= today <= end:
+                continue
+            vertices = geometry['coordinates']
+            if not 2 <= len(vertices) <= 500:
+                continue
+            segment = []
+            for vertex in vertices:
+                lon, lat = _FLORENCE_TRANSFORMER.transform(float(vertex[0]), float(vertex[1]))
+                if not (11.1 <= lon <= 11.4 and 43.65 <= lat <= 43.85):
+                    raise ValueError('Traffic line outside Florence')
+                segment.append([lon, lat])
+            street = _clean(props.get('nome'), 90)
+            stage = _clean(props.get('subcantiere'), 20)
+            phase = _clean(props.get('fase'), 20)
+            change = _clean(props.get('descrizione'), 100)
+            lanes = props.get('corsie')
+            if not street or change not in (
+                    'Arco eliminato', 'Modifica numero corsie (senso unico FT)',
+                    'Modifica numero corsie (senso unico TF)',
+                    'Modifica numero corsie (doppio senso)'):
+                continue
+            if lanes is not None and (not isinstance(lanes, int) or not 0 <= lanes <= 8):
+                continue
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        identity = (street, stage, phase, change, lanes, start, end)
+        grouped.setdefault(identity, []).append(segment)
+    features = []
+    for (street, stage, phase, change, lanes, start, end), segments in grouped.items():
+        points = [point for segment in segments for point in segment]
+        longest = max(segments, key=len)
+        representative = longest[len(longest) // 2]
+        bounds = [min(point[0] for point in points), min(point[1] for point in points),
+                  max(point[0] for point in points), max(point[1] for point in points)]
+        effect = ('Road segment excluded from tram work traffic plan' if change == 'Arco eliminato'
+                  else f'Lane layout changed · {lanes} {"lane" if lanes == 1 else "lanes"}'
+                  if lanes else 'Lane layout changed')
+        identity = '|'.join(map(str, (street, stage, phase, change, lanes, start, end)))
+        key = hashlib.sha1(identity.encode('utf-8')).hexdigest()[:16]
+        features.append(_feature(representative, {
+            'key': f'it:florence:tram-road:{key}', 'layer': 'construction',
+            'title': f'Tram traffic change · {street}',
+            'detail': f'{effect} · Scheduled through {end:%d %b %Y}',
+            'source': 'Comune di Firenze · CC BY 4.0',
+            'source_url': FLORENCE_TRAM_ROADS_SOURCE,
+            'updated_at': publication['timeStamp'],
+            'road_segments': segments, 'road_segment_bounds': bounds,
+        }))
+    return features
+
+
+def _florence_tram_roads():
+    return _parse_florence_tram_roads(_get_json(FLORENCE_TRAM_ROADS_URL))
 
 
 def _parse_bologna_roadworks(metadata, publication, now=None):
@@ -8928,6 +9011,7 @@ _FETCHERS = {
         'it_south_tyrol_roads': _south_tyrol_roads,
         'it_a22_announcements': _a22_announcements,
         'it_florence_tram_works': _florence_tram_works,
+        'it_florence_tram_roads': _florence_tram_roads,
         'it_bologna_roadworks': _bologna_roadworks,
         'pl_gddkia_roads': _poland_roads,
         'cy_nap_events': _cyprus_roads,
