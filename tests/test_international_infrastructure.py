@@ -2867,6 +2867,27 @@ class InfrastructureTests(unittest.TestCase):
             feeds._parse_geneva_roadworks({'type': 'FeatureCollection',
                                            'features': [], 'exceededTransferLimit': True}, now)
 
+    def test_basel_roadworks_join_permits_and_exclude_unrelated_projects(self):
+        now = dt.datetime(2026, 10, 4, 12, tzinfo=dt.timezone.utc).timestamp()
+        project = {'id': 9145799, 'projekt_name': 'St. Jakobs-Strasse',
+                   'projekt_beschrieb': 'Strassenbau und Tramgleise', 'projekt_info': 'Umleitung',
+                   'datum_von': '2026-01-01', 'datum_bis': '2026-10-31',
+                   'private_contact': 'Do not display'}
+        projects = [project, project,
+                    {**project, 'id': 2, 'projekt_name': 'Park', 'projekt_beschrieb': 'New pavilion'},
+                    {**project, 'id': 3, 'datum_von': '2026-10-05'},
+                    {**project, 'id': 4, 'datum_bis': '2026-10-03'}]
+        permits = [{'begehrenid': 9145799, 'geo_point_2d': {'lon': 7.6163, 'lat': 47.5420}},
+                   {'begehrenid': 2, 'geo_point_2d': {'lon': 7.61, 'lat': 47.54}},
+                   {'begehrenid': 3, 'geo_point_2d': {'lon': 7.62, 'lat': 47.55}},
+                   {'begehrenid': 4, 'geo_point_2d': {'lon': 7.62, 'lat': 47.55}}]
+        rows = feeds._parse_basel_roadworks(projects, permits, now)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['properties']['key'], 'ch:bs:roadwork:9145799')
+        self.assertEqual(rows[0]['geometry']['coordinates'], [7.6163, 47.542])
+        self.assertIn('Scheduled through 2026-10-31', rows[0]['properties']['detail'])
+        self.assertNotIn('Do not display', str(rows[0]))
+
     def test_geneva_cameras_require_current_official_jpegs(self):
         now = dt.datetime(2026, 9, 28, 12, tzinfo=dt.timezone.utc).timestamp()
         row = {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [6.14, 46.21]},

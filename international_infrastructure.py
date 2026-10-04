@@ -303,6 +303,8 @@ ZURICH_ROADWORKS_SOURCE = 'https://data.stadt-zuerich.ch/dataset/d991a4a2-32ea-4
 GENEVA_ROADWORKS_URL = ('https://app2.ge.ch/tergeoservices/rest/services/Hosted/'
                         'INFOMOB_CHANTIER_POINT/FeatureServer/0/query')
 GENEVA_ROADWORKS_SOURCE = 'https://sitg.ge.ch/donnees/infomob-chantier-point'
+BASEL_DATA_BASE = 'https://data.bs.ch/api/explore/v2.1/catalog/datasets'
+BASEL_ROADWORKS_SOURCE = 'https://data.bs.ch/explore/dataset/100335/'
 GENEVA_CAMERAS_URL = ('https://app2.ge.ch/tergeoservices/rest/services/Hosted/'
                       'INFOMOB_CAMERA/FeatureServer/0/query')
 GENEVA_CAMERAS_SOURCE = 'https://sitg.ge.ch/donnees/infomob-camera'
@@ -2896,6 +2898,103 @@ def _zurich_roadworks():
     if data.get('type') != 'FeatureCollection':
         raise ValueError('Zurich roadworks feed is invalid')
     return _parse_zurich_roadworks(data.get('features') or [])
+
+
+_BASEL_ROAD_TERMS = re.compile(
+    r'strass|straß|fahrbahn|trottoir|kreuzung|tramgleis|gleisanlag|brücke|bruecke|'
+    r'verkehr|haltestell|kreisel|veloweg|fussweg|fußweg|radweg|busspur|lichtsignalanlag', re.I)
+
+
+def _parse_basel_roadworks(projects, permits, now=None):
+    """Join current road-related projects to their public-space permit centers."""
+    today = dt.datetime.fromtimestamp(time.time() if now is None else now, ZoneInfo('Europe/Zurich')).date()
+    points = {}
+    for row in permits:
+        if not isinstance(row, dict):
+            continue
+        point = row.get('geo_point_2d') or {}
+        try:
+            project_id = int(row.get('begehrenid'))
+            lon, lat = float(point['lon']), float(point['lat'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if 7.53 <= lon <= 7.72 and 47.50 <= lat <= 47.62:
+            points.setdefault(project_id, [lon, lat])
+    features, seen = [], set()
+    for row in projects:
+        if not isinstance(row, dict):
+            continue
+        try:
+            project_id = int(row.get('id'))
+            start = dt.date.fromisoformat(str(row['datum_von'])[:10])
+            end = dt.date.fromisoformat(str(row['datum_bis'])[:10])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if project_id in seen or project_id not in points or not start <= today <= end:
+            continue
+        description = _clean(row.get('projekt_beschrieb'), 180)
+        info = _clean(row.get('projekt_info'), 100)
+        if not _BASEL_ROAD_TERMS.search(f'{description} {info}'):
+            continue
+        seen.add(project_id)
+        name = _clean(row.get('projekt_name'), 100) or 'Basel-Stadt'
+        features.append(_feature(points[project_id], {
+            'key': f'ch:bs:roadwork:{project_id}', 'layer': 'construction',
+            'title': f'Roadworks · {name}',
+            'detail': _clean(' · '.join(part for part in (
+                description, info, f'Scheduled through {end.isoformat()}',
+                'Public-space permit location; traffic closure not confirmed') if part), 280),
+            'source': f'Kanton Basel-Stadt Tiefbauamt · CC BY 4.0 / OSM · retrieved {today:%d %b %Y}',
+            'source_url': BASEL_ROADWORKS_SOURCE,
+        }))
+    return features
+
+
+def _basel_roadworks():
+    def records(dataset, params):
+        return _get_json(f'{BASEL_DATA_BASE}/{dataset}/records?' + urllib.parse.urlencode(params))
+
+    first = records('100335', {'limit': 100, 'offset': 0})
+    total = first.get('total_count') if isinstance(first, dict) else None
+    if not isinstance(total, int) or not 0 <= total <= 500 or not isinstance(first.get('results'), list):
+        raise ValueError('Basel roadworks catalog is invalid')
+    projects = list(first['results'])
+    for offset in range(100, total, 100):
+        page = records('100335', {'limit': 100, 'offset': offset})
+        if not isinstance(page, dict) or page.get('total_count') != total or not isinstance(page.get('results'), list):
+            raise ValueError('Basel roadworks catalog changed during paging')
+        projects.extend(page['results'])
+    if len(projects) != total:
+        raise ValueError('Basel roadworks catalog is incomplete')
+    today = dt.datetime.now(ZoneInfo('Europe/Zurich')).date()
+    ids = []
+    for row in projects:
+        try:
+            start = dt.date.fromisoformat(str(row['datum_von'])[:10])
+            end = dt.date.fromisoformat(str(row['datum_bis'])[:10])
+            project_id = int(row['id'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if start <= today <= end and _BASEL_ROAD_TERMS.search(
+                f"{row.get('projekt_beschrieb') or ''} {row.get('projekt_info') or ''}"):
+            ids.append(project_id)
+    if not ids:
+        return []
+    query = {'select': 'begehrenid,geo_point_2d',
+             'where': f"begehrenid in ({','.join(map(str, ids))})", 'limit': 100}
+    first = records('100018', query)
+    count = first.get('total_count') if isinstance(first, dict) else None
+    if not isinstance(count, int) or not 0 <= count <= 3000 or not isinstance(first.get('results'), list):
+        raise ValueError('Basel permit-location publication is invalid')
+    permits = list(first['results'])
+    for offset in range(100, count, 100):
+        page = records('100018', {**query, 'offset': offset})
+        if not isinstance(page, dict) or page.get('total_count') != count or not isinstance(page.get('results'), list):
+            raise ValueError('Basel permit-location publication changed during paging')
+        permits.extend(page['results'])
+    if len(permits) != count:
+        raise ValueError('Basel permit-location publication is incomplete')
+    return _parse_basel_roadworks(projects, permits)
 
 
 def _parse_geneva_roadworks(payload, now=None):
@@ -9211,6 +9310,7 @@ _FETCHERS = {
         'nl_ndw_sensors': _ndw_sensors,
         'ch_zurich_roadworks': _zurich_roadworks,
         'ch_geneva_roadworks': _geneva_roadworks,
+        'ch_basel_roadworks': _basel_roadworks,
         'ch_geneva_cameras': _geneva_cameras,
         'at_vienna_roadworks': _vienna_roadworks,
         'ch_zurich_sensors': _zurich_sensors,
