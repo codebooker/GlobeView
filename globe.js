@@ -802,7 +802,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       ? 'Aircraft: <a href="https://opensky-network.org/">OpenSky</a> / <a href="https://www.adsb.lol/">ADSB.lol</a>'
       : type === 'vessels' ? 'Vessels: <a href="https://aisstream.io/">AISStream</a>'
       : type === 'webcams' ? 'Webcam catalog: <a href="https://github.com/simplifaisoul/osiris">OSIRIS</a> / camera operators'
-      : type === 'cameras' ? 'Traffic images: <a href="https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view">Singapore LTA</a> / <a href="https://data.gov.tw/en/datasets/29817">Taiwan Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Taiwan Open Government Data License 1.0</a>)'
+      : type === 'cameras' ? 'Traffic images: <a href="https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view">Singapore LTA</a> / <a href="https://data.gov.tw/en/datasets/29817">Taiwan Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Taiwan Open Government Data License 1.0</a>) / <a href="https://www.roadnavi.pref.hiroshima.lg.jp/camera_list.php">Hiroshima Prefecture</a> (locations: <a href="https://hiroshima-dobox.jp/resources/32516">DoboX CC BY</a>)'
       : type === 'construction' ? `Taipei roadworks: Public Works Department, Taipei City Government ${new Date().getUTCFullYear()} <a href="https://data.gov.tw/en/datasets/145614">Taipei City Today's Construction Information</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)`
       : type === 'signs' ? 'Taiwan road signs: <a href="https://data.gov.tw/en/datasets/129029">Taipei City</a> / <a href="https://data.gov.tw/en/datasets/29817">Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
       : type === 'sensors' ? 'Road detectors: <a href="https://data.gov.tw/en/datasets/29817">Taiwan Highway Bureau</a> (<a href="https://data.gov.tw/en/license">Open Government Data License 1.0</a>)'
@@ -1578,6 +1578,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       { bounds: { minLon: 103.5, maxLon: 104.1, minLat: 1.1, maxLat: 1.6 } }, // Singapore
       { bounds: { minLon: 121.3, maxLon: 121.8, minLat: 24.8, maxLat: 25.4 } }, // Taipei
       { bounds: { minLon: 119, maxLon: 123, minLat: 21, maxLat: 26 } }, // Taiwan highways
+      { bounds: { minLon: 131.5, maxLon: 133.6, minLat: 33.5, maxLat: 35.3 } }, // Hiroshima road cameras
       { bounds: { minLon: 46, maxLon: 88, minLat: 40, maxLat: 56 } }, // Kazakhstan
       { bounds: { minLon: 69, maxLon: 81, minLat: 39, maxLat: 44 } }, // Kyrgyzstan
       { bounds: { minLon: 43.4, maxLon: 46.7, minLat: 38.8, maxLat: 41.4 } }, // Armenia
