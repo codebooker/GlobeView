@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import unittest
 from unittest.mock import patch
@@ -206,12 +207,38 @@ class GlobalPlateReaderTests(unittest.TestCase):
         def cached(url, key, ttl=900):
             if key == 'deflock-index:v1': raise OSError('index unavailable')
             if key == 'it-florence-gates:v1': return catalog
+            if key == 'it-florence-green-gates:v1':
+                return {'type': 'FeatureCollection',
+                        'crs': {'properties': {'name': 'urn:ogc:def:crs:EPSG::4326'}},
+                        'features': []}
             raise AssertionError(key)
         with patch.object(proxy, 'cached_deflock_json', side_effect=cached):
             payload = json.loads(proxy.fetch_deflock_lpr_content((11.2, 43.74, 11.3, 43.8)))
         self.assertEqual([row['id'] for row in payload['elements']], ['it:firenze:gate:105'])
         self.assertIn('Via dei Bardi', payload['elements'][0]['title'])
         self.assertTrue(payload['sourceErrors'])
+
+    def test_florence_scudo_verde_maps_current_plate_reading_gates(self):
+        def gate(gate_id, lon=11.3, starts='2025-07-01', ends=None, direction='IN'):
+            return {'type': 'Feature', 'properties': {
+                'id': gate_id, 'nome_varco': 'Via Manni', 'data_ini': starts,
+                'data_fine': ends, 'tipo_varco': direction},
+                'geometry': {'type': 'Point', 'coordinates': [lon, 43.775]}}
+        catalog = {'type': 'FeatureCollection',
+                   'crs': {'properties': {'name': 'urn:ogc:def:crs:EPSG::4326'}},
+                   'features': [gate(14), gate(14), gate(15, direction='OUT'),
+                                gate(16, starts='2026-10-05'), gate(17, ends='2026-10-03'),
+                                gate(18, lon=12.0), gate(19, direction='UNKNOWN')]}
+        today = dt.date(2026, 10, 4)
+        rows = proxy.florence_green_plate_readers(catalog, (11.2, 43.7, 11.35, 43.8), today)
+        self.assertEqual([row['id'] for row in rows],
+                         ['it:firenze:scudo-verde:14', 'it:firenze:scudo-verde:15'])
+        self.assertIn('Exit', rows[1]['detail'])
+        self.assertIn('operation unverified', rows[0]['detail'])
+        self.assertEqual(rows[0]['source_url'], proxy.FLORENCE_GREEN_GATES_SOURCE)
+        with self.assertRaisesRegex(ValueError, 'invalid'):
+            proxy.florence_green_plate_readers({**catalog, 'features': [gate(1)] * 501},
+                                               (11.2, 43.7, 11.35, 43.8), today)
 
     def test_luxembourg_maps_fixed_and_section_radars_without_claiming_plate_reads(self):
         catalog = {'type': 'FeatureCollection', 'features': [
