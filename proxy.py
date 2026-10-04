@@ -2353,6 +2353,16 @@ MILAN_AREA_C_GATES_URL = (
     'https://dati.comune.milano.it/dataset/4cad1605-8225-4ecd-9b82-868b3af453e5/'
     'resource/fa8fcc31-1722-4a50-a0ae-ce7b9c0d0361/download/ingressi_areac_varchi.geojson'
 )
+BOLOGNA_GATES_SOURCE = 'https://opendata.comune.bologna.it/explore/dataset/varchi-bologna/'
+BOLOGNA_GATES_URL = (
+    'https://opendata.comune.bologna.it/api/explore/v2.1/catalog/datasets/'
+    'varchi-bologna/records?limit=100'
+)
+FLORENCE_GATES_SOURCE = 'https://opendata.comune.fi.it/page_dataset_show?id=0fe68709-c864-4e21-b18e-07ee3e9328e2'
+FLORENCE_GATES_URL = (
+    'https://data.comune.fi.it/datastore/download.php?id=6562&type=99&format=url'
+    '&file_format=geojson&file_id=23085'
+)
 LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
     'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13'
 )
@@ -18551,7 +18561,7 @@ def check_rate_limit(ip, path):
 
 def cached_deflock_json(url, key, ttl=900):
     def load():
-        data = fetch_json_url(url, headers={'User-Agent': 'GlobalMap/1.0'}, timeout=35)
+        data = fetch_json_url(url, headers={'User-Agent': 'GlobeView/1.0 (+https://github.com/codebooker/GlobeView)'}, timeout=35)
         return json.dumps(data, separators=(',', ':')).encode(), 'application/json'
 
     content, _, _ = API_RESPONSE_CACHE.get_or_load(
@@ -18753,6 +18763,75 @@ def milan_area_c_plate_readers(payload, bbox):
     return elements
 
 
+def bologna_plate_readers(payload, bbox):
+    if (not isinstance(payload, dict) or not isinstance(payload.get('results'), list)
+            or len(payload['results']) > 100 or payload.get('total_count', 0) > 100):
+        raise ValueError('Bologna gate catalog is invalid or incomplete')
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements, seen = [], set()
+    for row in payload['results']:
+        if not isinstance(row, dict) or row.get('attivo') != 'S':
+            continue
+        gate_id, coordinate = row.get('identificativo_varco'), row.get('coordinate')
+        if not isinstance(gate_id, int) or gate_id < 1 or gate_id in seen or not isinstance(coordinate, dict):
+            continue
+        try:
+            lon, lat = float(coordinate['lon']), float(coordinate['lat'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (not math.isfinite(lon) or not math.isfinite(lat)
+                or not (11.25 <= lon <= 11.45 and 44.43 <= lat <= 44.58)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(gate_id)
+        name = re.sub(r'\s+', ' ', str(row.get('descrizione') or row.get('nome_varco') or '')).strip()[:80]
+        gate_type = re.sub(r'\s+', ' ', str(row.get('tipologia_varco') or '')).strip()[:40]
+        detail = [gate_type, 'Listed active in 2024 city inventory · current operation unverified']
+        elements.append({
+            'type': 'node', 'id': f'it:bologna:gate:{gate_id}', 'lat': lat, 'lon': lon,
+            'title': f'Plate-reading gate · {name}' if name else 'Plate-reading gate · Bologna',
+            'detail': ' · '.join(part for part in detail if part),
+            'source': 'Comune di Bologna · CC BY 4.0', 'source_url': BOLOGNA_GATES_SOURCE,
+        })
+    return elements
+
+
+def florence_plate_readers(payload, bbox):
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list) or len(payload['features']) > 500):
+        raise ValueError('Florence telematic-gate catalog is invalid')
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements, seen = [], set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props, geometry = row.get('properties'), row.get('geometry')
+        if not isinstance(props, dict) or not isinstance(geometry, dict):
+            continue
+        gate_id, coordinates = props.get('id'), geometry.get('coordinates')
+        if (not isinstance(gate_id, int) or gate_id < 1 or gate_id in seen
+                or geometry.get('type') != 'Point' or not isinstance(coordinates, (list, tuple))
+                or len(coordinates) < 2):
+            continue
+        try:
+            lon, lat = float(coordinates[0]), float(coordinates[1])
+        except (TypeError, ValueError):
+            continue
+        if (not math.isfinite(lon) or not math.isfinite(lat)
+                or not (11.15 <= lon <= 11.38 and 43.70 <= lat <= 43.86)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(gate_id)
+        name = re.sub(r'\s+', ' ', str(props.get('titolo') or props.get('via') or '')).strip()[:80]
+        elements.append({
+            'type': 'node', 'id': f'it:firenze:gate:{gate_id}', 'lat': lat, 'lon': lon,
+            'title': f'Telematic enforcement gate · {name}' if name else 'Telematic enforcement gate · Florence',
+            'detail': 'City inventory updated Sep 2026 · ZTL gates read plates; other gate capabilities and current operation unverified',
+            'source': 'Comune di Firenze · CC BY 4.0', 'source_url': FLORENCE_GATES_SOURCE,
+        })
+    return elements
+
+
 def cached_dutch_anpr_catalog():
     def load():
         search = fetch_text_url(DUTCH_ANPR_SEARCH_URL, timeout=20)
@@ -18778,6 +18857,10 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                      and min_lat <= 53.7 and max_lat >= 50.7)
     milan_visible = (min_lon <= 9.35 and max_lon >= 9.0
                      and min_lat <= 45.6 and max_lat >= 45.35)
+    bologna_visible = (min_lon <= 11.45 and max_lon >= 11.25
+                       and min_lat <= 44.58 and max_lat >= 44.43)
+    florence_visible = (min_lon <= 11.38 and max_lon >= 11.15
+                        and min_lat <= 43.86 and max_lat >= 43.70)
     france_visible = (min_lon <= 10 and max_lon >= -5.5
                       and min_lat <= 51.5 and max_lat >= 41)
     uzbekistan_visible = (min_lon <= 73.22 and max_lon >= 55.99
@@ -18793,7 +18876,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18826,7 +18909,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -18900,6 +18983,20 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Milan Area C gates: {error}')
+    if bologna_visible:
+        try:
+            catalog = cached_deflock_json(BOLOGNA_GATES_URL, 'it-bologna-gates:v1', ttl=86400)
+            for item in bologna_plate_readers(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Bologna gates: {error}')
+    if florence_visible:
+        try:
+            catalog = cached_deflock_json(FLORENCE_GATES_URL, 'it-florence-gates:v1', ttl=86400)
+            for item in florence_plate_readers(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Florence gates: {error}')
     if source_errors:
         print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 
