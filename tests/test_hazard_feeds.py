@@ -290,6 +290,7 @@ class HazardFeedTests(unittest.TestCase):
         with patch.object(hazard_feeds, '_canada_alerts', return_value=[{'id': 'ca:1'}]), patch.object(
             hazard_feeds, '_new_zealand_alerts', side_effect=RuntimeError('offline')
         ), patch.object(hazard_feeds, '_norway_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_finland_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_ireland_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_germany_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_azores_alerts', return_value=[]
@@ -669,6 +670,36 @@ class HazardFeedTests(unittest.TestCase):
         self.assertEqual(items[0]['geometry']['coordinates'][0][0][0], [5, 62])
         self.assertEqual(items[0]['country'], 'Norway')
         fetch.assert_called_once_with('safe.123')
+
+    def test_finland_alerts_map_english_land_polygons_and_future_validity(self):
+        now = dt.datetime(2026, 10, 4, 12, tzinfo=dt.timezone.utc)
+        atom = 'http://www.w3.org/2005/Atom'
+        cap = 'urn:oasis:names:tc:emergency:cap:1.2'
+        def entry(identifier, status='Actual', expires='2026-10-06T00:00:00Z'):
+            return f'''<entry xmlns="{atom}"><link href="https://alerts.fmi.fi/cap/2026/10-04/12-00-00Z/{identifier}.xml"/>
+              <content type="text/xml"><alert xmlns="{cap}">
+              <identifier>urn:oid:{identifier}</identifier><status>{status}</status><scope>Public</scope><msgType>Alert</msgType>
+              <sent>2026-10-04T11:50:00Z</sent><info><language>en-GB</language><event>Wind warning for land areas</event>
+              <headline>Strong winds</headline><severity>Severe</severity><onset>2026-10-05T00:00:00Z</onset>
+              <expires>{expires}</expires><description>Stay indoors.</description>
+              <area><areaDesc>Uusimaa</areaDesc><polygon>60,24 60,25 61,25 60,24</polygon>
+              <geocode><valueName>ISO 3166-2</valueName><value>FI-18</value></geocode></area>
+              <area><areaDesc>Western Gulf of Finland</areaDesc><polygon>60,23 60,24 61,24 60,23</polygon>
+              <geocode><valueName>METAREA</valueName><value>B5W</value></geocode></area>
+              </info></alert></content></entry>'''
+        feed = ET.fromstring(f'''<feed xmlns="{atom}">{entry('2.49.123')}
+            {entry('2.49.old', expires='2026-10-03T00:00:00Z')}
+            {entry('2.49.cancelled', status='Test')}</feed>''')
+        items = hazard_feeds._parse_fmi_alerts_atom(feed, now)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['title'], 'Strong winds')
+        self.assertEqual(items[0]['country'], 'Finland')
+        self.assertEqual(items[0]['area'], 'Uusimaa')
+        self.assertEqual(items[0]['starts'], '2026-10-05T00:00:00Z')
+        self.assertEqual(items[0]['advice'], 'Stay indoors.')
+        self.assertEqual(len(items[0]['geometry']['coordinates']), 1)
+        self.assertEqual(items[0]['geometry']['coordinates'][0][0][0], [24, 60])
+        self.assertEqual(hazard_feeds._parse_fmi_alerts_atom(feed, now + dt.timedelta(days=3)), [])
 
 
 if __name__ == '__main__':

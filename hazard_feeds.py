@@ -295,6 +295,8 @@ def _canada_alerts():
 
 
 _CAP_NS = {'cap': 'urn:oasis:names:tc:emergency:cap:1.2'}
+_ATOM_NS = {'atom': 'http://www.w3.org/2005/Atom'}
+_FMI_WARNINGS_URL = 'https://alerts.fmi.fi/cap/feed/atom_en-GB.xml'
 _DWD_CAP_URL = ('https://opendata.dwd.de/weather/alerts/cap/DISTRICT_DWD_STAT/'
                 'Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMDWD_DISTRICT_EN.zip')
 
@@ -317,6 +319,77 @@ def _cap_polygon(value):
     if points[0] != points[-1]:
         points.append(points[0])
     return points
+
+
+def _parse_fmi_alerts_atom(feed, now=None):
+    """Use the English CAP notices and the Finnish land-area polygons."""
+    now = dt.datetime.now(_UTC) if now is None else now
+    if feed.tag != '{http://www.w3.org/2005/Atom}feed':
+        raise ValueError('Unexpected FMI warning feed')
+    entries = feed.findall('atom:entry', _ATOM_NS)
+    if len(entries) > 250:
+        raise ValueError('FMI warning feed exceeded entry limit')
+    items = []
+    seen = set()
+    for entry in entries:
+        cap = entry.find('atom:content/cap:alert', {**_ATOM_NS, **_CAP_NS})
+        if cap is None or (cap.findtext('cap:status', namespaces=_CAP_NS) != 'Actual'
+                           or cap.findtext('cap:scope', namespaces=_CAP_NS) != 'Public'
+                           or cap.findtext('cap:msgType', namespaces=_CAP_NS) not in ('Alert', 'Update')):
+            continue
+        identifier = cap.findtext('cap:identifier', namespaces=_CAP_NS) or ''
+        if not re.fullmatch(r'urn:oid:[A-Za-z0-9.]{1,180}', identifier) or identifier in seen:
+            continue
+        seen.add(identifier)
+        info = next((node for node in cap.findall('cap:info', _CAP_NS)
+                     if node.findtext('cap:language', namespaces=_CAP_NS) == 'en-GB'), None)
+        if info is None or not _future_timestamp(info.findtext('cap:expires', namespaces=_CAP_NS), now):
+            continue
+        polygons = []
+        areas = []
+        for area in info.findall('cap:area', _CAP_NS)[:100]:
+            # FMI's marine polygons use METAREA codes. ISO FI subdivisions
+            # identify the land regions and avoid showing sea warnings inland.
+            if not any((code.findtext('cap:valueName', namespaces=_CAP_NS) == 'ISO 3166-2'
+                        and (code.findtext('cap:value', namespaces=_CAP_NS) or '').startswith('FI-'))
+                       for code in area.findall('cap:geocode', _CAP_NS)):
+                continue
+            for polygon in area.findall('cap:polygon', _CAP_NS)[:10]:
+                ring = _cap_polygon(polygon.text)
+                if ring and all(18 <= lon <= 32 and 59 <= lat <= 71 for lon, lat in ring):
+                    polygons.append([ring])
+            description = area.findtext('cap:areaDesc', namespaces=_CAP_NS)
+            if description:
+                areas.append(description)
+        if not polygons:
+            continue
+        geometry = {'type': 'MultiPolygon', 'coordinates': polygons}
+        point = _polygon_point(geometry)
+        if not point:
+            continue
+        link = next((node.get('href') for node in entry.findall('atom:link', _ATOM_NS)
+                     if (node.get('href') or '').startswith('https://alerts.fmi.fi/cap/')), None)
+        items.append({
+            'id': 'fi:' + identifier, 'title': (info.findtext('cap:headline', namespaces=_CAP_NS)
+                                                    or info.findtext('cap:event', namespaces=_CAP_NS)
+                                                    or 'Weather warning')[:240],
+            'lon': round(point[0], 5), 'lat': round(point[1], 5),
+            'geometry': geometry, 'locationKind': 'polygon',
+            'country': 'Finland', 'source': 'Finnish Meteorological Institute · CC BY 4.0',
+            'severity': info.findtext('cap:severity', namespaces=_CAP_NS),
+            'area': '; '.join(areas)[:250],
+            'advice': ' '.join((info.findtext('cap:instruction', namespaces=_CAP_NS)
+                                or info.findtext('cap:description', namespaces=_CAP_NS) or '').split())[:480],
+            'observed': cap.findtext('cap:sent', namespaces=_CAP_NS),
+            'starts': info.findtext('cap:onset', namespaces=_CAP_NS),
+            'ends': info.findtext('cap:expires', namespaces=_CAP_NS),
+            'sourceUrl': link or 'https://en.ilmatieteenlaitos.fi/warnings',
+        })
+    return items
+
+
+def _finland_alerts():
+    return _parse_fmi_alerts_atom(_get_xml(_FMI_WARNINGS_URL, max_bytes=8_000_000))
 
 
 def _parse_dwd_alerts_zip(body, now=None):
@@ -809,7 +882,6 @@ def _azores_alerts():
 
 _PAGASA_FEED = 'https://publicalert.pagasa.dost.gov.ph/feeds/'
 _PAGASA_HOST = 'publicalert.pagasa.dost.gov.ph'
-_ATOM_NS = {'atom': 'http://www.w3.org/2005/Atom'}
 
 
 def _pagasa_cap_url(link):
@@ -1381,7 +1453,7 @@ def _world_alerts():
     items = []
     unavailable = []
     loaders = [('Canada', _canada_alerts), ('New Zealand', _new_zealand_alerts),
-               ('Norway', _norway_alerts), ('Ireland', _ireland_alerts),
+               ('Norway', _norway_alerts), ('Finland', _finland_alerts), ('Ireland', _ireland_alerts),
                ('Germany', _germany_alerts), ('Portugal · Azores', _azores_alerts),
                ('Philippines', _pagasa_alerts), ('India', _sachet_alerts),
                ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts),
