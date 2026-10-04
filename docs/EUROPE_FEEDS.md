@@ -141,6 +141,8 @@ Next integration candidates are the approved National Highways, TfL, Traffic Sco
 
 ## Belgium
 
+[Brussels Mobility's fixed speed-camera catalog](https://data.mobility.brussels/fr/info/472bf315-4669-4397-afb9-ccbcb174e664/) is CC0 and publishes mapped regional-road enforcement devices. GlobeView shows records marked active in Plate readers & enforcement at zoom 10+, with street, municipality and direction where supplied. The 4 October 2026 live check returned 132 active records. The catalog does not report live camera operation or establish that these cameras read plates. It is not a Belgian nationwide inventory.
+
 [Brussels Mobility's traffic counters](https://data.mobility.brussels/fr/info/traffic_live_geom/) are CC0. GlobeView maps active counters whose one-minute vehicle counts were measured within 15 minutes, with average speed and occupancy when valid. The 27 September 2026 check returned 28 current stations; older five-minute fields were stale and are ignored. These are point measurements rather than a traffic-flow surface, and the authority cautions that speed values are not calibrated for enforcement.
 
 [Brussels Mobility's road-event download](https://data.mobility.brussels/fr/info/events/) is CC0. GlobeView maps active roadworks and closures on regional roads, using its public WFS JSON download. It checks the Brussels-local start/end times and the layer refresh time, and shares one three-minute server snapshot. The 28 September 2026 check found 125 active works and one road closure. The WFS marks local wall times with `Z`; GlobeView interprets them as Brussels local time to avoid showing planned events early. These are published works and restrictions, not a guarantee that a road is currently impassable.

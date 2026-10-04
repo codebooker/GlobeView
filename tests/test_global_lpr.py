@@ -270,6 +270,37 @@ class GlobalPlateReaderTests(unittest.TestCase):
         self.assertEqual([row['id'] for row in payload['elements']], ['lu:pch:radar:68'])
         self.assertTrue(payload['sourceErrors'])
 
+    def test_brussels_speed_cameras_only_map_active_regional_inventory(self):
+        def camera(identifier, lon=4.35, lat=50.84, active=True):
+            return {'type': 'Feature', 'properties': {
+                'gid': identifier, 'active': active, 'street_fr': 'Rue du Test',
+                'mu_fr': 'Bruxelles', 'direction_fr': 'vers centre'},
+                'geometry': {'type': 'Point', 'coordinates': [lon, lat]}}
+        catalog = {'type': 'FeatureCollection', 'features': [
+            camera(1), camera(1), camera(2, active=False), camera(3, lon=5.0),
+            camera(4, lat=50.9)]}
+        rows = proxy.brussels_speed_cameras(catalog, (4.3, 50.8, 4.4, 50.85))
+        self.assertEqual([row['id'] for row in rows], ['be:brussels:speed-camera:1'])
+        self.assertIn('Rue du Test', rows[0]['title'])
+        self.assertIn('plate reading unverified', rows[0]['detail'])
+        self.assertEqual(rows[0]['source_url'], proxy.BRUSSELS_RADARS_SOURCE)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            proxy.brussels_speed_cameras({**catalog, 'totalFeatures': 99}, (4.2, 50.75, 4.5, 50.95))
+
+    def test_brussels_speed_cameras_survive_deflock_outage(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'properties': {'gid': 1, 'active': True, 'street_fr': 'Rue du Test'},
+             'geometry': {'type': 'Point', 'coordinates': [4.35, 50.84]}}]}
+        def cached(url, key, ttl=900):
+            if key == 'deflock-index:v1': raise OSError('index unavailable')
+            if key == 'be-brussels-speed-cameras:v1': return catalog
+            raise AssertionError(key)
+        with patch.object(proxy, 'cached_deflock_json', side_effect=cached), \
+                patch.object(proxy, 'france_gantries_for_bbox', return_value=[]):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((4.3, 50.8, 4.4, 50.9)))
+        self.assertEqual([row['id'] for row in payload['elements']], ['be:brussels:speed-camera:1'])
+        self.assertTrue(payload['sourceErrors'])
+
 
 if __name__ == '__main__':
     unittest.main()

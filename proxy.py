@@ -2367,6 +2367,12 @@ FLORENCE_GREEN_GATES_SOURCE = 'https://opendata.comune.fi.it/page_dataset_show?i
 FLORENCE_GREEN_GATES_URL = 'https://datigis.comune.fi.it/json/varchi_scudoverde.json'
 LUXEMBOURG_RADARS_SOURCE = 'https://data.public.lu/en/datasets/pch-emplacement-des-radars-fixes/'
 LUXEMBOURG_RADARS_URL = 'https://data.geoportail.lu/radar'
+BRUSSELS_RADARS_SOURCE = 'https://data.mobility.brussels/fr/info/472bf315-4669-4397-afb9-ccbcb174e664/'
+BRUSSELS_RADARS_URL = (
+    'https://data.mobility.brussels/geoserver/bm_security/wfs?'
+    'outputFormat=json&request=GetFeature&service=wfs&srsName=EPSG:4326'
+    '&typeName=bm_security:speedcameras&version=1.1.0'
+)
 LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
     'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13'
 )
@@ -18924,6 +18930,47 @@ def luxembourg_speed_radars(payload, bbox):
     return elements
 
 
+def brussels_speed_cameras(payload, bbox):
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list) or len(payload['features']) > 500
+            or (isinstance(payload.get('totalFeatures'), int)
+                and payload['totalFeatures'] > len(payload['features']))):
+        raise ValueError('Brussels speed-camera catalog is incomplete or invalid')
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements, seen = [], set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props, geometry = row.get('properties'), row.get('geometry')
+        if not isinstance(props, dict) or not isinstance(geometry, dict):
+            continue
+        camera_id, coordinates = props.get('gid'), geometry.get('coordinates')
+        if (not isinstance(camera_id, int) or camera_id < 1 or camera_id in seen
+                or props.get('active') is not True or geometry.get('type') != 'Point'
+                or not isinstance(coordinates, (list, tuple)) or len(coordinates) != 2):
+            continue
+        try:
+            lon, lat = float(coordinates[0]), float(coordinates[1])
+        except (TypeError, ValueError):
+            continue
+        if (not math.isfinite(lon) or not math.isfinite(lat)
+                or not (4.2 <= lon <= 4.5 and 50.75 <= lat <= 50.95)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(camera_id)
+        street = re.sub(r'\s+', ' ', str(props.get('street_fr') or '')).strip()[:80]
+        district = re.sub(r'\s+', ' ', str(props.get('mu_fr') or '')).strip()[:60]
+        direction = re.sub(r'\s+', ' ', str(props.get('direction_fr') or '')).strip()[:60]
+        elements.append({
+            'type': 'node', 'id': f'be:brussels:speed-camera:{camera_id}', 'lat': lat, 'lon': lon,
+            'title': f'Fixed speed camera · {street or district or "Brussels"}',
+            'detail': ' · '.join(filter(None, [district, f'Direction {direction}' if direction else '',
+                                               'Official active inventory · current operation and plate reading unverified'])),
+            'source': 'Brussels Mobility · CC0', 'source_url': BRUSSELS_RADARS_SOURCE,
+        })
+    return elements
+
+
 def cached_dutch_anpr_catalog():
     def load():
         search = fetch_text_url(DUTCH_ANPR_SEARCH_URL, timeout=20)
@@ -18955,6 +19002,8 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                         and min_lat <= 43.86 and max_lat >= 43.70)
     luxembourg_visible = (min_lon <= 6.55 and max_lon >= 5.7
                           and min_lat <= 50.2 and max_lat >= 49.4)
+    brussels_visible = (min_lon <= 4.5 and max_lon >= 4.2
+                        and min_lat <= 50.95 and max_lat >= 50.75)
     france_visible = (min_lon <= 10 and max_lon >= -5.5
                       and min_lat <= 51.5 and max_lat >= 41)
     uzbekistan_visible = (min_lon <= 73.22 and max_lon >= 55.99
@@ -18970,7 +19019,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or brussels_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -19003,7 +19052,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or brussels_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -19104,6 +19153,13 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Luxembourg fixed radars: {error}')
+    if brussels_visible:
+        try:
+            catalog = cached_deflock_json(BRUSSELS_RADARS_URL, 'be-brussels-speed-cameras:v1', ttl=86400)
+            for item in brussels_speed_cameras(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Brussels speed cameras: {error}')
     if source_errors:
         print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 
