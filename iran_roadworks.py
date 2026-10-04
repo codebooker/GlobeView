@@ -48,8 +48,10 @@ def _date(value):
     if not isinstance(value, str) or not re.fullmatch(r'1[34]\d{6}', value):
         raise ValueError('Invalid Solar Hijri date')
     year, month, day = int(value[:4]), int(value[4:6]), int(value[6:])
-    if not 1 <= month <= 12 or not 1 <= day <= (31 if month <= 6 else 30 if month <= 11 else 29):
+    if not 1 <= month <= 12 or not 1 <= day <= (31 if month <= 6 else 30):
         raise ValueError('Invalid Solar Hijri date')
+    if month == 12 and day == 30 and _jalali_date(dt.date(year + 622, 3, 20)) != (year, 12, 30):
+        raise ValueError('Invalid Solar Hijri leap day')
     return year, month, day
 
 

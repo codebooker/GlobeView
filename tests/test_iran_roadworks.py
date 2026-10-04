@@ -21,6 +21,8 @@ def notice():
 class IranRoadworksTests(unittest.TestCase):
     def test_current_official_notice_keeps_publisher_point_schedule_and_identity(self):
         self.assertEqual(works._jalali_date(NOW.astimezone(works._TEHRAN).date()), (1405, 7, 12))
+        self.assertEqual(works._date('14031230'), (1403, 12, 30))
+        with self.assertRaises(ValueError): works._date('14051230')
         row = notice()
         feature = works.parse_roadworks([row], NOW)[0]
         self.assertEqual(feature['geometry']['coordinates'], [60.63190618, 25.43260519])
