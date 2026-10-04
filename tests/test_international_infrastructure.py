@@ -137,6 +137,34 @@ class InfrastructureTests(unittest.TestCase):
             markers = feeds._singapore_cameras()
         self.assertEqual(markers[0]['properties']['snapshot_url'], '/singapore-camera/2701')
 
+    def test_hong_kong_speed_panels_use_current_official_images(self):
+        now = time.time()
+        catalog = [{
+            'Image File URL': f'http://resource.data.one.gov.hk/td/jss/sj{number}.en.png',
+            'Description': f'Panel {number}',
+            'SMP Location Lonitude (WGS84)': '114.2',
+            'SMP Location Latitude (WGS84)': '22.4',
+        } for number in range(1, 6)]
+        with patch.dict(feeds._HONG_KONG_SPEED_PANELS_CATALOG, {'until': 0, 'rows': []}), \
+                patch.object(feeds, '_get_csv', return_value=catalog) as csv_read:
+            rows = feeds._hong_kong_speed_panel_catalog()
+        self.assertEqual(len(rows), 5)
+        csv_read.assert_called_once_with(feeds.HONG_KONG_SPEED_PANELS_URL)
+        image = b'\x89PNG\r\n\x1a\n' + b'0' * 1000
+        def load(panel_id):
+            return image, now - (1800 if panel_id == '5' else 120)
+        with patch.object(feeds, '_hong_kong_speed_panel_catalog', return_value=rows), \
+                patch.object(feeds, '_hong_kong_speed_panel_image', side_effect=load):
+            features = feeds._hong_kong_speed_panels()
+        self.assertEqual(len(features), 4)
+        self.assertEqual({item['properties']['key'] for item in features},
+                         {f'hk:td:speed-panel:{number}' for number in range(1, 5)})
+        self.assertEqual(base64.b64decode(features[0]['properties']['image_data']), image)
+        self.assertEqual(features[0]['properties']['source_url'], feeds.HONG_KONG_SPEED_PANELS_SOURCE)
+        self.assertIsInstance(features[0]['properties']['updated_at'], float)
+        with self.assertRaises(ValueError):
+            feeds._hong_kong_speed_panel_image('../other')
+
     def test_hong_kong_sensors_join_valid_current_lanes_to_locations(self):
         now = dt.datetime(2026, 10, 2, 17, 5, 40, tzinfo=dt.timezone.utc).timestamp()
         locations = feeds._parse_hong_kong_sensor_locations([

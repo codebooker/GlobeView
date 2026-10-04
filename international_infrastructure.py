@@ -56,6 +56,9 @@ HONG_KONG_SENSOR_LOCATIONS_URL = ('https://static.data.gov.hk/td/traffic-data-st
                                   'info/traffic_speed_volume_occ_info.csv')
 HONG_KONG_SENSORS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-sm_4-traffic-data-strategic-major-roads'
 HONG_KONG_SENSOR_MAX_AGE = 20 * 60
+HONG_KONG_SPEED_PANELS_URL = ('https://static.data.gov.hk/td/speed-map-panels-v2/'
+                              'info/Speed_Map_Panel_Locations_en.csv')
+HONG_KONG_SPEED_PANELS_SOURCE = 'https://data.gov.hk/en-data/dataset/hk-td-sm_9-speed-map-panels-v2'
 SINGAPORE_CAMERAS_URL = 'https://api.data.gov.sg/v1/transport/traffic-images'
 SINGAPORE_CAMERAS_SOURCE = 'https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view'
 TAIPEI_WORKS_URL = 'https://tpnco.blob.core.windows.net/blobfs/Todaywork.json'
@@ -374,6 +377,7 @@ _DGT_METADATA_CACHE = {service: {'until': 0, 'root': None, 'lock': threading.Loc
                        for service in ('cameras', 'sign_locations')}
 _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
+_HONG_KONG_SPEED_PANELS_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _SINGAPORE_CAMERA_CATALOG = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _TAIPEI_WORKS_CACHE = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _TAIPEI_CMS_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
@@ -8245,6 +8249,80 @@ def _hong_kong_camera_url(camera_id):
     return f'https://tdcctv.data.one.gov.hk/{camera_id}.JPG'
 
 
+def _hong_kong_speed_panel_catalog():
+    cache = _HONG_KONG_SPEED_PANELS_CATALOG
+    with cache['lock']:
+        if time.time() < cache['until']:
+            return cache['rows']
+    rows = []
+    seen = set()
+    for row in _get_csv(HONG_KONG_SPEED_PANELS_URL):
+        match = re.fullmatch(r'http://resource\.data\.one\.gov\.hk/td/jss/sj([1-5])\.en\.png',
+                             row.get('Image File URL') or '', re.I)
+        if not match or match[1] in seen:
+            continue
+        try:
+            lon = float(row['SMP Location Lonitude (WGS84)'])
+            lat = float(row['SMP Location Latitude (WGS84)'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not 113.8 <= lon <= 114.5 or not 22.1 <= lat <= 22.6:
+            continue
+        rows.append((match[1], [lon, lat], _clean(row.get('Description'), 110)))
+        seen.add(match[1])
+    if len(rows) != 5:
+        raise ValueError('Hong Kong speed-map panel catalog is incomplete')
+    with cache['lock']:
+        cache.update(until=time.time() + 24 * 3600, rows=rows)
+    return rows
+
+
+def _hong_kong_speed_panel_image(panel_id):
+    if not re.fullmatch(r'[1-5]', panel_id):
+        raise ValueError('Invalid Hong Kong speed-map panel ID')
+    url = f'https://resource.data.one.gov.hk/td/jss/sj{panel_id}.en.png'
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (public road sign reader)', 'Accept': 'image/png'})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        modified = response.headers.get('Last-Modified')
+        content_type = response.headers.get('Content-Type', '')
+        body = response.read(150_001)
+    if not modified or not content_type.startswith('image/png') or not 1000 <= len(body) <= 150_000 or not body.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise ValueError('Hong Kong speed-map panel returned no valid image')
+    timestamp = email.utils.parsedate_to_datetime(modified).timestamp()
+    return body, timestamp
+
+
+def _hong_kong_speed_panels():
+    rows = _hong_kong_speed_panel_catalog()
+    now = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_hong_kong_speed_panel_image, panel_id): (panel_id, point, title)
+                   for panel_id, point, title in rows}
+        features = []
+        for future in concurrent.futures.as_completed(futures):
+            panel_id, point, title = futures[future]
+            try:
+                image, updated = future.result()
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            if not -120 <= now - updated <= 15 * 60:
+                continue
+            features.append(_feature(point, {
+                'key': f'hk:td:speed-panel:{panel_id}', 'layer': 'signs',
+                'title': title or 'Hong Kong speed-map panel',
+                'detail': 'Roadside speed map and journey times',
+                'image_data': base64.b64encode(image).decode('ascii'),
+                'updated_at': updated,
+                'valid_until': updated + 15 * 60,
+                'source': 'Hong Kong Transport Department · DATA.GOV.HK',
+                'source_url': HONG_KONG_SPEED_PANELS_SOURCE,
+            }))
+    if not features:
+        raise ValueError('Hong Kong speed-map panels have no recent images')
+    return features
+
+
 def _parse_hong_kong_cameras(root):
     if root.tag != 'image-list' or not 50 <= len(root) <= 2000:
         raise ValueError('Hong Kong camera catalog is incomplete')
@@ -8707,6 +8785,7 @@ _FETCHERS = {
         'hk_td_roadworks': _hong_kong_roadworks,
         'hk_td_cameras': _hong_kong_cameras,
         'hk_td_sensors': _hong_kong_sensors,
+        'hk_td_speed_panels': _hong_kong_speed_panels,
         'sg_lta_cameras': _singapore_cameras,
         'tw_taipei_roadworks': _taipei_roadworks,
         'tw_taipei_cms_signs': _taipei_cms_signs,
