@@ -30,6 +30,7 @@ QLD_URL = 'https://publiccontent-gis-psba-qld-gov-au.s3.amazonaws.com/content/Fe
 NZ_URL = 'https://alerthub.civildefence.govt.nz/atom/pwp'
 ENGLAND_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floods.json?min-severity=3'
 BURGENLAND_URL = 'https://einsatz.lsz-b.at/'
+LOWER_AUSTRIA_URL = 'https://www.feuerwehr-krems.at/ShowArtikelSpeed.asp?Artikel=4284'
 UPPER_AUSTRIA_URL = 'https://cf-einsaetze.ooelfv.at/webext2/rss/json_laufend.txt'
 UPPER_AUSTRIA_SOURCE = 'https://einsaetze.ooelfv.at/einsatz/aktuell'
 ICELAND_URL = 'https://api.vedur.is/capbroker/active/detailed/all'
@@ -650,6 +651,98 @@ class _BurgenlandOperations(HTMLParser):
 def _burgenland_municipalities():
     path = Path(__file__).with_name('burgenland-municipalities.json')
     return json.loads(path.read_text(encoding='utf-8'))
+
+
+@lru_cache(maxsize=1)
+def _lower_austria_municipalities():
+    path = Path(__file__).with_name('lower-austria-municipalities.json')
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+class _LowerAustriaRows(HTMLParser):
+    """Extract the four public fields from WASTL's current-dispatch table."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.rows = []
+        self.row = None
+        self.cell = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'tr':
+            self.row = []
+        elif tag == 'td' and self.row is not None:
+            self.cell = []
+
+    def handle_data(self, value):
+        if self.cell is not None:
+            self.cell.append(value)
+
+    def handle_endtag(self, tag):
+        if tag == 'td' and self.cell is not None and self.row is not None:
+            self.row.append(' '.join(''.join(self.cell).split()))
+            self.cell = None
+        elif tag == 'tr' and self.row is not None:
+            if len(self.row) == 5:
+                self.rows.append(self.row)
+            self.row = None
+
+
+def parse_lower_austria(page, table, now=None):
+    """Map anonymized active dispatches to official municipality centers."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    page = page.decode('cp1252', errors='replace') if isinstance(page, bytes) else page
+    table = table.decode('cp1252', errors='replace') if isinstance(table, bytes) else table
+    stamp = re.search(r'Datenauszug mit Stand[^<]*?\b(\d{1,2})\.\s*([A-Za-zÄÖÜäöü]+)\s+(\d{4})\s+um\s+(\d{1,2}:\d{2}:\d{2})', page)
+    months = {'jänner': 1, 'januar': 1, 'februar': 2, 'märz': 3, 'april': 4,
+              'mai': 5, 'juni': 6, 'juli': 7, 'august': 8, 'september': 9,
+              'oktober': 10, 'november': 11, 'dezember': 12}
+    if not stamp or stamp[2].casefold() not in months:
+        raise ValueError('Lower Austria dispatch update time missing')
+    try:
+        published = dt.datetime(int(stamp[3]), months[stamp[2].casefold()], int(stamp[1]),
+                                *map(int, stamp[4].split(':')), tzinfo=ZoneInfo('Europe/Vienna'))
+    except ValueError:
+        raise ValueError('Lower Austria dispatch update time invalid') from None
+    if not -dt.timedelta(minutes=5) <= now - published.astimezone(dt.timezone.utc) <= dt.timedelta(minutes=20):
+        raise ValueError('Lower Austria dispatch page is stale')
+    parser = _LowerAustriaRows()
+    parser.feed(table)
+    if 'Zeige Einsatzüberblick in NÖ' not in table or 'id="table2"' not in table:
+        raise ValueError('Lower Austria dispatch table is invalid')
+    towns = _lower_austria_municipalities()
+    output, duplicates = [], {}
+    for _, district, place, dispatch, started in parser.rows[:100]:
+        point = towns.get(place.casefold())
+        if not point or not dispatch or any(word in dispatch.casefold() for word in ('übung', 'probealarm', 'testalarm')):
+            continue
+        match = re.search(r'\b(\d{2}\.\d{2}\.\d{4})\b', started)
+        if not match:
+            continue
+        try:
+            event_date = dt.datetime.strptime(match[1], '%d.%m.%Y').date()
+        except ValueError:
+            continue
+        if not dt.timedelta(0) <= published.date() - event_date <= dt.timedelta(days=2):
+            continue
+        identity = f'{place}|{dispatch}|{event_date.isoformat()}'
+        duplicates[identity] = duplicates.get(identity, 0) + 1
+        key = hashlib.sha1(f'{identity}|{duplicates[identity]}'.encode()).hexdigest()[:16]
+        observed = published.astimezone(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+        output.append(_item(f'lower-austria:{key}', *point, f'{dispatch} · {place}',
+                            f'Current fire brigade report · {district} · approximate municipality center; source delays and anonymizes dispatches',
+                            'WASTL · Feuerwehr Krems', LOWER_AUSTRIA_URL, observed,
+                            'fire' if dispatch.startswith('B') else 'warning'))
+    return output
+
+
+def _lower_austria_calls():
+    page = _html(LOWER_AUSTRIA_URL)
+    match = re.search(rb'<iframe\b[^>]*\bsrc="(/codepages/wastl/wastlmain/Land_EinsatzAktuell\.asp\?[^"<>]{1,150})"', page, re.I)
+    if not match:
+        raise ValueError('Lower Austria dispatch table link missing')
+    url = urllib.parse.urljoin(LOWER_AUSTRIA_URL, html.unescape(match[1].decode('ascii')))
+    return parse_lower_austria(page, _html(url))
 
 
 def parse_burgenland(page, now=None):
@@ -1450,6 +1543,7 @@ _LOADERS = {
     'nz_alerts': fetch_nz,
     'england_floods': lambda: parse_england(_json(ENGLAND_URL)),
     'burgenland_fire': lambda: parse_burgenland(_html(BURGENLAND_URL)),
+    'lower_austria_fire': _lower_austria_calls,
     'upper_austria_fire': lambda: parse_upper_austria(_json(UPPER_AUSTRIA_URL)),
     'iceland_imo': lambda: parse_iceland(_json(ICELAND_URL)),
     'portugal_anepc': lambda: parse_portugal(_json(PORTUGAL_URL)),
