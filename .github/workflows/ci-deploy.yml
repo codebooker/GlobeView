@@ -39,7 +39,7 @@ jobs:
         run: >-
           python -m py_compile proxy.py global_feeds.py hazard_feeds.py kyrgyzstan_outages.py azerbaijan_outages.py armenia_outages.py armenia_reports.py armenia_roads.py georgia_power.py georgia_energo_outages.py georgia_roads.py kyrgyzstan_roads.py kyrgyztelecom_cameras.py
           cyclone_guidance.py cyber_feeds.py international_emergency.py tajikistan_alerts.py uzbek_enforcement.py armenia_enforcement.py georgia_enforcement.py
-          international_infrastructure.py radio_catalog.py arcgis_catalog.py
+          international_infrastructure.py radio_catalog.py arcgis_catalog.py france_speed_cameras.py
           trip_routing.py deploy/deploy_hook.py
       - name: Check JavaScript syntax
         run: |
