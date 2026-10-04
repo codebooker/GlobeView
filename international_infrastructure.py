@@ -36,6 +36,7 @@ from georgia_energo_outages import energo_pro_outages
 from georgia_roads import road_restrictions as georgia_road_restrictions
 from iran_roads import traffic_sensors as iran_traffic_sensors
 from iran_roadworks import roadworks as iran_roadworks
+from iran_obstructions import obstructions as iran_obstructions
 from kyrgyzstan_roads import bishkek_roadworks
 from armenia_roads import road_notices as armenia_road_notices
 from armenia_roads import news_roadworks as armenia_construction_reports
@@ -8778,6 +8779,7 @@ _FETCHERS = {
         'ge_georoad_restrictions': georgia_road_restrictions,
         'ir_141_traffic_sensors': iran_traffic_sensors,
         'ir_141_roadworks': iran_roadworks,
+        'ir_141_obstructions': iran_obstructions,
         'kz_qaj_restrictions': _qaj_restrictions,
     },
     'power': {'ukpn': _ukpn_outages, 'npg': _npg_outages, 'ssen': _ssen_outages,
