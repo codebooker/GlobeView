@@ -7,6 +7,33 @@ from france_toll_gantries import _catalog as french_gantry_catalog, gantries_for
 
 
 class GlobalPlateReaderTests(unittest.TestCase):
+    def test_nottingham_anpr_inventory_is_bounded_and_dated(self):
+        def row(camera_id, kind=4, lon=-1.15, lat=52.95, location='Goldsmith Street'):
+            return {'attributes': {'OBJECTID': camera_id, 'TYPE': kind, 'LONG': lon,
+                                   'LAT': lat, 'LOCATION': location, 'CREATE_DAT': '20240528'}}
+        catalog = {'features': [row(24), row(24), row(25, kind=2),
+                                row(26, lon=-3), row(27, location=' '), row(28, lat=53.5)]}
+        rows = proxy.nottingham_anpr_plate_readers(catalog, (-1.3, 52.8, -1.0, 53.1))
+        self.assertEqual([item['id'] for item in rows],
+                         ['uk:nottingham:anpr:24', 'uk:nottingham:anpr:27'])
+        self.assertIn('Goldsmith Street', rows[0]['title'])
+        self.assertIn('2024-05-28', rows[0]['detail'])
+        self.assertIn('current operation unverified', rows[0]['detail'])
+
+    def test_nottingham_anpr_survives_deflock_outage(self):
+        catalog = {'features': [{'attributes': {'OBJECTID': 24, 'TYPE': 4,
+                                               'LAT': 52.95, 'LONG': -1.15,
+                                               'LOCATION': 'Goldsmith Street'}}]}
+        def cached(url, key, ttl=900):
+            if key == 'deflock-index:v1': raise OSError('index unavailable')
+            if key == 'uk-nottingham-anpr:v1': return catalog
+            raise AssertionError(key)
+        with patch.object(proxy, 'cached_deflock_json', side_effect=cached):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((-1.2, 52.9, -1.1, 53.0)))
+        self.assertEqual([item['id'] for item in payload['elements']],
+                         ['uk:nottingham:anpr:24'])
+        self.assertTrue(payload['sourceErrors'])
+
     def test_french_toll_gantries_are_bounded_published_locations(self):
         self.assertEqual(len(french_gantry_catalog()), 32)
         rows = french_gantries_for_bbox((2.9, 46.2, 4.0, 46.7))

@@ -2331,6 +2331,12 @@ PULSEPOINT_AGENCIES = {
 }
 
 DEFLOCK_INDEX_URL = 'https://cdn.deflock.me/regions/index.json'
+NOTTINGHAM_ANPR_SOURCE = 'https://maps164.nottinghamcity.gov.uk/server/rest/services/OpenData/OpenData/MapServer/32'
+NOTTINGHAM_ANPR_URL = (
+    NOTTINGHAM_ANPR_SOURCE + '/query?where=TYPE%3D4'
+    '&outFields=OBJECTID%2CLOCATION%2CCAMERA_NO%2CTYPE%2CTYPE_DESC%2CLAT%2CLONG%2CCREATE_DAT'
+    '&returnGeometry=false&f=json'
+)
 LITHUANIA_TOLL_EQUIPMENT_URL = (
     'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13/query'
     '?where=1%3D1&outFields=objectid%2Ckelionumeris%2Ckm%2Ctipas%2Cgaliojimopradzia%2Cgaliojimopabaiga'
@@ -18629,6 +18635,46 @@ def lithuania_toll_plate_readers(payload, bbox, now=None):
     return elements
 
 
+def nottingham_anpr_plate_readers(payload, bbox):
+    if not isinstance(payload, dict) or not isinstance(payload.get('features'), list):
+        raise ValueError('Nottingham camera catalog is invalid')
+    if len(payload['features']) > 2000:
+        raise ValueError('Nottingham camera catalog exceeded its expected size')
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements = []
+    seen = set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props = row.get('attributes') or {}
+        if not isinstance(props, dict) or props.get('TYPE') != 4:
+            continue
+        camera_id = props.get('OBJECTID')
+        if not isinstance(camera_id, int) or camera_id < 1 or camera_id in seen:
+            continue
+        try:
+            lon, lat = float(props['LONG']), float(props['LAT'])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if (not math.isfinite(lon) or not math.isfinite(lat)
+                or not (-1.4 <= lon <= -0.95 and 52.75 <= lat <= 53.15)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(camera_id)
+        location = re.sub(r'\s+', ' ', str(props.get('LOCATION') or '')).strip()[:80]
+        published = str(props.get('CREATE_DAT') or '')
+        dated = (f' · inventory record {published[:4]}-{published[4:6]}-{published[6:]}'
+                 if re.fullmatch(r'20\d{6}', published) else '')
+        elements.append({
+            'type': 'node', 'id': f'uk:nottingham:anpr:{camera_id}', 'lat': lat, 'lon': lon,
+            'title': f'ANPR camera · {location}' if location else 'ANPR camera · Nottingham',
+            'detail': f'Council-published location{dated} · current operation unverified',
+            'source': 'Nottingham City Council · OGL v3',
+            'source_url': NOTTINGHAM_ANPR_SOURCE,
+        })
+    return elements
+
+
 def milan_area_b_plate_readers(payload, bbox):
     if not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection' or not isinstance(payload.get('features'), list):
         raise ValueError('Milan Area B gate catalog is invalid')
@@ -18723,6 +18769,8 @@ def cached_dutch_anpr_catalog():
 def fetch_deflock_lpr_content(bbox, limit=10000):
     min_lon, min_lat, max_lon, max_lat = bbox
     elements_by_id = {}
+    nottingham_visible = (min_lon <= -0.95 and max_lon >= -1.4
+                          and min_lat <= 53.15 and max_lat >= 52.75)
     lithuania_visible = (min_lon <= 26.9 and max_lon >= 20.8
                          and min_lat <= 56.5 and max_lat >= 53.8)
     dutch_visible = (min_lon <= 7.3 and max_lon >= 3.1
@@ -18744,7 +18792,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18777,9 +18825,17 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
+
+    if nottingham_visible:
+        try:
+            catalog = cached_deflock_json(NOTTINGHAM_ANPR_URL, 'uk-nottingham-anpr:v1', ttl=21600)
+            for item in nottingham_anpr_plate_readers(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Nottingham ANPR inventory: {error}')
 
     # Via Lietuva publishes official toll-control locations separately from the
     # community-mapped DeFlock catalog. Fetch this small inventory only for views
