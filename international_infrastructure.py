@@ -6333,6 +6333,125 @@ def _sct_cameras():
     return _parse_sct_cameras(_sct_xml('cameres.xml'))
 
 
+_SCT_UNAVAILABLE_SHA256 = {
+    '76bd674597bdbe5c437c5a5fad51e7272110e2bbde4ef7a715711a22c0f9382f',
+    'e29891bf5b85afb8016ccd2117ece878b7742ac1752eb3dca7dbe68ef32d8932',
+}
+_SCT_CAMERA_HEALTH = {}
+_SCT_CAMERA_STILLS = {}
+_SCT_CAMERA_HEALTH_LOCK = threading.Lock()
+_SCT_CAMERA_AUDIT_LOCK = threading.Lock()
+
+
+def _prune_sct_camera_cache_locked(now):
+    for camera_id, cached in list(_SCT_CAMERA_STILLS.items()):
+        if cached[0] + 120 <= now:
+            del _SCT_CAMERA_STILLS[camera_id]
+    total_bytes = sum(len(cached[1]) for cached in _SCT_CAMERA_STILLS.values())
+    while len(_SCT_CAMERA_STILLS) > 64 or total_bytes > 24_000_000:
+        oldest = next(iter(_SCT_CAMERA_STILLS))
+        total_bytes -= len(_SCT_CAMERA_STILLS.pop(oldest)[1])
+    if len(_SCT_CAMERA_HEALTH) > 512:
+        for camera_id, _ in sorted(_SCT_CAMERA_HEALTH.items(), key=lambda pair: pair[1][0])[:-512]:
+            del _SCT_CAMERA_HEALTH[camera_id]
+
+
+def _load_sct_camera_snapshot(camera_id):
+    # SCT's image host cannot negotiate modern TLS. The server fetches its
+    # public still over HTTP and validates both the redirect and image body.
+    url = ('http://mct.gencat.cat/mct2bo/TransitCamera?'
+           f'nom={camera_id}.gif&visualitzacio=imatge')
+    request = urllib.request.Request(url, headers={
+        'User-Agent': 'GlobeView/1.0 (+https://github.com/codebooker/GlobeView)'})
+    with urllib.request.urlopen(request, timeout=8) as response:
+        if urllib.parse.urlsplit(response.url).hostname != 'mct.gencat.cat':
+            raise ValueError('Unexpected SCT camera redirect')
+        image = response.read(2_000_001)
+    if not 5_000 <= len(image) <= 2_000_000:
+        raise FileNotFoundError('SCT camera still is unavailable')
+    if hashlib.sha256(image).hexdigest() in _SCT_UNAVAILABLE_SHA256:
+        raise FileNotFoundError('SCT camera returned an unavailable image')
+    try:
+        with Image.open(io.BytesIO(image)) as still:
+            content_type = {'GIF': 'image/gif', 'JPEG': 'image/jpeg',
+                            'PNG': 'image/png'}.get(still.format)
+            if content_type is None or not (320 <= still.width <= 4096 and 180 <= still.height <= 4096):
+                raise FileNotFoundError('SCT camera image has an invalid format or size')
+            still.verify()
+    except (OSError, ValueError, UnidentifiedImageError) as error:
+        raise FileNotFoundError('SCT camera image is invalid') from error
+    return image, content_type
+
+
+def _sct_unavailable_cameras(features):
+    camera_ids = {item['properties']['key'].rsplit(':', 1)[-1]
+                  for item in features if item['properties']['key'].startswith('es:sct:camera:')}
+    if not camera_ids:
+        return set()
+    with _SCT_CAMERA_AUDIT_LOCK:
+        now = time.time()
+        with _SCT_CAMERA_HEALTH_LOCK:
+            pending = [camera_id for camera_id in camera_ids
+                       if _SCT_CAMERA_HEALTH.get(camera_id, (0, False))[0] <= now]
+
+        def available(camera_id):
+            try:
+                return camera_id, _load_sct_camera_snapshot(camera_id), False
+            except (TimeoutError, urllib.error.URLError) as error:
+                return camera_id, None, _camera_transport_error(error)
+            except (OSError, ValueError):
+                return camera_id, None, False
+
+        if pending:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+                results = list(executor.map(available, pending))
+            with _SCT_CAMERA_HEALTH_LOCK:
+                now = time.time()
+                for camera_id, still, transport_error in results:
+                    cached = _SCT_CAMERA_STILLS.get(camera_id)
+                    if transport_error and cached and cached[0] + 120 > now:
+                        _SCT_CAMERA_HEALTH[camera_id] = (now + 60, True)
+                    else:
+                        _SCT_CAMERA_HEALTH[camera_id] = (now + (300 if still else 120), bool(still))
+                        if still:
+                            _SCT_CAMERA_STILLS.pop(camera_id, None)
+                            _SCT_CAMERA_STILLS[camera_id] = (now + 300, *still)
+                        else:
+                            _SCT_CAMERA_STILLS.pop(camera_id, None)
+                _prune_sct_camera_cache_locked(now)
+        with _SCT_CAMERA_HEALTH_LOCK:
+            return {f'es:sct:camera:{camera_id}' for camera_id in camera_ids
+                    if not _SCT_CAMERA_HEALTH[camera_id][1]}
+
+
+def sct_camera_snapshot(camera_id):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,24}', str(camera_id)):
+        raise ValueError('Invalid SCT camera ID')
+    now = time.time()
+    with _SCT_CAMERA_HEALTH_LOCK:
+        cached = _SCT_CAMERA_STILLS.get(camera_id)
+        if cached and cached[0] > now:
+            return cached[1:]
+    try:
+        still = _load_sct_camera_snapshot(camera_id)
+    except (OSError, ValueError) as error:
+        if _camera_transport_error(error) and cached and cached[0] + 120 > time.time():
+            with _SCT_CAMERA_HEALTH_LOCK:
+                _SCT_CAMERA_HEALTH[camera_id] = (time.time() + 60, True)
+            return cached[1:]
+        with _SCT_CAMERA_HEALTH_LOCK:
+            _SCT_CAMERA_HEALTH[camera_id] = (time.time() + 120, False)
+            _SCT_CAMERA_STILLS.pop(camera_id, None)
+        raise
+    with _SCT_CAMERA_HEALTH_LOCK:
+        now = time.time()
+        _SCT_CAMERA_HEALTH[camera_id] = (now + 300, True)
+        _SCT_CAMERA_STILLS.pop(camera_id, None)
+        _SCT_CAMERA_STILLS[camera_id] = (now + 300, *still)
+        _prune_sct_camera_cache_locked(now)
+    return still
+
+
 def _parse_poland_roads(root, now=None):
     now = time.time() if now is None else now
     published = _timestamp(root.attrib.get('gen'))
@@ -9210,6 +9329,7 @@ def road_snapshot(layer, bbox=None):
         unavailable = _dgt_unavailable_cameras(features)
         unavailable.update(_tfl_unavailable_cameras(features))
         unavailable.update(_madrid_unavailable_cameras(features))
+        unavailable.update(_sct_unavailable_cameras(features))
         with _LUXEMBOURG_CAMERA_HEALTH_LOCK:
             unavailable.update(_LUXEMBOURG_CAMERA_HEALTH['unavailable'])
         features = [item for item in features if item['properties']['key'] not in unavailable]
