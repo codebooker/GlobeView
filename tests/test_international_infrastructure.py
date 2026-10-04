@@ -2972,6 +2972,39 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             feeds._parse_berlin_roads(payload, now - 4 * 3600, now)
 
+    def test_berlin_curated_roads_add_details_without_duplicate_agency_reports(self):
+        now = dt.datetime(2026, 10, 4, 12, tzinfo=dt.timezone.utc).timestamp()
+        def item(identifier, kind, validity, lms_id=None, detail='Roadworks'):
+            return {'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [13.4, 52.52]},
+                    'properties': {'id': identifier, 'lms_id': lms_id, 'subtype': kind,
+                                   'tstore': '2026-10-04T10:00:00Z', 'validity': validity,
+                                   'street': 'Berlin, Teststraße', 'section': 'between A and B',
+                                   'severity': 'Full closure', 'content': detail}}
+        curated = {'type': 'FeatureCollection', 'features': [
+            item('VIZ/1', 'Sperrung', {'from': '2026-10-04T09:00', 'to': '2026-10-04T18:00'},
+                 'LMS/1', 'Curated detail'),
+            item('VIZ/2', 'Bauarbeiten', {'from': '2026-10-04T09:00', 'to': '2026-10-04T18:00'},
+                 detail='Unique work'),
+            item('VIZ/4', 'Sperrung', {'from': '2026-10-04T09:00', 'to': '2026-10-04T18:00'},
+                 'LMS/1', 'Other direction'),
+            item('VIZ/3', 'Störung', {'from': '2026-10-05T09:00', 'to': '2026-10-05T18:00'})]}
+        agency = {'type': 'FeatureCollection', 'features': [
+            item('LMS/1', 'Sperrung', {'from': '04.10.2026 09:00', 'to': '04.10.2026 18:00'},
+                 detail='Agency detail')]}
+        curated_rows = feeds._parse_berlin_roads(curated, now - 60, now, curated=True)
+        agency_rows = feeds._parse_berlin_roads(agency, now - 60, now)
+        self.assertEqual([row['properties']['layer'] for row in curated_rows],
+                         ['incidents', 'construction', 'incidents'])
+        self.assertEqual(curated_rows[0]['properties']['agency_key'], agency_rows[0]['properties']['key'])
+        self.assertNotEqual(curated_rows[0]['properties']['key'], curated_rows[2]['properties']['key'])
+        with patch.object(feeds, '_read_berlin_roads', side_effect=[curated_rows, agency_rows]):
+            merged = feeds._berlin_roads()
+        self.assertEqual(len(merged), 3)
+        self.assertIn('Curated detail', merged[0]['properties']['detail'])
+        self.assertTrue(all('agency_key' not in row['properties'] for row in merged))
+        with patch.object(feeds, '_read_berlin_roads', side_effect=[ValueError('stale'), agency_rows]):
+            self.assertEqual(feeds._berlin_roads(), agency_rows)
+
     def test_autobahn_service_cache_is_shared_and_bounded(self):
         cache = {'until': 0, 'roads': {}, 'lock': threading.Lock()}
         calls = []
