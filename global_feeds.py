@@ -29,7 +29,7 @@ class AircraftRateLimited(Exception):
         super().__init__('Aircraft provider rate limited')
 AIS_LOCK = threading.Lock()
 AIS_STATE = {'thread': None, 'boxes': None, 'viewers': {}, 'status': 'needs_key',
-             'updated_at': 0, 'vessels': {}}
+             'updated_at': 0, 'vessels': {}, 'static': {}}
 AIS_VIEWER_TTL = 60
 AIS_MAX_BOXES = max(1, min(64, int(os.getenv('AISSTREAM_MAX_BOXES', '32'))))
 AIS_MAX_VIEWERS = max(32, min(5000, int(os.getenv('AISSTREAM_MAX_VIEWERS', '512'))))
@@ -405,6 +405,7 @@ def _vessel_message(message):
     name = str(meta.get('ShipName') or report.get('Name') or '').strip()[:80]
     with AIS_LOCK:
         previous = AIS_STATE['vessels'].get(mmsi, {})
+        static = AIS_STATE['static'].get(mmsi, {})
         if kind in AIS_POSITION_TYPES:
             if report.get('Valid') is False:
                 return
@@ -423,12 +424,33 @@ def _vessel_message(message):
                 heading = heading if math.isfinite(heading) and 0 <= heading < 360 else None
             except (ValueError, TypeError):
                 heading = None
-            AIS_STATE['vessels'][mmsi] = {
-                'mmsi': mmsi, 'name': name or previous.get('name') or f'MMSI {mmsi}',
+            vessel = {
+                'mmsi': mmsi, 'name': name or previous.get('name') or static.get('name') or f'MMSI {mmsi}',
                 'lat': lat, 'lon': lon, 'heading': heading,
                 'speed': report.get('Sog'), 'updated_at': int(time.time()),
             }
+            imo = previous.get('imo') or static.get('imo')
+            if imo:
+                vessel['imo'] = imo
+            AIS_STATE['vessels'][mmsi] = vessel
             AIS_STATE['updated_at'] = int(time.time())
+        elif kind == 'ShipStaticData':
+            if report.get('Valid') is False:
+                return
+            imo = str(report.get('ImoNumber') or '')
+            imo = imo if re.fullmatch(r'\d{7}', imo) else None
+            if name or imo:
+                AIS_STATE['static'][mmsi] = {'name': name or static.get('name'),
+                                             'imo': imo or static.get('imo'), 'seen_at': time.time()}
+                if previous:
+                    if name:
+                        previous['name'] = name
+                    if imo:
+                        previous['imo'] = imo
+                if len(AIS_STATE['static']) > AIS_PRUNE_THRESHOLD:
+                    recent_static = sorted(AIS_STATE['static'].items(),
+                                           key=lambda row: row[1]['seen_at'], reverse=True)
+                    AIS_STATE['static'] = dict(recent_static[:AIS_MAX_VESSELS])
         elif previous and name:
             previous['name'] = name
         if len(AIS_STATE['vessels']) > AIS_PRUNE_THRESHOLD:
@@ -575,7 +597,7 @@ def ais_health():
 
 
 def vessel_search(query):
-    """Search recently observed AIS positions by reported ship name."""
+    """Search recently observed AIS positions by name, IMO, or MMSI."""
     def fold(value):
         normalized = unicodedata.normalize('NFKD', str(value or ''))
         return ''.join(char for char in normalized if not unicodedata.combining(char)).casefold().strip()
@@ -583,13 +605,18 @@ def vessel_search(query):
     query = fold(query)
     if len(query) < 2 or len(query) > 80:
         raise ValueError('Enter at least two characters for vessel search')
+    imo_match = re.fullmatch(r'(?:imo\s*[:#-]?\s*)?(\d{7})', query)
+    mmsi_match = re.fullmatch(r'(?:mmsi\s*[:#-]?\s*)?(\d{9})', query)
     if not _ais_key():
         return {'status': 'needs_key', 'vessels': [], 'source': 'AISStream'}
     with AIS_LOCK:
         status = AIS_STATE['status']
         now = time.time()
         rows = [v.copy() for v in AIS_STATE['vessels'].values()
-                if now - v.get('updated_at', 0) <= 1200 and query in fold(v.get('name', ''))]
+                if now - v.get('updated_at', 0) <= 1200 and (
+                    v.get('imo') == imo_match.group(1) if imo_match else
+                    v.get('mmsi') == mmsi_match.group(1) if mmsi_match else
+                    query in fold(v.get('name', '')))]
     if status == 'needs_key':
         status = 'not_started'
     rows.sort(key=lambda vessel: (
