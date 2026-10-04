@@ -4,6 +4,7 @@ import csv
 import datetime as dt
 import email.utils
 import gzip
+import hashlib
 import io
 import subprocess
 import threading
@@ -2241,6 +2242,69 @@ class InfrastructureTests(unittest.TestCase):
         rows = feeds._parse_sct_cameras(root)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['properties']['snapshot_url'], '/catalonia-camera/nc87')
+
+    def test_sct_camera_audit_hides_unavailable_stills_and_reuses_verified_image(self):
+        usable = io.BytesIO()
+        unavailable = io.BytesIO()
+        Image.effect_noise((704, 480), 50).save(usable, format='GIF')
+        Image.effect_noise((704, 480), 25).save(unavailable, format='GIF')
+        cameras = [feeds._feature([lon, 41.4], {
+            'key': f'es:sct:camera:{camera_id}', 'layer': 'cameras',
+            'snapshot_url': f'/catalonia-camera/{camera_id}',
+        }) for lon, camera_id in ((2.1, 'good'), (2.2, 'offline'), (3.0, 'outside'))]
+
+        class Response:
+            url = 'http://mct.gencat.cat/mct2bo/TransitCamera'
+
+            def __init__(self, body):
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+            def read(self, _limit):
+                return self.body
+
+        def image_response(request, timeout):
+            if 'nom=good.gif' in request.full_url:
+                return Response(usable.getvalue())
+            if 'nom=offline.gif' in request.full_url:
+                return Response(unavailable.getvalue())
+            raise AssertionError('Only visible cameras should be checked')
+
+        old_health = dict(feeds._SCT_CAMERA_HEALTH)
+        old_stills = dict(feeds._SCT_CAMERA_STILLS)
+        try:
+            feeds._SCT_CAMERA_HEALTH.clear()
+            feeds._SCT_CAMERA_STILLS.clear()
+            with patch.object(feeds, '_SCT_UNAVAILABLE_SHA256',
+                              {hashlib.sha256(unavailable.getvalue()).hexdigest()}), \
+                    patch.object(feeds, '_snapshot', return_value={
+                        'sources': {'es_sct_cameras': cameras}, 'errors': [], 'loading': False}), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=image_response) as fetch:
+                result = feeds.road_snapshot('cameras', (2.0, 41.3, 2.3, 41.5))
+                self.assertEqual([item['properties']['key'] for item in result['features']],
+                                 ['es:sct:camera:good'])
+                self.assertEqual(fetch.call_count, 2)
+                self.assertEqual(feeds.sct_camera_snapshot('good'),
+                                 (usable.getvalue(), 'image/gif'))
+                self.assertEqual(fetch.call_count, 2)
+                with self.assertRaisesRegex(FileNotFoundError, 'unavailable'):
+                    feeds.sct_camera_snapshot('offline')
+            with patch.object(feeds, '_snapshot', return_value={
+                    'sources': {'es_sct_cameras': cameras}, 'errors': [], 'loading': False}), \
+                    patch.object(feeds.urllib.request, 'urlopen', side_effect=AssertionError):
+                self.assertEqual(len(feeds.road_snapshot('cameras', (2.0, 41.3, 2.3, 41.5))['features']), 1)
+            with self.assertRaises(ValueError):
+                feeds.sct_camera_snapshot('../bad')
+        finally:
+            feeds._SCT_CAMERA_HEALTH.clear()
+            feeds._SCT_CAMERA_HEALTH.update(old_health)
+            feeds._SCT_CAMERA_STILLS.clear()
+            feeds._SCT_CAMERA_STILLS.update(old_stills)
 
     def test_dgt_cameras_require_current_catalog_and_official_image(self):
         now = dt.datetime(2026, 9, 27, 9, 40, tzinfo=dt.timezone.utc).timestamp()

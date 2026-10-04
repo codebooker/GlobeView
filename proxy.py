@@ -20,7 +20,7 @@ from international_infrastructure import (road_snapshot as international_road_sn
                                           international_traffic_snapshot,
                                           zurich_sensor_sample, northern_ireland_camera_snapshot,
                                           madrid_camera_snapshot, dgt_camera_snapshot,
-                                          tfl_camera_snapshot,
+                                          tfl_camera_snapshot, sct_camera_snapshot,
                                           estonia_camera_snapshot,
                                           lyon_camera_snapshot,
                                           geneva_camera_snapshot,
@@ -20041,34 +20041,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         camera_id = parsed.path.removeprefix('/catalonia-camera/')
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,24}', camera_id):
             self.send_error(400, 'Invalid camera id'); return
-
-        def load_snapshot():
-            # SCT's camera host uses obsolete TLS parameters on the production
-            # host. Fetch its public image over HTTP server-side, then validate
-            # and serve it to browsers from our HTTPS origin.
-            url = ('http://mct.gencat.cat/mct2bo/TransitCamera?'
-                   f'nom={camera_id}.gif&visualitzacio=imatge')
-            request = urllib.request.Request(url, headers={
-                'User-Agent': 'GlobeView/1.0 (+https://github.com/codebooker/GlobeView)'})
-            with urllib.request.urlopen(request, timeout=15) as response:
-                if urllib.parse.urlsplit(response.url).hostname != 'mct.gencat.cat':
-                    raise ValueError('Unexpected camera redirect')
-                content = response.read(2 * 1024 * 1024 + 1)
-            if len(content) > 2 * 1024 * 1024:
-                raise ValueError('Camera image exceeded size limit')
-            if content.startswith(b'GIF87a') or content.startswith(b'GIF89a'):
-                content_type = 'image/gif'
-            elif content.startswith(b'\xff\xd8\xff'):
-                content_type = 'image/jpeg'
-            elif content.startswith(b'\x89PNG\r\n\x1a\n'):
-                content_type = 'image/png'
-            else:
-                raise ValueError('Camera returned no supported image')
-            return content, content_type
-
         try:
             content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
-                f'catalonia-camera:v1:{camera_id}', load_snapshot,
+                f'catalonia-camera:v2:{camera_id}', lambda: sct_camera_snapshot(camera_id),
                 ttl=180, stale_ttl=300, persist=False, wait_timeout=20)
             self._write_bytes(200, content, content_type,
                               cache_control='public, max-age=60, stale-while-revalidate=120',
