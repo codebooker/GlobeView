@@ -313,6 +313,8 @@ NORWAY_WFS_URL = 'https://ogckart-sn1.atlas.vegvesen.no/datex_3_1/ows'
 NORWAY_SOURCE = 'https://www.vegvesen.no/trafikk/kart'
 LUXEMBOURG_ROADS_URL = 'https://cita.lu/info_trafic/datex/situationrecord36'
 LUXEMBOURG_ROADS_SOURCE = 'https://data.public.lu/en/datasets/cita-evenements-trafic-en-datex-ii-v3-6/'
+LUXEMBOURG_PCH_WORKS_URL = 'https://www.cita.lu/info_trafic/datex/chantierActuelDatex.xml'
+LUXEMBOURG_PCH_WORKS_SOURCE = 'https://data.public.lu/en/datasets/pch-les-chantiers-actuels/'
 LUXEMBOURG_CAMERAS_URL = 'https://www.cita.lu/kml/cameras.kml'
 LUXEMBOURG_CAMERAS_SOURCE = 'https://data.public.lu/en/datasets/cita-cameras-autoroute/'
 LUXEMBOURG_TRAFFIC_BASE = 'https://www.cita.lu/info_trafic/datex/trafficstatus_'
@@ -4436,6 +4438,60 @@ def _luxembourg_roads():
         time.sleep(0.5)
         root = _get_xml(LUXEMBOURG_ROADS_URL.replace('://cita.lu/', '://www.cita.lu/'))
     return _parse_luxembourg_roads(root)
+
+
+def _parse_luxembourg_pch_works(root, now=None):
+    """Map current PCH roadwork segments beyond CITA's motorway incident feed."""
+    if root.tag != '{http://datex2.eu/schema/2/2_0}d2LogicalModel':
+        raise ValueError('Luxembourg PCH roadworks are not DATEX II v2')
+    now = time.time() if now is None else now
+    published_text = root.findtext('.//{*}publicationTime')
+    published = _timestamp(published_text)
+    if published is None or not -600 <= now - published <= 20 * 60:
+        raise ValueError('Luxembourg PCH roadworks publication is stale or invalid')
+    records = root.findall('.//{*}situationRecord')
+    if len(records) > 1000:
+        raise ValueError('Luxembourg PCH roadworks exceeded record limit')
+    restrictions = {
+        'roadBlocked': 'Road closed',
+        'lanesBlocked': 'Lane closed',
+        'lanesPartiallyObstructed': 'Lane partly obstructed',
+    }
+    features = []
+    for record in records:
+        if record.get(_DATEX_TYPE, '').split(':')[-1] != 'MaintenanceWorks' or not record.get('id'):
+            continue
+        start = _timestamp(record.findtext('.//{*}overallStartTime'))
+        end = _timestamp(record.findtext('.//{*}overallEndTime'))
+        status = record.findtext('.//{*}validityStatus')
+        if status in {'suspended', 'cancelled', 'inactive'} or start is None or end is None or not start <= now < end:
+            continue
+        points = []
+        for node in record.findall('.//{*}tpegLinearLocation/{*}to/{*}pointCoordinates') + record.findall(
+                './/{*}tpegLinearLocation/{*}from/{*}pointCoordinates'):
+            point = _point({'coordinates': [node.findtext('{*}longitude'), node.findtext('{*}latitude')]})
+            if point and 5.5 <= point[0] <= 6.6 and 49.35 <= point[1] <= 50.2:
+                points.append(point)
+        if len(points) != 2:
+            continue
+        midpoint = [(points[0][0] + points[1][0]) / 2, (points[0][1] + points[1][1]) / 2]
+        road = _clean(record.findtext('.//{*}tpegLinearLocation/{*}to/{*}name/{*}descriptor/{*}values/{*}value'), 40)
+        comments = [_clean(node.text, 160) for node in record.findall(
+            './/{*}generalPublicComment/{*}comment/{*}values/{*}value')]
+        comments = [comment for comment in comments if comment and comment.lower() != 'titre:nouvelle tape']
+        restriction = restrictions.get(record.findtext('.//{*}trafficConstrictionType'), '')
+        features.append(_feature(midpoint, {
+            'key': f'lu:pch:works:{record.get("id")}:{midpoint[0]:.5f}:{midpoint[1]:.5f}',
+            'layer': 'construction', 'title': f'Roadworks · {road}' if road else 'Roadworks',
+            'detail': _clean(' · '.join(filter(None, [restriction, *comments[:2]])), 280),
+            'valid_until': end, 'updated_at': published_text,
+            'source': 'Luxembourg PCH · CC0', 'source_url': LUXEMBOURG_PCH_WORKS_SOURCE,
+        }))
+    return features
+
+
+def _luxembourg_pch_works():
+    return _parse_luxembourg_pch_works(_get_xml(LUXEMBOURG_PCH_WORKS_URL))
 
 
 def _parse_luxembourg_cameras(root):
@@ -8831,6 +8887,7 @@ _FETCHERS = {
         'de_hamburg_roads': _hamburg_roads,
         'de_berlin_roads': _berlin_roads,
         'lu_cita_roads': _luxembourg_roads,
+        'lu_pch_works': _luxembourg_pch_works,
         'lu_cita_cameras': _luxembourg_cameras,
         'lu_cita_traffic': _luxembourg_traffic,
         'fr_traffic_sensors': _france_sensors,

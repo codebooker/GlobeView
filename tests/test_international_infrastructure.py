@@ -2495,6 +2495,43 @@ class InfrastructureTests(unittest.TestCase):
         self.assertIn('www.cita.lu', fetch.call_args.args[0])
         sleep.assert_called_once_with(0.5)
 
+    def test_luxembourg_pch_national_roadworks_use_current_segment_midpoints(self):
+        now = dt.datetime(2026, 10, 4, 8, 5, tzinfo=dt.timezone.utc).timestamp()
+        def record(identifier, start, end, road='CR129', status='definedByValidityTimeSpec', lat='49.7'):
+            return f'''<situationRecord xsi:type="MaintenanceWorks" id="{identifier}">
+              <validity><validityStatus>{status}</validityStatus>
+                <validityTimeSpecification><overallStartTime>{start}</overallStartTime>
+                <overallEndTime>{end}</overallEndTime></validityTimeSpecification></validity>
+              <impact><trafficConstrictionType>roadBlocked</trafficConstrictionType></impact>
+              <groupOfLocations><tpegLinearLocation>
+                <to><pointCoordinates><latitude>{lat}</latitude><longitude>6.1</longitude></pointCoordinates>
+                  <name><descriptor><values><value>{road}</value></values></descriptor></name></to>
+                <from><pointCoordinates><latitude>49.72</latitude><longitude>6.12</longitude></pointCoordinates></from>
+              </tpegLinearLocation></groupOfLocations>
+            </situationRecord>'''
+        active = ('2026-10-04T07:00:00Z', '2026-10-04T09:00:00Z')
+        document = f'''<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+          <publicationTime>2026-10-04T08:00:00Z</publicationTime>
+          {record('same-id', *active)}{record('same-id', *active, lat='49.8')}
+          {record('future', '2026-10-04T08:30:00Z', active[1])}
+          {record('expired', active[0], '2026-10-04T08:00:00Z')}
+          {record('cancelled', *active, status='cancelled')}
+          </d2LogicalModel>'''
+        rows = feeds._parse_luxembourg_pch_works(ET.fromstring(document), now)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len({row['properties']['key'] for row in rows}), 2)
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][0], 6.11)
+        self.assertAlmostEqual(rows[0]['geometry']['coordinates'][1], 49.71)
+        self.assertEqual(rows[0]['properties']['title'], 'Roadworks · CR129')
+        self.assertEqual(rows[0]['properties']['detail'], 'Road closed')
+        self.assertEqual(rows[0]['properties']['valid_until'],
+                         dt.datetime(2026, 10, 4, 9, tzinfo=dt.timezone.utc).timestamp())
+        stale = ET.fromstring(document.replace('2026-10-04T08:00:00Z</publicationTime>',
+                                                   '2026-10-04T07:00:00Z</publicationTime>'))
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_luxembourg_pch_works(stale, now)
+
     def test_luxembourg_camera_catalog_uses_geolocated_official_stills(self):
         root = ET.fromstring('''<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
           <Placemark id="camera_6006"><name>A6 - Camera 6006</name>
