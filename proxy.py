@@ -2373,6 +2373,11 @@ BRUSSELS_RADARS_URL = (
     'outputFormat=json&request=GetFeature&service=wfs&srsName=EPSG:4326'
     '&typeName=bm_security:speedcameras&version=1.1.0'
 )
+NORWAY_ATK_SOURCE = 'https://www.nvdb.no/for-utviklere/nvdb-api-les/'
+NORWAY_ATK_URL = (
+    'https://nvdbapiles.atlas.vegvesen.no/vegobjekter/api/v4/vegobjekter/162'
+    '?inkluder=metadata,egenskaper,geometri&srid=4326&antall=800'
+)
 LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
     'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13'
 )
@@ -18971,6 +18976,94 @@ def brussels_speed_cameras(payload, bbox):
     return elements
 
 
+def norway_speed_cameras(payload, bbox, today=None):
+    if not isinstance(payload, list) or len(payload) > 4000:
+        raise ValueError('Norwegian enforcement catalog is invalid')
+    today = today or datetime.datetime.now(datetime.timezone.utc).date()
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements, seen = [], set()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        identifier, metadata = row.get('id'), row.get('metadata') or {}
+        if not isinstance(metadata, dict):
+            continue
+        object_type = metadata.get('type') or {}
+        if (not isinstance(identifier, int) or identifier < 1 or identifier in seen
+                or not isinstance(object_type, dict) or object_type.get('id') != 162):
+            continue
+        try:
+            starts = datetime.date.fromisoformat(metadata['startdato'])
+            ends = datetime.date.fromisoformat(metadata['sluttdato']) if metadata.get('sluttdato') else None
+        except (KeyError, TypeError, ValueError):
+            continue
+        if starts > today or (ends and ends < today):
+            continue
+        geometry = row.get('geometri') or {}
+        if not isinstance(geometry, dict):
+            continue
+        if geometry.get('srid') != 4326:
+            continue
+        # The NVDB EPSG:4326 WKT uses its official latitude,longitude axis order.
+        match = re.fullmatch(r'POINT(?: Z)?\s*\(\s*([+-]?\d+(?:\.\d+)?)\s+([+-]?\d+(?:\.\d+)?)(?:\s+[+-]?\d+(?:\.\d+)?)?\s*\)',
+                             str(geometry.get('wkt') or ''))
+        if not match:
+            continue
+        lat, lon = float(match[1]), float(match[2])
+        if not (math.isfinite(lon) and math.isfinite(lat) and 4 <= lon <= 32 and 57 <= lat <= 72
+                and min_lon <= lon <= max_lon and min_lat <= lat <= max_lat):
+            continue
+        properties = {item.get('id'): item.get('verdi') for item in (row.get('egenskaper') or [])
+                      if isinstance(item, dict)}
+        name = re.sub(r'\s+', ' ', str(properties.get(9522) or '')).strip()[:100]
+        direction = re.sub(r'\s+', ' ', str(properties.get(9527) or '')).strip()[:70]
+        seen.add(identifier)
+        elements.append({
+            'type': 'node', 'id': f'no:nvdb:atk:{identifier}', 'lat': lat, 'lon': lon,
+            'title': f'Automated speed camera · {name}' if name else 'Automated speed camera · Norway',
+            'detail': ' · '.join(filter(None, [direction,
+                                               'NVDB road inventory · current operation and plate reading unverified'])),
+            'source': 'Statens vegvesen · NLOD', 'source_url': NORWAY_ATK_SOURCE,
+        })
+    return elements
+
+
+def cached_norway_speed_cameras():
+    def load():
+        rows, start = [], None
+        for _ in range(5):
+            url = NORWAY_ATK_URL + (f'&start={urllib.parse.quote(start, safe="")}' if start else '')
+            page = fetch_json_url(url, headers={
+                'User-Agent': 'GlobeView/1.0 (+https://github.com/codebooker/GlobeView)',
+                'X-Client': 'GlobeView', 'Accept': 'application/json'}, timeout=25)
+            metadata = page.get('metadata') if isinstance(page, dict) else None
+            items = page.get('objekter') if isinstance(page, dict) else None
+            if (not isinstance(metadata, dict) or not isinstance(items, list)
+                    or metadata.get('returnert') != len(items)
+                    or not isinstance(metadata.get('sidestørrelse'), int)
+                    or not 1 <= metadata['sidestørrelse'] <= 800
+                    or len(items) > metadata['sidestørrelse'] or len(rows) + len(items) > 4000):
+                raise ValueError('Norwegian enforcement response is incomplete')
+            rows.extend(items)
+            # NVDB currently advertises a next cursor even after a short final page.
+            if len(items) < metadata['sidestørrelse']:
+                break
+            next_start = (metadata.get('neste') or {}).get('start')
+            if not isinstance(next_start, str) or not re.fullmatch(r'\d+:[1-9]\d*', next_start) or next_start == start:
+                raise ValueError('Norwegian enforcement pagination is invalid')
+            start = next_start
+        else:
+            raise ValueError('Norwegian enforcement catalog exceeds page limit')
+        if not rows:
+            raise ValueError('Norwegian enforcement catalog is empty')
+        return json.dumps(rows, separators=(',', ':')).encode(), 'application/json'
+
+    content, _, _ = API_RESPONSE_CACHE.get_or_load(
+        'no-nvdb-atk:v1', load, ttl=86400, stale_ttl=86400,
+        persist=False, wait_timeout=60)
+    return json.loads(content)
+
+
 def cached_dutch_anpr_catalog():
     def load():
         search = fetch_text_url(DUTCH_ANPR_SEARCH_URL, timeout=20)
@@ -19004,6 +19097,8 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                           and min_lat <= 50.2 and max_lat >= 49.4)
     brussels_visible = (min_lon <= 4.5 and max_lon >= 4.2
                         and min_lat <= 50.95 and max_lat >= 50.75)
+    norway_visible = (min_lon <= 32 and max_lon >= 4
+                      and min_lat <= 72 and max_lat >= 57)
     france_visible = (min_lon <= 10 and max_lon >= -5.5
                       and min_lat <= 51.5 and max_lat >= 41)
     uzbekistan_visible = (min_lon <= 73.22 and max_lon >= 55.99
@@ -19019,7 +19114,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or brussels_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or brussels_visible or norway_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -19052,7 +19147,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or brussels_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or brussels_visible or norway_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -19160,6 +19255,12 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Brussels speed cameras: {error}')
+    if norway_visible:
+        try:
+            for item in norway_speed_cameras(cached_norway_speed_cameras(), bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Norwegian speed cameras: {error}')
     if source_errors:
         print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 

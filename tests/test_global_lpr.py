@@ -301,6 +301,45 @@ class GlobalPlateReaderTests(unittest.TestCase):
         self.assertEqual([row['id'] for row in payload['elements']], ['be:brussels:speed-camera:1'])
         self.assertTrue(payload['sourceErrors'])
 
+    def test_norway_speed_cameras_use_nvdb_lat_lon_axis_and_current_records(self):
+        def camera(identifier, wkt='POINT Z (61.55059135 5.6873376 139.3)', start='2022-06-20', end=None):
+            return {'id': identifier, 'metadata': {'type': {'id': 162}, 'startdato': start,
+                                                    'sluttdato': end},
+                    'geometri': {'srid': 4326, 'wkt': wkt},
+                    'egenskaper': [{'id': 9522, 'verdi': 'Naustdalstunnelen mot Førde'},
+                                   {'id': 9527, 'verdi': 'Med metreringsretning'}]}
+        catalog = [camera(1), camera(1), camera(2, start='2027-01-01'),
+                   camera(3, end='2026-01-01'), camera(4, wkt='POINT(50 5)'),
+                   camera(5, wkt='POINT(61.6 5.8)')]
+        rows = proxy.norway_speed_cameras(catalog, (5.6, 61.5, 5.75, 61.6), dt.date(2026, 10, 4))
+        self.assertEqual([row['id'] for row in rows], ['no:nvdb:atk:1'])
+        self.assertAlmostEqual(rows[0]['lat'], 61.55059135)
+        self.assertAlmostEqual(rows[0]['lon'], 5.6873376)
+        self.assertIn('Naustdalstunnelen', rows[0]['title'])
+        self.assertIn('plate reading unverified', rows[0]['detail'])
+        self.assertEqual(rows[0]['source_url'], proxy.NORWAY_ATK_SOURCE)
+
+    def test_norway_speed_catalog_stops_on_short_page_despite_next_cursor(self):
+        page = {'objekter': [{'id': 1}], 'metadata': {'returnert': 1, 'sidestørrelse': 800,
+                                                    'neste': {'start': '1:1'}}}
+        def uncached(key, loader, **kwargs):
+            body, content_type = loader()
+            return body, content_type, 'BYPASS'
+        with patch.object(proxy, 'fetch_json_url', return_value=page) as fetch, \
+                patch.object(proxy.API_RESPONSE_CACHE, 'get_or_load', side_effect=uncached):
+            self.assertEqual(proxy.cached_norway_speed_cameras(), [{'id': 1}])
+        fetch.assert_called_once()
+        self.assertEqual(fetch.call_args.kwargs['headers']['X-Client'], 'GlobeView')
+
+    def test_norway_speed_cameras_survive_deflock_outage(self):
+        catalog = [{'id': 1, 'metadata': {'type': {'id': 162}, 'startdato': '2022-01-01'},
+                    'geometri': {'srid': 4326, 'wkt': 'POINT(61.55 5.68)'}}]
+        with patch.object(proxy, 'cached_deflock_json', side_effect=OSError('index unavailable')), \
+                patch.object(proxy, 'cached_norway_speed_cameras', return_value=catalog):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((5.6, 61.5, 5.8, 61.6)))
+        self.assertEqual([row['id'] for row in payload['elements']], ['no:nvdb:atk:1'])
+        self.assertTrue(payload['sourceErrors'])
+
 
 if __name__ == '__main__':
     unittest.main()
