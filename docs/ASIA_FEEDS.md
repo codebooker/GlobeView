@@ -1,5 +1,9 @@
 # Asia feed rollout
 
+## Shared disaster-mapping supplement
+
+[Copernicus EMS's public activation API](https://mapping.emergency.copernicus.eu/about/how-to-harvest-cems-mapping-data/) supplies current public Rapid Mapping response activations worldwide, including Asian countries when activated. They appear in **Emergency reports · abroad** at zoom 10+ using the publisher's approximate study-area centroid. These are mapping activations, not dispatch calls or affected-area boundaries. Only open response records activated within 30 days and updated within seven days are retained; closed, restricted, future, preparedness and recovery records are omitted. A five-minute server cache is shared by all users. The 4 October 2026 check contained one current Greek activation and **no current Asian response activations**; historical Nepal and Pakistan records were not republished as live. Reuse follows [Copernicus terms](https://mapping.emergency.copernicus.eu/terms-and-conditions/) and its [citation guidelines](https://mapping.emergency.copernicus.eu/about/citation-guidelines/). Country-specific emergency sources and the other requested feed categories remain necessary.
+
 Only current, located records with reusable data and a working delivery endpoint become GlobeView markers. A public map page or camera inventory by itself does not establish a live feed.
 
 ## India

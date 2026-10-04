@@ -66,6 +66,9 @@ PORTUGAL_URL = ('https://services-eu1.arcgis.com/VlrHb7fn5ewYhX6y/arcgis/rest/se
 THAILAND_DDPM_WFS = 'https://wgeo.disaster.go.th/geoserver/wfs'
 THAILAND_DDPM_SOURCE = 'https://ddc.disaster.go.th/'
 INDONESIA_BNPB_URL = 'https://gis.bnpb.go.id/databencana/tabel/pencarian.php'
+COPERNICUS_ACTIVATIONS_URL = ('https://mapping.emergency.copernicus.eu/activations/api/activations/?'
+                             'closed=false&drmPhase=response&limit=100')
+COPERNICUS_ACTIVATIONS_SOURCE = 'https://mapping.emergency.copernicus.eu/activations/'
 _ATOM = '{http://www.w3.org/2005/Atom}'
 _CAP = '{urn:oasis:names:tc:emergency:cap:1.2}'
 _LOCK = threading.Lock()
@@ -1503,6 +1506,64 @@ def _luxembourg_cap_resource(url):
     return _xml(url)
 
 
+def parse_copernicus_activations(payload, now=None):
+    """Public, recently updated emergency mapping activations; not dispatch calls."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    rows = payload.get('results') if isinstance(payload, dict) else None
+    if (not isinstance(rows, list) or len(rows) > 100
+            or payload.get('next') is not None
+            or isinstance(payload.get('count'), bool)
+            or not isinstance(payload.get('count'), int)
+            or payload['count'] != len(rows)):
+        raise ValueError('Copernicus activation catalog is invalid or incomplete')
+    output, conflicts = {}, set()
+    number = r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?'
+    for row in rows:
+        if not isinstance(row, dict) or row.get('closed') is not False or row.get('drmPhase') != 'response':
+            continue
+        if 'sensitive' in row and row['sensitive'] is not False:
+            continue
+        code = row.get('code')
+        if not isinstance(code, str) or not re.fullmatch(r'EMSR\d{1,6}', code):
+            continue
+        activation_text = _iso(row.get('activationTime'))
+        updated_text = _iso(row.get('lastUpdate'))
+        if not activation_text or not updated_text:
+            continue
+        activated = dt.datetime.fromisoformat(activation_text.replace('Z', '+00:00'))
+        updated = dt.datetime.fromisoformat(updated_text.replace('Z', '+00:00'))
+        if (not now - dt.timedelta(days=30) <= activated <= now
+                or not now - dt.timedelta(days=7) <= updated <= now
+                or updated < activated):
+            continue
+        point = row.get('centroid')
+        match = re.fullmatch(rf'POINT\s*\(\s*({number})\s+({number})\s*\)', point.strip(), re.I) \
+            if isinstance(point, str) and len(point) < 200 else None
+        if not match:
+            continue
+        lon, lat = map(float, match.groups())
+        if not _valid(lon, lat):
+            continue
+        title = _clean(row.get('name'), 140)
+        if not title:
+            continue
+        areas, products = row.get('n_aois'), row.get('n_products')
+        if any(isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100000
+               for value in (areas, products)):
+            continue
+        category = row.get('category')
+        kind = 'fire' if isinstance(category, dict) and category.get('slug') == 'wildfire' else 'warning'
+        item = _item(f'copernicus:{code}', lon, lat, title,
+                     f'Mapping active · {areas} study areas · {products} products. '
+                     'Approximate area center, not a dispatch location.',
+                     f'Copernicus Emergency Management Service (© {activated.year} European Union), {code}',
+                     f'{COPERNICUS_ACTIVATIONS_SOURCE}{code}', updated_text, kind)
+        if code in output and output[code] != item:
+            conflicts.add(code)
+        output[code] = item
+    return [item for code, item in output.items() if code not in conflicts]
+
+
 def _luxembourg_alerts():
     catalog = _json(LUXEMBOURG_ALERT_CATALOG)
     if not isinstance(catalog, dict) or catalog.get('license') != 'cc-by' or not isinstance(catalog.get('resources'), list):
@@ -1560,6 +1621,7 @@ _LOADERS = {
     'id_bnpb': lambda: parse_indonesia_bnpb(_html(INDONESIA_BNPB_URL)),
     'np_bipad': _nepal_bipad,
     'am_rescue': rescue_reports,
+    'copernicus_mapping': lambda: parse_copernicus_activations(_json(COPERNICUS_ACTIVATIONS_URL)),
 }
 
 
