@@ -25,3 +25,7 @@ After DNS for `globeview.app` and `www.globeview.app` points at the server,
 Caddy obtains and renews certificates automatically. Keep the DNS records
 DNS-only during initial issuance; Cloudflare proxying can be enabled afterward
 with SSL/TLS set to Full (strict).
+
+The production VPS uses `1.1.1.1` and `1.0.0.1` as its `eth0` DNS resolvers
+in `/etc/netplan/50-cloud-init.yaml`. Hetzner's default resolvers intermittently
+failed to resolve TripCheck, leaving Oregon cameras unavailable.
