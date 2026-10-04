@@ -60,8 +60,6 @@ SINGAPORE_CAMERAS_URL = 'https://api.data.gov.sg/v1/transport/traffic-images'
 SINGAPORE_CAMERAS_SOURCE = 'https://data.gov.sg/datasets/d_6cdb6b405b25aaaacbaf7689bcc6fae0/view'
 TAIPEI_WORKS_URL = 'https://tpnco.blob.core.windows.net/blobfs/Todaywork.json'
 TAIPEI_WORKS_SOURCE = 'https://data.gov.tw/en/datasets/145614'
-TEL_AVIV_WORKS_URL = 'https://gisn.tel-aviv.gov.il/arcgis/rest/services/IView2/MapServer/852/query'
-TEL_AVIV_WORKS_SOURCE = 'https://opendatasource.tel-aviv.gov.il/en/pages/item.aspx?ids=109'
 TAIPEI_CMS_STATIC_URL = 'https://tcgbusfs.blob.core.windows.net/blobtisv/CMS.xml'
 TAIPEI_CMS_LIVE_URL = 'https://tcgbusfs.blob.core.windows.net/blobtisv/CMSLive.xml'
 TAIPEI_CMS_SOURCE = 'https://data.gov.tw/en/datasets/129029'
@@ -378,7 +376,6 @@ _LITHUANIA_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _HONG_KONG_CAMERA_CATALOG = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _SINGAPORE_CAMERA_CATALOG = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _TAIPEI_WORKS_CACHE = {'until': 0, 'rows': [], 'lock': threading.Lock()}
-_TEL_AVIV_WORKS_CACHE = {'until': 0, 'rows': [], 'lock': threading.Lock()}
 _TAIPEI_CMS_LOCATIONS = {'until': 0, 'rows': {}, 'lock': threading.Lock()}
 _TAIWAN_HIGHWAY_CATALOGS = {name: {'until': 0, 'rows': {}, 'lock': threading.Lock()}
                             for name in ('cameras', 'signs', 'sensors')}
@@ -7999,129 +7996,6 @@ def _taipei_roadworks():
     return rows
 
 
-def _parse_tel_aviv_roadworks(payload, expected_count, now=None):
-    """Map current municipal road works, preserving the affected street lines."""
-    now = time.time() if now is None else now
-    rows = payload.get('features') if isinstance(payload, dict) else None
-    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
-            or payload.get('exceededTransferLimit') or not isinstance(rows, list)
-            or not isinstance(expected_count, int) or not 1 <= expected_count <= 2000
-            or len(rows) != expected_count):
-        raise ValueError('Tel Aviv roadwork publication is incomplete')
-    zone = ZoneInfo('Asia/Jerusalem')
-    today = dt.datetime.fromtimestamp(now, zone).date()
-    features, seen = [], set()
-    fresh_publication = False
-    impacts = {
-        'חסימה הרמטית': 'Full closure',
-        'חסימה נתיב ימין': 'Right lane closed',
-        'צמצום נתיבים': 'Lane reduction',
-        'חסימה לסירוגין': 'Intermittent closure',
-    }
-    for row in rows:
-        properties = row.get('properties') if isinstance(row, dict) else None
-        if not isinstance(properties, dict):
-            continue
-        try:
-            imported = dt.datetime.strptime(properties['date_import'], '%d/%m/%Y %H:%M:%S').replace(tzinfo=zone)
-        except (KeyError, TypeError, ValueError):
-            continue
-        if not -300 <= now - imported.timestamp() <= 48 * 3600:
-            continue
-        fresh_publication = True
-        if (properties.get('avodot_ptuhot') != 'עבודות פתוחות'
-                or properties.get('sivug_yom_layla') not in {'עבודות יום', 'עבודות לילה'}):
-            continue
-        identifier = properties.get('OBJECTID')
-        if type(identifier) is not int or identifier <= 0 or identifier in seen:
-            continue
-        try:
-            start = dt.datetime.strptime(properties['date_start'], '%d/%m/%Y').date()
-            end = dt.datetime.strptime(properties['date_end'], '%d/%m/%Y').date()
-        except (KeyError, TypeError, ValueError):
-            continue
-        if not start <= today <= end or end < start:
-            continue
-        geometry = row.get('geometry') or {}
-        if geometry.get('type') == 'LineString':
-            raw_segments = [geometry.get('coordinates')]
-        elif geometry.get('type') == 'MultiLineString':
-            raw_segments = geometry.get('coordinates')
-        else:
-            continue
-        if not isinstance(raw_segments, list) or not 1 <= len(raw_segments) <= 40:
-            continue
-        segments = []
-        for raw_segment in raw_segments:
-            if not isinstance(raw_segment, list) or not 2 <= len(raw_segment) <= 600:
-                segments = []
-                break
-            points = []
-            for point in raw_segment:
-                if not isinstance(point, list) or len(point) < 2:
-                    points = []
-                    break
-                try:
-                    lon, lat = float(point[0]), float(point[1])
-                except (TypeError, ValueError):
-                    points = []
-                    break
-                if not (math.isfinite(lon) and math.isfinite(lat)
-                        and 34.5 <= lon <= 35.2 and 31.7 <= lat <= 32.4):
-                    points = []
-                    break
-                points.append([lon, lat])
-            if len(points) < 2:
-                segments = []
-                break
-            segments.append(points)
-        if not segments:
-            continue
-        points = [point for segment in segments for point in segment]
-        bounds = [min(point[0] for point in points), min(point[1] for point in points),
-                  max(point[0] for point in points), max(point[1] for point in points)]
-        longest = max(segments, key=len)
-        impact = impacts.get(_clean(properties.get('tzimtzum_netivim'), 80))
-        address = _clean(properties.get('t_ktovet'), 120)
-        work = _clean(properties.get('mahut_avoda'), 170)
-        hours = [str(properties.get(key) or '').strip() for key in ('time_start', 'time_end')]
-        schedule = f'{hours[0]}–{hours[1]} local time' if all(re.fullmatch(r'\d{2}:\d{2}', h) for h in hours) else ''
-        detail = ' · '.join(part for part in (
-            work, impact, f'{start:%d %b %Y}–{end:%d %b %Y}', schedule) if part)
-        valid_until = min(now + 600, dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, zone).timestamp())
-        features.append(_feature(longest[len(longest) // 2], {
-            'key': f'il:tlv:roadwork:{identifier}', 'layer': 'construction',
-            'title': f'Roadwork · {address}' if address else 'Roadwork · Tel Aviv',
-            'detail': detail, 'road_segments': segments, 'road_segment_bounds': bounds,
-            'segment_color': '#e07877' if impact == 'Full closure' else '#e3a477',
-            'valid_until': valid_until, 'updated_at': imported.isoformat(),
-            'source': 'Tel Aviv-Yafo Municipality OpenData', 'source_url': TEL_AVIV_WORKS_SOURCE,
-        }))
-        seen.add(identifier)
-    if not fresh_publication:
-        raise ValueError('Tel Aviv roadwork publication is stale')
-    return features
-
-
-def _tel_aviv_roadworks():
-    cache = _TEL_AVIV_WORKS_CACHE
-    with cache['lock']:
-        if time.time() < cache['until']:
-            return cache['rows']
-        params = {'where': '1=1', 'f': 'json', 'returnCountOnly': 'true'}
-        count_payload = _get_json(TEL_AVIV_WORKS_URL + '?' + urllib.parse.urlencode(params))
-        count = count_payload.get('count') if isinstance(count_payload, dict) else None
-        if type(count) is not int or not 1 <= count <= 2000:
-            raise ValueError('Unexpected Tel Aviv roadwork count')
-        params = {'where': '1=1', 'f': 'geojson', 'outSR': '4326', 'resultRecordCount': '2000',
-                  'outFields': 'OBJECTID,t_ktovet,mahut_avoda,sivug_yom_layla,tzimtzum_netivim,'
-                               'time_start,time_end,date_start,date_end,avodot_ptuhot,date_import'}
-        payload = _get_json(TEL_AVIV_WORKS_URL + '?' + urllib.parse.urlencode(params))
-        rows = _parse_tel_aviv_roadworks(payload, count)
-        cache.update(until=time.time() + 300, rows=rows)
-        return rows
-
-
 def _parse_taipei_cms_locations(root, min_rows=100):
     if root.tag.rsplit('}', 1)[-1] != 'CMSList':
         raise ValueError('Unexpected Taipei sign catalog')
@@ -8835,7 +8709,6 @@ _FETCHERS = {
         'hk_td_sensors': _hong_kong_sensors,
         'sg_lta_cameras': _singapore_cameras,
         'tw_taipei_roadworks': _taipei_roadworks,
-        'il_tlv_roadworks': _tel_aviv_roadworks,
         'tw_taipei_cms_signs': _taipei_cms_signs,
         'tw_highway_cameras': _taiwan_highway_cameras,
         'tw_highway_cms_signs': _taiwan_highway_signs,

@@ -28,36 +28,6 @@ def madrid_jpeg_header(width=1280, height=720):
 
 
 class InfrastructureTests(unittest.TestCase):
-    def test_tel_aviv_roadworks_require_complete_fresh_open_publication(self):
-        now = dt.datetime(2026, 10, 4, 12, tzinfo=dt.timezone.utc).timestamp()
-        current = {'type': 'Feature', 'geometry': {'type': 'LineString', 'coordinates': [
-            [34.78, 32.08], [34.79, 32.09], [34.80, 32.10]]}, 'properties': {
-                'OBJECTID': 123, 't_ktovet': 'רחוב הדגמה', 'mahut_avoda': 'חידוש כביש',
-                'sivug_yom_layla': 'עבודות יום', 'tzimtzum_netivim': 'חסימה הרמטית',
-                'date_start': '04/10/2026', 'date_end': '08/10/2026',
-                'time_start': '09:00', 'time_end': '17:00',
-                'avodot_ptuhot': 'עבודות פתוחות', 'date_import': '04/10/2026 00:05:30',
-                'kablan_name': 'Private contractor'}}
-        future = {**current, 'properties': {**current['properties'], 'OBJECTID': 124,
-                  'avodot_ptuhot': 'עבודות עתידיות'}}
-        event = {**current, 'properties': {**current['properties'], 'OBJECTID': 125,
-                 'sivug_yom_layla': 'אירוע תרבות'}}
-        off_map = {**current, 'geometry': {'type': 'LineString', 'coordinates': [
-                   [10, 32], [11, 32]]}, 'properties': {**current['properties'], 'OBJECTID': 126}}
-        payload = {'type': 'FeatureCollection', 'features': [current, future, event, off_map]}
-        rows = feeds._parse_tel_aviv_roadworks(payload, 4, now)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['properties']['layer'], 'construction')
-        self.assertEqual(rows[0]['properties']['road_segments'], [current['geometry']['coordinates']])
-        self.assertIn('Full closure', rows[0]['properties']['detail'])
-        self.assertNotIn('Private contractor', str(rows[0]))
-        with self.assertRaisesRegex(ValueError, 'incomplete'):
-            feeds._parse_tel_aviv_roadworks(payload, 5, now)
-        with self.assertRaisesRegex(ValueError, 'incomplete'):
-            feeds._parse_tel_aviv_roadworks({**payload, 'exceededTransferLimit': True}, 4, now)
-        with self.assertRaisesRegex(ValueError, 'stale'):
-            feeds._parse_tel_aviv_roadworks(payload, 4, now + 3 * 86400)
-
     def test_taiwan_highway_xml_freshness_and_verified_transport(self):
         now = dt.datetime(2026, 10, 2, 19, tzinfo=dt.timezone.utc).timestamp()
         xml = b'''<CMSLiveList><UpdateTime>2026-10-03T02:58:00+08:00</UpdateTime>
