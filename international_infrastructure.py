@@ -6682,22 +6682,17 @@ def _tii_sign_image(url):
         if cached and now < cached['until']:
             return cached['image']
     image = None
-    updated = None
     try:
-        request = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'GlobeView/1.0'})
+        request = urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0'})
         with urllib.request.urlopen(request, timeout=8) as response:
             if urllib.parse.urlsplit(response.url).hostname != 'crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com':
                 raise ValueError('Unexpected TII sign redirect')
-            updated = email.utils.parsedate_to_datetime(response.headers['Last-Modified']).timestamp()
-            if not -300 <= now - updated <= 30 * 60 or int(response.headers.get('Content-Length', '0')) > 100_000:
-                updated = None
-        if updated is not None:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'GlobeView/1.0'}), timeout=8) as response:
-                if urllib.parse.urlsplit(response.url).hostname != 'crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com':
-                    raise ValueError('Unexpected TII sign redirect')
+            if int(response.headers.get('Content-Length', '0')) <= 100_000:
                 body = response.read(100_001)
+            else:
+                body = b''
             if len(body) <= 100_000 and body.startswith(b'\x89PNG\r\n\x1a\n'):
-                image = (base64.b64encode(body).decode(), updated)
+                image = base64.b64encode(body).decode()
     except (OSError, ValueError, KeyError):
         pass
     with _TII_SIGN_IMAGE_LOCK:
@@ -6705,12 +6700,17 @@ def _tii_sign_image(url):
     return image
 
 
-def _parse_tii_signs(payload, image_loader=_tii_sign_image):
+def _parse_tii_signs(payload, image_loader=_tii_sign_image, now=None):
     if not isinstance(payload, list):
         raise ValueError('TII signs are invalid')
+    now = time.time() if now is None else now
     candidates = []
     for row in payload:
         if not isinstance(row, dict) or row.get('status') != 'DISPLAYING_MESSAGE' or (row.get('properties') or {}).get('signType') != 'VMS_IMAGE':
+            continue
+        updated_ms = row.get('lastUpdated')
+        if (isinstance(updated_ms, bool) or not isinstance(updated_ms, (int, float))
+                or not math.isfinite(updated_ms) or not -300 <= now - updated_ms / 1000 <= 15 * 60):
             continue
         sign_id = str(row.get('id') or '')
         point = _tii_point(row.get('location'))
@@ -6721,18 +6721,17 @@ def _parse_tii_signs(payload, image_loader=_tii_sign_image):
                     for line in page.get('lines', []) if isinstance(line, str)
                     and line.startswith('https://crc-public-eu-west-1-s3.')), None)
         if url:
-            candidates.append((row, point, url))
+            candidates.append((row, point, url, updated_ms / 1000))
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         images = list(executor.map(lambda item: image_loader(item[2]), candidates))
     features = []
-    for (row, point, _url), image in zip(candidates, images):
+    for (row, point, _url, updated), image in zip(candidates, images):
         if not image:
             continue
-        image_data, updated = image
         features.append(_feature(point, {
             'key': f'ie:tii:sign:{row["id"]}', 'layer': 'signs',
             'title': _clean(row.get('name'), 110) or 'Irish road sign',
-            'detail': 'Current sign display', 'image_data': image_data,
+            'detail': 'TII reports this message is displaying', 'image_data': image,
             'source': 'TII · CC BY 4.0',
             'source_url': TII_TRAFFIC_SOURCE + 'list/signs',
             'updated_at': dt.datetime.fromtimestamp(updated, dt.timezone.utc).strftime('%H:%M UTC'),

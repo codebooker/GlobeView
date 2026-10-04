@@ -1579,19 +1579,34 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(len(features), 1)
         self.assertEqual(features[0]['properties']['layer'], 'construction')
 
-    def test_tii_signs_use_only_recent_display_images(self):
-        def row(sign_id, image_url):
+    def test_tii_signs_use_current_status_and_api_update_time(self):
+        def row(sign_id, image_url, updated, status='DISPLAYING_MESSAGE'):
             return {'id': f'irelanddot*{sign_id}', 'name': 'M50 sign',
-                    'status': 'DISPLAYING_MESSAGE',
+                    'status': status, 'lastUpdated': updated * 1000,
                     'properties': {'signType': 'VMS_IMAGE'},
                     'location': {'latitude': 53.3, 'longitude': -6.2},
                     'display': {'pages': [{'lines': [image_url]}]}}
         features = feeds._parse_tii_signs([
-            row('M50-ONE', 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/fresh.PNG'),
-            row('M50-TWO', 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/old.PNG'),
-        ], image_loader=lambda url: ('YWJj', NOW) if url.endswith('fresh.PNG') else None)
+            row('M50-ONE', 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/fresh.PNG', NOW - 120),
+            row('M50-TWO', 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/old.PNG', NOW - 1800),
+            row('M50-THREE', 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/off.PNG', NOW - 120, 'BLANK'),
+        ], image_loader=lambda url: 'YWJj', now=NOW)
         self.assertEqual(len(features), 1)
         self.assertEqual(features[0]['properties']['image_data'], 'YWJj')
+        self.assertIn('displaying', features[0]['properties']['detail'])
+
+    def test_tii_sign_image_can_be_unchanged_while_live_status_is_fresh(self):
+        url = 'https://crc-public-eu-west-1-s3.s3.eu-west-1.amazonaws.com/ire/prod/signs/fresh.PNG'
+        class Response(io.BytesIO):
+            def __init__(self):
+                super().__init__(b'\x89PNG\r\n\x1a\nimage')
+                self.url = url
+                self.headers = {'Content-Length': '13',
+                                'Last-Modified': 'Wed, 01 Jan 2025 00:00:00 GMT'}
+        with patch.dict(feeds._TII_SIGN_IMAGE_CACHE, {}, clear=True), \
+                patch('international_infrastructure.urllib.request.urlopen', return_value=Response()) as fetch:
+            self.assertEqual(feeds._tii_sign_image(url), base64.b64encode(b'\x89PNG\r\n\x1a\nimage').decode())
+            fetch.assert_called_once()
 
     def test_trafficwatch_ni_maps_cameras_current_works_and_readable_signs(self):
         now = dt.datetime(2026, 9, 27, 11, tzinfo=dt.timezone.utc).timestamp()
