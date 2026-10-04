@@ -852,6 +852,31 @@ class InfrastructureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incomplete'):
             feeds._parse_florence_tram_works({**publication, 'totalFeatures': 4}, now)
 
+    def test_florence_tram_traffic_changes_keep_current_road_lines(self):
+        now = dt.datetime(2026, 10, 4, 9, tzinfo=dt.timezone.utc).timestamp()
+        def change(start='2026-10-01', end='2026-10-30', street='VIA ROMA',
+                   coords=None):
+            return {'type': 'Feature', 'geometry': {'type': 'LineString',
+                    'coordinates': coords or [[1684000, 4847700], [1684020, 4847720]]},
+                    'properties': {'nome': street, 'subcantiere': 'F3', 'fase': '4',
+                                   'descrizione': 'Modifica numero corsie (senso unico FT)',
+                                   'corsie': 1, 'data_ini': start, 'data_fine': end}}
+        rows = [change(), change(coords=[[1684020, 4847720], [1684040, 4847740]]),
+                change(start='2026-10-10'), change(street='OUTSIDE',
+                    coords=[[1, 1], [2, 2]])]
+        publication = {'type': 'FeatureCollection', 'timeStamp': '2026-10-04T04:06:00Z',
+                       'crs': {'properties': {'name': 'urn:ogc:def:crs:EPSG::3003'}},
+                       'features': rows, 'totalFeatures': 4, 'numberReturned': 4}
+        features = feeds._parse_florence_tram_roads(publication, now)
+        self.assertEqual(len(features), 1)
+        self.assertEqual(len(features[0]['properties']['road_segments']), 2)
+        self.assertEqual(features[0]['properties']['layer'], 'construction')
+        self.assertIn('1 lane', features[0]['properties']['detail'])
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            feeds._parse_florence_tram_roads(publication, now + 2 * 86400)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            feeds._parse_florence_tram_roads({**publication, 'numberReturned': 3}, now)
+
     def test_bologna_roadworks_require_current_traffic_effect_and_fresh_complete_feed(self):
         now = dt.datetime(2026, 10, 4, 9, tzinfo=dt.timezone.utc).timestamp()
         metadata = {'metas': {'default': {'license': 'CC BY 4.0', 'records_count': 5,
