@@ -2363,6 +2363,8 @@ FLORENCE_GATES_URL = (
     'https://data.comune.fi.it/datastore/download.php?id=6562&type=99&format=url'
     '&file_format=geojson&file_id=23085'
 )
+LUXEMBOURG_RADARS_SOURCE = 'https://data.public.lu/en/datasets/pch-emplacement-des-radars-fixes/'
+LUXEMBOURG_RADARS_URL = 'https://data.geoportail.lu/radar'
 LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
     'https://gis.ktvis.lt/arcgis/rest/services/LAKD/EISMOINFO_SLUOKSNIAI/MapServer/13'
 )
@@ -18832,6 +18834,52 @@ def florence_plate_readers(payload, bbox):
     return elements
 
 
+def luxembourg_speed_radars(payload, bbox):
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list) or len(payload['features']) > 500):
+        raise ValueError('Luxembourg fixed-radar catalog is invalid')
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements, seen = [], set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props, geometry = row.get('properties'), row.get('geometry')
+        if not isinstance(props, dict) or not isinstance(geometry, dict):
+            continue
+        radar_id, coordinates = props.get('ID'), geometry.get('coordinates')
+        if (not isinstance(radar_id, str) or not re.fullmatch(r'\d{1,6}', radar_id)
+                or radar_id in seen or geometry.get('type') not in {'Point', 'LineString'}
+                or not isinstance(coordinates, (list, tuple)) or len(coordinates) < 2):
+            continue
+        section = geometry['type'] == 'LineString'
+        if section:
+            if len(coordinates) > 5000:
+                continue
+            coordinates = coordinates[len(coordinates) // 2]
+            if not isinstance(coordinates, (list, tuple)) or len(coordinates) < 2:
+                continue
+        try:
+            lon, lat = float(coordinates[0]), float(coordinates[1])
+        except (TypeError, ValueError):
+            continue
+        if (not math.isfinite(lon) or not math.isfinite(lat)
+                or not (5.7 <= lon <= 6.55 and 49.4 <= lat <= 50.2)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(radar_id)
+        road = re.sub(r'\s+', ' ', str(props.get('TRANCON') or '')).strip()[:80]
+        direction = re.sub(r'\s+', ' ', str(props.get('DIR') or '')).strip()[:60]
+        elements.append({
+            'type': 'node', 'id': f'lu:pch:radar:{radar_id}', 'lat': lat, 'lon': lon,
+            'title': f'{"Section speed radar" if section else "Fixed speed radar"} · {road or "Luxembourg"}',
+            'detail': ' · '.join(filter(None, [f'Direction {direction}' if direction and direction != road else '',
+                                               'Representative section midpoint' if section else '',
+                                               'Official inventory updated Nov 2025 · current operation unverified · plate reading not confirmed'])),
+            'source': 'Administration des ponts et chaussées · CC0', 'source_url': LUXEMBOURG_RADARS_SOURCE,
+        })
+    return elements
+
+
 def cached_dutch_anpr_catalog():
     def load():
         search = fetch_text_url(DUTCH_ANPR_SEARCH_URL, timeout=20)
@@ -18861,6 +18909,8 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                        and min_lat <= 44.58 and max_lat >= 44.43)
     florence_visible = (min_lon <= 11.38 and max_lon >= 11.15
                         and min_lat <= 43.86 and max_lat >= 43.70)
+    luxembourg_visible = (min_lon <= 6.55 and max_lon >= 5.7
+                          and min_lat <= 50.2 and max_lat >= 49.4)
     france_visible = (min_lon <= 10 and max_lon >= -5.5
                       and min_lat <= 51.5 and max_lat >= 41)
     uzbekistan_visible = (min_lon <= 73.22 and max_lon >= 55.99
@@ -18876,7 +18926,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
         index = cached_deflock_json(DEFLOCK_INDEX_URL, 'deflock-index:v1')
         tile_requests = deflock_tiles_for_bbox(index, bbox)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         index, tile_requests = {}, []
         source_errors.append(f'DeFlock: {error}')
@@ -18909,7 +18959,7 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                     }
                     elements_by_id[str(item.get('id') or f'{lat}:{lon}')] = normalized
     except (OSError, ValueError, KeyError, TypeError) as error:
-        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
+        if not (nottingham_visible or lithuania_visible or dutch_visible or milan_visible or bologna_visible or florence_visible or luxembourg_visible or france_visible or uzbekistan_visible or armenia_visible or georgia_visible):
             raise
         source_errors.append(f'DeFlock tiles: {error}')
 
@@ -18997,6 +19047,13 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Florence gates: {error}')
+    if luxembourg_visible:
+        try:
+            catalog = cached_deflock_json(LUXEMBOURG_RADARS_URL, 'lu-pch-speed-radars:v1', ttl=86400)
+            for item in luxembourg_speed_radars(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Luxembourg fixed radars: {error}')
     if source_errors:
         print(f'[lpr] {"; ".join(source_errors)}', flush=True)
 
