@@ -42,6 +42,7 @@ from armenia_roads import road_notices as armenia_road_notices
 from armenia_roads import news_roadworks as armenia_construction_reports
 from kyrgyztelecom_cameras import camera_features as kyrgyztelecom_cameras, camera_segment
 from japan_hiroshima_cameras import camera_features as hiroshima_cameras
+from japan_hiroshima_roads import road_restrictions as hiroshima_road_restrictions
 
 
 FINTRAFFIC_BASE = 'https://tie.digitraffic.fi'
@@ -8789,6 +8790,7 @@ _FETCHERS = {
         'hk_td_speed_panels': _hong_kong_speed_panels,
         'sg_lta_cameras': _singapore_cameras,
         'jp_hiroshima_cameras': hiroshima_cameras,
+        'jp_hiroshima_restrictions': hiroshima_road_restrictions,
         'tw_taipei_roadworks': _taipei_roadworks,
         'tw_taipei_cms_signs': _taipei_cms_signs,
         'tw_highway_cameras': _taiwan_highway_cameras,
