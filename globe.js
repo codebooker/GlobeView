@@ -1582,7 +1582,10 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       { bounds: { minLon: 69, maxLon: 81, minLat: 39, maxLat: 44 } }, // Kyrgyzstan
       { bounds: { minLon: 43.4, maxLon: 46.7, minLat: 38.8, maxLat: 41.4 } }, // Armenia
       { bounds: { minLon: 40, maxLon: 46.8, minLat: 41, maxLat: 43.8 } } // Georgia
-    ].some(region => regionVisible(region, bounds));
+    ].some(region => regionVisible(region, bounds)) ||
+      (type === 'construction' && regionVisible({ bounds: {
+        minLon: 44, maxLon: 64, minLat: 25, maxLat: 40
+      } }, bounds));
     const internationalPromise = internationalVisible
       ? fetchInternationalRoad(type, bounds, controller.signal).catch(error => { console.warn('International road feed:', error); return null; })
       : Promise.resolve(null);
