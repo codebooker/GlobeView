@@ -22,7 +22,8 @@ class HiroshimaCameraTests(unittest.TestCase):
         listed += ('<div class="content"><a href="camera_detail.php?id=81">'
                    '<img src="snow_pic/81.jpg?t=1"></a>'
                    '<td class="time">2026/10/03 14:40:00</td>')
-        with mock.patch.object(cameras, '_read', side_effect=[csv_body, listed.encode()]), \
+        with mock.patch.object(cameras.Path, 'read_bytes', return_value=csv_body), \
+                mock.patch.object(cameras, '_read', return_value=listed.encode()), \
                 mock.patch.object(cameras.dt, 'datetime', wraps=dt.datetime) as clock:
             clock.now.return_value = now
             features = cameras.camera_features()

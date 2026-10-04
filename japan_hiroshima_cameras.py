@@ -7,13 +7,14 @@ import io
 import re
 import time
 import urllib.request
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from PIL import Image, UnidentifiedImageError
 
 
-LOCATIONS_URL = 'https://hiroshima-dobox.jp/resource_download/32516'
 LOCATION_SOURCE = 'https://hiroshima-dobox.jp/resources/32516'
+LOCATIONS_FILE = Path(__file__).with_name('hiroshima-road-camera-locations.csv')
 CAMERA_LIST_URL = 'https://www.roadnavi.pref.hiroshima.lg.jp/camera_list.php'
 CAMERA_ORIGIN = 'https://www.roadnavi.pref.hiroshima.lg.jp'
 _JST = ZoneInfo('Asia/Tokyo')
@@ -68,7 +69,7 @@ def _listed_cameras(body, now=None):
 
 
 def camera_features():
-    locations = _locations(_read(LOCATIONS_URL, 100000))
+    locations = _locations(LOCATIONS_FILE.read_bytes())
     listed = _listed_cameras(_read(CAMERA_LIST_URL, 150000))
     cameras = listed & locations.keys()
     if len(cameras) < 75:
