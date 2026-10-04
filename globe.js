@@ -500,10 +500,21 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
     } else setMapPadding();
   });
 
+  function countLabel(type, value) {
+    if (value == null) return '';
+    if (type !== 'lpr') return Number(value).toLocaleString();
+    const center = map.getCenter();
+    const swedishATK = type === 'lpr' && map.getZoom() >= 10 &&
+      center.lng >= 10 && center.lng <= 25 && center.lat >= 55 && center.lat <= 69;
+    return swedishATK
+      ? `${value ? `${Number(value).toLocaleString()} · ` : ''}ATK map`
+      : Number(value).toLocaleString();
+  }
+
   function setCount(type, value) {
     counts.set(type, value);
     const node = document.querySelector(`[data-count="${type}"]`);
-    if (node) node.textContent = value == null || !enabled[type] ? '' : Number(value).toLocaleString();
+    if (node) node.textContent = enabled[type] ? countLabel(type, value) : '';
   }
 
   function zoomHint(type) {
@@ -528,6 +539,9 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
         : type === 'construction' || type === 'incidents' ? [`gm-${type}-segment-casing`, `gm-${type}-segments`, `gm-${type}-points`]
         : [`gm-${type}-points`];
       for (const id of layerIds) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+      if (type === 'lpr' && map.getLayer('gm-sweden-atk-layer')) {
+        map.setLayoutProperty('gm-sweden-atk-layer', 'visibility', visible ? 'visible' : 'none');
+      }
       if (type === 'cyclones') for (const id of ['gm-cyclone-ensemble-lines', 'gm-cyclone-model-casing', 'gm-cyclone-model-lines', 'gm-cyclone-consensus-casing', 'gm-cyclone-consensus-line', 'gm-cyclone-official-casing', 'gm-cyclone-official-line']) {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible && selectedCycloneId ? 'visible' : 'none');
       }
@@ -581,7 +595,7 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       imageryOptions.hidden = !enabled.imagery;
     }
     const node = document.querySelector(`[data-count="${type}"]`);
-    if (node) node.textContent = zoomHint(type) || (type === 'goes' && enabled.goes ? goesFrames.east.length && goesFrames.west.length ? 'East + West' : goesFrames.east.length ? 'East' : goesFrames.west.length ? 'West' : 'Loading' : type === 'radar' && enabled.radar ? radarProvider : type === 'imagery' && enabled.imagery ? imageryMode === 'detail' ? 'HD' : imageryMode === 'esri' ? 'Esri' : imageryDate() : type === 'ports' && enabled.ports && map.getZoom() < 6 && portOverviewCount ? portOverviewCount.toLocaleString() : enabled[type] && counts.get(type) != null ? Number(counts.get(type)).toLocaleString() : '');
+    if (node) node.textContent = zoomHint(type) || (type === 'goes' && enabled.goes ? goesFrames.east.length && goesFrames.west.length ? 'East + West' : goesFrames.east.length ? 'East' : goesFrames.west.length ? 'West' : 'Loading' : type === 'radar' && enabled.radar ? radarProvider : type === 'imagery' && enabled.imagery ? imageryMode === 'detail' ? 'HD' : imageryMode === 'esri' ? 'Esri' : imageryDate() : type === 'ports' && enabled.ports && map.getZoom() < 6 && portOverviewCount ? portOverviewCount.toLocaleString() : enabled[type] ? countLabel(type, counts.get(type)) : '');
   }
 
   function refreshImagery() {
@@ -3303,6 +3317,14 @@ import { boundsAroundLongitude, splitLineAtAntimeridian } from './geo-lines.mjs?
       });
       map.addLayer({ id: 'gm-us-imagery-layer', type: 'raster', source: 'gm-us-imagery',
         paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 }, layout: { visibility: 'none' } }, firstLabel);
+      map.addSource('gm-sweden-atk', {
+        type: 'raster',
+        tiles: ['https://geo-netinfo.trafikverket.se/mapservice/wms.axd/NetInfo?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=ATK_Matplats&STYLES=&SRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=TRUE'],
+        tileSize: 256, minzoom: 10, maxzoom: 14, bounds: [10, 55, 25, 69],
+        attribution: '<a href="https://bransch.trafikverket.se/tjanster/data-kartor-och-geodatatjanster/">Trafikverket NetInfo · ATK-Mätplats (CC0)</a>'
+      });
+      map.addLayer({ id: 'gm-sweden-atk-layer', type: 'raster', source: 'gm-sweden-atk', minzoom: 10,
+        paint: { 'raster-opacity': 0.92, 'raster-fade-duration': 0 }, layout: { visibility: 'none' } }, firstLabel);
       rebuildGoesLayers();
       map.addSource('gm-fire-hotspots', { type: 'raster', tiles: [
         `https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&TIME=${firmsDate}&LAYERS=VIIRS_SNPP_Thermal_Anomalies_375m_All&FORMAT=image/png&STYLES=&HEIGHT=256&SRS=EPSG:3857&WIDTH=256&BBOX={bbox-epsg-3857}&TRANSPARENT=TRUE`
