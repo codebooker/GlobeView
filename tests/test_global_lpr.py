@@ -47,7 +47,8 @@ class GlobalPlateReaderTests(unittest.TestCase):
         with patch.object(proxy, 'cached_deflock_json', side_effect=OSError('index unavailable')):
             payload = json.loads(proxy.fetch_deflock_lpr_content((2.9, 46.2, 4.0, 46.7)))
         self.assertTrue(payload['elements'])
-        self.assertTrue(all(row['id'].startswith('fr:freeflow:') for row in payload['elements']))
+        self.assertTrue(any(row['id'].startswith('fr:freeflow:') for row in payload['elements']))
+        self.assertTrue(any(row['id'].startswith('fr:interior:radar:') for row in payload['elements']))
         self.assertTrue(payload['sourceErrors'])
 
     def test_region_selection_uses_viewport(self):
