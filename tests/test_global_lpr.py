@@ -182,6 +182,37 @@ class GlobalPlateReaderTests(unittest.TestCase):
         self.assertIn('operation unverified', rows[0]['detail'])
         self.assertEqual(rows[0]['source_url'], proxy.MILAN_AREA_C_GATES_SOURCE)
 
+    def test_bologna_maps_only_active_unique_gates_in_city_bounds(self):
+        def gate(gate_id, active='S', lon=11.34):
+            return {'identificativo_varco': gate_id, 'attivo': active,
+                    'descrizione': 'via Marconi', 'tipologia_varco': 'ZTL',
+                    'coordinate': {'lon': lon, 'lat': 44.5}}
+        catalog = {'total_count': 4, 'results': [gate(4), gate(4), gate(5, 'N'), gate(6, lon=12)]}
+        rows = proxy.bologna_plate_readers(catalog, (11.3, 44.45, 11.4, 44.55))
+        self.assertEqual([row['id'] for row in rows], ['it:bologna:gate:4'])
+        self.assertIn('operation unverified', rows[0]['detail'])
+        self.assertEqual(rows[0]['source_url'], proxy.BOLOGNA_GATES_SOURCE)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            proxy.bologna_plate_readers({'total_count': 101, 'results': []}, (11.3, 44.45, 11.4, 44.55))
+
+    def test_florence_telematic_gates_survive_deflock_outage(self):
+        catalog = {'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'properties': {'id': 105, 'titolo': 'Via dei Bardi (Area Pedonale)'},
+             'geometry': {'type': 'Point', 'coordinates': [11.25355, 43.76717]}},
+            {'type': 'Feature', 'properties': {'id': 105, 'titolo': 'duplicate'},
+             'geometry': {'type': 'Point', 'coordinates': [11.25355, 43.76717]}},
+            {'type': 'Feature', 'properties': {'id': 106},
+             'geometry': {'type': 'Point', 'coordinates': [12, 43.76717]}}]}
+        def cached(url, key, ttl=900):
+            if key == 'deflock-index:v1': raise OSError('index unavailable')
+            if key == 'it-florence-gates:v1': return catalog
+            raise AssertionError(key)
+        with patch.object(proxy, 'cached_deflock_json', side_effect=cached):
+            payload = json.loads(proxy.fetch_deflock_lpr_content((11.2, 43.74, 11.3, 43.8)))
+        self.assertEqual([row['id'] for row in payload['elements']], ['it:firenze:gate:105'])
+        self.assertIn('Via dei Bardi', payload['elements'][0]['title'])
+        self.assertTrue(payload['sourceErrors'])
+
 
 if __name__ == '__main__':
     unittest.main()
