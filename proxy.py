@@ -2363,6 +2363,8 @@ FLORENCE_GATES_URL = (
     'https://data.comune.fi.it/datastore/download.php?id=6562&type=99&format=url'
     '&file_format=geojson&file_id=23085'
 )
+FLORENCE_GREEN_GATES_SOURCE = 'https://opendata.comune.fi.it/page_dataset_show?id=varchi-scudo-verde'
+FLORENCE_GREEN_GATES_URL = 'https://datigis.comune.fi.it/json/varchi_scudoverde.json'
 LUXEMBOURG_RADARS_SOURCE = 'https://data.public.lu/en/datasets/pch-emplacement-des-radars-fixes/'
 LUXEMBOURG_RADARS_URL = 'https://data.geoportail.lu/radar'
 LITHUANIA_TOLL_EQUIPMENT_SOURCE = (
@@ -18834,6 +18836,48 @@ def florence_plate_readers(payload, bbox):
     return elements
 
 
+def florence_green_plate_readers(payload, bbox, today=None):
+    if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
+            or not isinstance(payload.get('features'), list) or len(payload['features']) > 500
+            or (payload.get('crs') or {}).get('properties', {}).get('name') != 'urn:ogc:def:crs:EPSG::4326'):
+        raise ValueError('Florence Scudo Verde gate catalog is invalid')
+    today = today or datetime.datetime.now(ZoneInfo('Europe/Rome')).date()
+    min_lon, min_lat, max_lon, max_lat = bbox
+    elements, seen = [], set()
+    for row in payload['features']:
+        if not isinstance(row, dict):
+            continue
+        props, geometry = row.get('properties'), row.get('geometry')
+        if not isinstance(props, dict) or not isinstance(geometry, dict):
+            continue
+        gate_id, coordinates = props.get('id'), geometry.get('coordinates')
+        if (not isinstance(gate_id, int) or gate_id < 1 or gate_id in seen
+                or geometry.get('type') != 'Point' or not isinstance(coordinates, (list, tuple))
+                or len(coordinates) < 2):
+            continue
+        try:
+            starts = datetime.date.fromisoformat(props['data_ini'])
+            ends = datetime.date.fromisoformat(props['data_fine']) if props.get('data_fine') else None
+            lon, lat = float(coordinates[0]), float(coordinates[1])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (starts > today or (ends and ends < today) or props.get('tipo_varco') not in {'IN', 'OUT'}
+                or not math.isfinite(lon)
+                or not math.isfinite(lat) or not (11.15 <= lon <= 11.38 and 43.70 <= lat <= 43.86)
+                or not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat)):
+            continue
+        seen.add(gate_id)
+        name = re.sub(r'\s+', ' ', str(props.get('nome_varco') or '')).strip()[:80]
+        direction = 'Exit' if props.get('tipo_varco') == 'OUT' else 'Entry'
+        elements.append({
+            'type': 'node', 'id': f'it:firenze:scudo-verde:{gate_id}', 'lat': lat, 'lon': lon,
+            'title': f'Scudo Verde plate-reading gate · {name}' if name else 'Scudo Verde plate-reading gate',
+            'detail': f'{direction} · environmental zone · published Aug 2026 · current operation unverified',
+            'source': 'Comune di Firenze · CC BY 4.0', 'source_url': FLORENCE_GREEN_GATES_SOURCE,
+        })
+    return elements
+
+
 def luxembourg_speed_radars(payload, bbox):
     if (not isinstance(payload, dict) or payload.get('type') != 'FeatureCollection'
             or not isinstance(payload.get('features'), list) or len(payload['features']) > 500):
@@ -19047,6 +19091,12 @@ def fetch_deflock_lpr_content(bbox, limit=10000):
                 elements_by_id[item['id']] = item
         except (OSError, ValueError, KeyError, TypeError) as error:
             source_errors.append(f'Florence gates: {error}')
+        try:
+            catalog = cached_deflock_json(FLORENCE_GREEN_GATES_URL, 'it-florence-green-gates:v1', ttl=86400)
+            for item in florence_green_plate_readers(catalog, bbox):
+                elements_by_id[item['id']] = item
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            source_errors.append(f'Florence Scudo Verde gates: {error}')
     if luxembourg_visible:
         try:
             catalog = cached_deflock_json(LUXEMBOURG_RADARS_URL, 'lu-pch-speed-radars:v1', ttl=86400)
