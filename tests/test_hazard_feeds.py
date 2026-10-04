@@ -301,6 +301,7 @@ class HazardFeedTests(unittest.TestCase):
         ), patch.object(hazard_feeds, '_kazakhstan_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_kyrgyzstan_alerts', return_value=[]
         ), patch.object(hazard_feeds, '_tajikistan_alerts', return_value=[]
+        ), patch.object(hazard_feeds, '_japan_alerts', return_value=[]
         ):
             result = hazard_feeds._world_alerts()
         self.assertEqual(result['items'], [{'id': 'ca:1'}])

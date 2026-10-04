@@ -19,6 +19,7 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from tajikistan_alerts import alerts as _tajikistan_alerts
+from japan_jma_alerts import alerts as _japan_alerts
 
 
 FEEDS = {
@@ -1386,6 +1387,7 @@ def _world_alerts():
                ('Sri Lanka', _sri_lanka_alerts), ('Maldives', _maldives_alerts),
                ('Malaysia', _malaysia_alerts), ('Kazakhstan', _kazakhstan_alerts),
                ('Kyrgyzstan', _kyrgyzstan_alerts), ('Tajikistan', _tajikistan_alerts)]
+    loaders.append(('Japan', _japan_alerts))
     # Each provider is independent; a slow national service should not delay
     # every other country's current alerts.
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(loaders)) as executor:
