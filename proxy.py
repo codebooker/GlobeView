@@ -38,6 +38,7 @@ from international_infrastructure import (road_snapshot as international_road_sn
 from radio_catalog import catalog_snapshot as radio_catalog_snapshot, record_station_click
 from cyclone_guidance import guidance_snapshot as cyclone_guidance_snapshot
 from kyrgyztelecom_cameras import CAMERAS as KYRGYZTELECOM_CAMERAS
+from japan_hiroshima_cameras import camera_snapshot as hiroshima_camera_snapshot
 from trip_routing import RouteBusy, RouteNotFound, RouteTooLong, RouteUnavailable, parse_point as parse_route_point, route_snapshot
 from arcgis_catalog import arcgis_viewport
 from dutch_anpr import SEARCH_URL as DUTCH_ANPR_SEARCH_URL, latest_plan as dutch_anpr_latest_plan, parse_plan as parse_dutch_anpr_plan, plan_for_bbox as dutch_anpr_for_bbox
@@ -19476,6 +19477,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_singapore_camera(parsed)
         elif parsed.path.startswith('/taiwan-highway-camera/'):
             self._handle_taiwan_highway_camera(parsed)
+        elif parsed.path.startswith('/hiroshima-camera/'):
+            self._handle_hiroshima_camera(parsed)
         elif parsed.path.startswith('/elcat-camera/'):
             self._handle_elcat_camera(parsed)
         elif parsed.path.startswith('/kyrgyztelecom-camera/'):
@@ -20162,6 +20165,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, 'Snapshot unavailable')
         except Exception as exc:
             self._log_exception('taiwan-highway-camera', exc)
+            self.send_error(502, 'Snapshot unavailable')
+
+    def _handle_hiroshima_camera(self, parsed):
+        camera_id = parsed.path.removeprefix('/hiroshima-camera/')
+        if not re.fullmatch(r'\d{1,3}', camera_id):
+            self.send_error(400, 'Invalid camera ID'); return
+        try:
+            content, content_type, cache_status = MEDIA_RESPONSE_CACHE.get_or_load(
+                f'hiroshima-camera:v1:{camera_id}',
+                lambda: hiroshima_camera_snapshot(camera_id),
+                ttl=60, stale_ttl=0, persist=False, wait_timeout=20)
+            self._write_bytes(200, content, content_type,
+                              cache_control='public, max-age=30',
+                              extra_headers={'X-GlobeView-Cache': cache_status})
+        except (FileNotFoundError, urllib.error.HTTPError):
+            self.send_error(404, 'Snapshot unavailable')
+        except Exception as exc:
+            self._log_exception('hiroshima-camera', exc)
             self.send_error(502, 'Snapshot unavailable')
 
     def _handle_dgt_camera(self, parsed):
