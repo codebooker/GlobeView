@@ -132,7 +132,6 @@ def parse_bulletin(xml, office_code, issued, url, areas):
                 'source': 'Japan Meteorological Agency', 'severity': _severity(names),
                 'area': area_name, 'advice': ' / '.join(names)[:300],
                 'observed': issued.isoformat().replace('+00:00', 'Z'),
-                'ends': (issued + dt.timedelta(hours=24)).isoformat().replace('+00:00', 'Z'),
                 'sourceUrl': url,
             })
     return results

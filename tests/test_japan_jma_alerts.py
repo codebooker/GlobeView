@@ -43,7 +43,7 @@ class JapanJmaAlertsTests(unittest.TestCase):
         self.assertEqual(results[0]['id'], 'jp:jma:390000:390010')
         self.assertEqual(results[0]['geometry'], geometry)
         self.assertEqual(results[0]['locationKind'], 'polygon')
-        self.assertEqual(results[0]['ends'], '2026-10-05T06:00:00Z')
+        self.assertNotIn('ends', results[0])
 
     def test_duplicate_area_parts_are_combined(self):
         feature = lambda lon, code: {'properties': {'code': code, 'enName': 'Kochi Central'},
